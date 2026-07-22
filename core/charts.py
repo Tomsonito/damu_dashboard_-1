@@ -108,31 +108,91 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False) -> 
 MIN_LABEL_SIZE = 12
 
 
-def _hierarchy_style(fig: go.Figure, ctx: "Ctx") -> go.Figure:
-    """Общая настройка круговой, плиток, лучей и сосулек.
+def _size_floor(values: pd.Series) -> float:
+    """Минимальный размер сектора — доля от самого крупного.
 
-    Главное здесь — `uniformtext`. Без него plotly ужимает подпись под размер
-    сектора, и у мелких регионов вроде Ұлытау шрифт падает до нечитаемых
-    четырёх пикселей. `minsize` ставит нижнюю границу, `mode="show"` требует
-    показать подпись даже там, где она впритык.
+    Осознанный компромисс: у мелких регионов сектор растягивается до порога,
+    иначе подпись в него не помещается и вылезает поверх соседей.
 
-    Подпись строится по `%{value}`, а не по своей колонке с текстом: у секторов
-    верхнего уровня (макрорегионов) своей строки в данных нет, они считаются
-    суммой детей — и подстановка из колонки дала бы у них «(?)».
-
-    Заодно чинится подсказка при наведении: по умолчанию plotly показывает
-    служебное «labels=… parent=… id=…», человеку это не нужно.
+    Чтобы это не превращалось в обман, соблюдаются два правила:
+    числа в подписи и в подсказке — **всегда настоящие**, а в заголовке
+    появляется пометка, что размеры подтянуты. Порог задаётся в config.yaml,
+    ключ `charts.min_slice_percent`; 0 отключает подтягивание совсем.
     """
-    number = f"%{{value:,.{ctx.meta['decimals']}f}}"
-    unit = ctx.meta["display_unit"]
-    suffix = f" {unit}" if unit else ""
-
-    fig.update_traces(
-        texttemplate=f"%{{label}}<br>{number}{suffix}",
-        hovertemplate=f"<b>%{{label}}</b><br>{number}{suffix}<extra></extra>",
-        insidetextfont=dict(size=MIN_LABEL_SIZE + 1),
+    percent = float(
+        data.load_config().get("charts", {}).get("min_slice_percent", 0)
     )
-    fig.update_layout(uniformtext=dict(minsize=MIN_LABEL_SIZE, mode="show"))
+    if percent <= 0 or values.empty:
+        return 0.0
+    return float(values.max()) * percent / 100
+
+
+def _label(value: float, ctx: "Ctx") -> str:
+    """Настоящее значение строкой: разряды пробелом, единица в конце."""
+    shown = value / ctx.meta["divisor"]
+    text = f"{shown:,.{ctx.meta['decimals']}f}".replace(",", " ")
+    return f"{text} {ctx.meta['display_unit']}".strip()
+
+
+def _adjusted_note(raised: int, ctx: "Ctx") -> str:
+    """Пометка в заголовок, если размеры пришлось подтянуть."""
+    if not raised:
+        return ""
+    percent = data.load_config().get("charts", {}).get("min_slice_percent", 0)
+    return f"<br><sub>у {raised} регионов сектор увеличен до {percent} % — числа настоящие</sub>"
+
+
+def _flat_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
+    """Плоский список регионов для круговой и плиток."""
+    df = data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions).copy()
+    floor = _size_floor(df["value"])
+    df["display"] = df["value"].clip(lower=floor)
+    df["подпись"] = [_label(v, ctx) for v in df["value"]]
+    return df, int((df["value"] < floor).sum())
+
+
+def _tree_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
+    """Узлы для лучей и сосулек: макрорегионы и области.
+
+    Строим вручную, а не через `px`, чтобы у каждого узла — включая
+    макрорегионы — были и подтянутый размер, и настоящее значение в подписи.
+    """
+    df = data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+    floor = _size_floor(df["value"])
+
+    rows: list[dict] = []
+    for macro, group in df.groupby("macroregion"):
+        leaves = [
+            {
+                "id": f"{macro}/{row['region']}",
+                "label": row["region"],
+                "parent": macro,
+                "value": float(row["value"]),
+                "display": max(float(row["value"]), floor),
+            }
+            for _, row in group.iterrows()
+        ]
+        rows.extend(leaves)
+        rows.append(
+            {
+                "id": macro,
+                "label": macro,
+                "parent": "",
+                "value": float(group["value"].sum()),
+                # Родитель обязан быть суммой детей, иначе plotly ругается
+                "display": sum(leaf["display"] for leaf in leaves),
+            }
+        )
+
+    nodes = pd.DataFrame(rows)
+    nodes["подпись"] = [_label(v, ctx) for v in nodes["value"]]
+    return nodes, int((df["value"] < floor).sum())
+
+
+def _hierarchy_style(fig: go.Figure) -> go.Figure:
+    """Общее для круговой, плиток, лучей и сосулек: размер шрифта подписей."""
+    fig.update_traces(insidetextfont=dict(size=MIN_LABEL_SIZE + 1))
+    fig.update_layout(uniformtext=dict(minsize=MIN_LABEL_SIZE, mode="hide"))
     return fig
 
 
@@ -230,45 +290,75 @@ def _funnel(ctx: Ctx) -> go.Figure:
 
 @chart("pie", "Круговая — доли")
 def _pie(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
-    fig = px.pie(
-        df, names="region", values="shown", title=ctx.title
+    df, raised = _flat_nodes(ctx)
+    fig = go.Figure(
+        go.Pie(
+            labels=df["region"],
+            values=df["display"],
+            text=df["подпись"],
+            sort=False,
+            textposition="inside",
+            texttemplate="%{label}<br>%{text}",
+            hovertemplate="<b>%{label}</b><br>%{text}<extra></extra>",
+        )
     )
-    fig.update_traces(textposition="inside")
-    return _hierarchy_style(fig, ctx)
+    fig.update_layout(title=ctx.title + _adjusted_note(raised, ctx))
+    return _hierarchy_style(fig)
 
 
 @chart("treemap", "Плитки — структура")
 def _treemap(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
-    fig = px.treemap(
-        df, path=["region"], values="shown", title=ctx.title
+    df, raised = _flat_nodes(ctx)
+    fig = go.Figure(
+        go.Treemap(
+            labels=df["region"],
+            parents=[""] * len(df),
+            values=df["display"],
+            text=df["подпись"],
+            texttemplate="%{label}<br>%{text}",
+            hovertemplate="<b>%{label}</b><br>%{text}<extra></extra>",
+        )
     )
-    return _hierarchy_style(fig, ctx)
+    fig.update_layout(title=ctx.title + _adjusted_note(raised, ctx))
+    return _hierarchy_style(fig)
 
 
 @chart("sunburst", "Солнечные лучи — по макрорегионам")
 def _sunburst(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(
-        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+    nodes, raised = _tree_nodes(ctx)
+    fig = go.Figure(
+        go.Sunburst(
+            ids=nodes["id"],
+            labels=nodes["label"],
+            parents=nodes["parent"],
+            values=nodes["display"],
+            text=nodes["подпись"],
+            branchvalues="total",
+            texttemplate="%{label}<br>%{text}",
+            hovertemplate="<b>%{label}</b><br>%{text}<extra></extra>",
+        )
     )
-    fig = px.sunburst(
-        df, path=["macroregion", "region"], values="shown", title=ctx.title
-    )
-    fig.update_layout(height=800)  # крупнее круг — крупнее и сектора мелких регионов
-    return _hierarchy_style(fig, ctx)
+    fig.update_layout(title=ctx.title + _adjusted_note(raised, ctx), height=900)
+    return _hierarchy_style(fig)
 
 
 @chart("icicle", "Сосульки — по макрорегионам")
 def _icicle(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(
-        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+    nodes, raised = _tree_nodes(ctx)
+    fig = go.Figure(
+        go.Icicle(
+            ids=nodes["id"],
+            labels=nodes["label"],
+            parents=nodes["parent"],
+            values=nodes["display"],
+            text=nodes["подпись"],
+            branchvalues="total",
+            texttemplate="%{label}<br>%{text}",
+            hovertemplate="<b>%{label}</b><br>%{text}<extra></extra>",
+        )
     )
-    fig = px.icicle(
-        df, path=["macroregion", "region"], values="shown", title=ctx.title
-    )
-    fig.update_layout(height=800)
-    return _hierarchy_style(fig, ctx)
+    fig.update_layout(title=ctx.title + _adjusted_note(raised, ctx), height=900)
+    return _hierarchy_style(fig)
 
 
 # ─────────────────────────── Изменение во времени ───────────────────────────
