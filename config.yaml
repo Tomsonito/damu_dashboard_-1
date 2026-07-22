@@ -1,0 +1,50 @@
+# Реестр показателей: как называть, в чём измерять, как показывать.
+# Добавить показатель = добавить блок сюда. Код страниц не меняется.
+#
+#   title        — полное название, для подписей осей и подсказок
+#   short        — короткое, для карточек
+#   unit         — единица измерения в исходных данных
+#   kind         — stock: срез на дату | flow_ytd: накоплено с начала года
+#   divisor      — на сколько делить перед показом
+#   display_unit — что писать после числа
+#   decimals     — знаков после запятой
+
+indicators:
+  registered_smb:
+    title: "Зарегистрированные субъекты МСП"
+    short: "Зарегистрировано"
+    unit: "единиц"
+    kind: stock
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+
+  active_smb:
+    title: "Действующие субъекты МСП"
+    short: "Действующих"
+    unit: "единиц"
+    kind: stock
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+
+  employed:
+    title: "Численность занятых в МСП"
+    short: "Занятых"
+    unit: "человек"
+    kind: stock
+    divisor: 1
+    display_unit: "чел."
+    decimals: 0
+
+  output:
+    title: "Выпуск продукции субъектами МСП"
+    short: "Выпуск продукции"
+    unit: "млн тенге"
+    kind: flow_ytd
+    divisor: 1000000
+    display_unit: "трлн ₸"
+    decimals: 2
+
+# Порядок карточек на главном экране
+kpi_order: [registered_smb, active_smb, employed, output]

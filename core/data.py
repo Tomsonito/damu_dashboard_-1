@@ -1,0 +1,108 @@
+"""Единственная дверь к данным.
+
+Страницы никогда не читают файлы напрямую — только вызывают функции отсюда.
+Благодаря этому смена источника (Excel → БД) не потребует правок в pages/.
+"""
+
+from pathlib import Path
+
+import pandas as pd
+import yaml
+
+FACTS_PATH = Path("data/facts.csv")
+CONFIG_PATH = Path("config.yaml")
+
+
+def load_config() -> dict:
+    with CONFIG_PATH.open(encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def load_facts() -> pd.DataFrame:
+    """Читает таблицу фактов.
+
+    Намеренно читаем на каждый вызов, а не один раз при импорте модуля:
+    тогда после перегона ETL страница показывает свежие цифры без перезапуска
+    приложения. Файл маленький (сотни строк), это ничего не стоит.
+    """
+    if not FACTS_PATH.exists():
+        raise FileNotFoundError(
+            f"Нет файла {FACTS_PATH}. Сначала запустите: python -m etl.parse_msp"
+        )
+    df = pd.read_csv(FACTS_PATH)
+    df["is_total"] = df["is_total"].astype(bool)
+    return df
+
+
+def get_indicator_meta(indicator: str) -> dict:
+    return load_config()["indicators"][indicator]
+
+
+def get_indicator_choices() -> list[dict]:
+    """Список показателей для выпадающего фильтра."""
+    cfg = load_config()
+    return [{"label": m["title"], "value": key} for key, m in cfg["indicators"].items()]
+
+
+def get_years() -> list[int]:
+    """Годы, за которые есть данные, свежий первым."""
+    return sorted(load_facts()["report_year"].unique().tolist(), reverse=True)
+
+
+def format_value(value: float, indicator: str) -> str:
+    """Число в виде, пригодном для показа: масштаб, разряды, единица."""
+    meta = get_indicator_meta(indicator)
+    scaled = value / meta["divisor"]
+    # Неразрывный пробел как разделитель разрядов — так принято в русской типографике
+    text = f"{scaled:,.{meta['decimals']}f}".replace(",", " ")
+    return f"{text} {meta['display_unit']}".strip()
+
+
+def get_kpi(year: int) -> pd.DataFrame:
+    """Итоги по стране за год и изменение к предыдущему году."""
+    df = load_facts()
+    cfg = load_config()
+
+    current = df[(df.report_year == year) & df.is_total].set_index("indicator")["value"]
+    previous = df[(df.report_year == year - 1) & df.is_total].set_index("indicator")["value"]
+
+    rows = []
+    for indicator in cfg["kpi_order"]:
+        if indicator not in current.index:
+            continue
+        meta = cfg["indicators"][indicator]
+        value = float(current[indicator])
+        before = previous.get(indicator)
+
+        change = None
+        if before is not None and not pd.isna(before) and before != 0:
+            change = (value / float(before) - 1) * 100
+
+        rows.append(
+            {
+                "indicator": indicator,
+                "short": meta["short"],
+                "title": meta["title"],
+                "value": value,
+                "text": format_value(value, indicator),
+                "change_pct": change,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def get_regions(indicator: str, year: int, limit: int | None = None) -> pd.DataFrame:
+    """Значения по регионам за год, по убыванию. Строка итога исключена."""
+    df = load_facts()
+    selected = df[
+        (df.indicator == indicator) & (df.report_year == year) & (~df.is_total)
+    ]
+    selected = selected[["region", "value"]].sort_values("value", ascending=False)
+    if limit:
+        selected = selected.head(limit)
+    return selected.reset_index(drop=True)
+
+
+def get_last_update() -> str:
+    """Когда данные были разобраны в последний раз."""
+    return load_facts()["loaded_at"].max()

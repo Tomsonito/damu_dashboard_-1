@@ -1,6 +1,6 @@
 import dash 
 import dash_bootstrap_components as dbc
-from dash import html, dcc
+from dash import html
 
 app = dash.Dash (
     __name__,
@@ -8,10 +8,15 @@ app = dash.Dash (
     external_stylesheets=[dbc.themes.BOOTSTRAP]
 )
 
-server = app.server 
+server = app.server
 
 app.layout = html.Div([
-    html.H1('Тестим начало'),
+    dbc.NavbarSimple(
+        brand='Дашборд Даму',
+        color='dark',
+        dark=True,
+        fluid=True,
+    ),
     dash.page_container,
 ])
 
