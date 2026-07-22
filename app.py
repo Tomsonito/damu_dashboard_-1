@@ -21,4 +21,8 @@ app.layout = html.Div([
 ])
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # dev_tools_hot_reload=False — иначе Dash сам перезагружает страницу при любой
+    # правке файла, и все выбранные фильтры слетают на исходные. Понятные сообщения
+    # об ошибках от debug=True при этом остаются.
+    # Правки кода теперь видны после ручного обновления страницы (F5).
+    app.run(debug=True, dev_tools_hot_reload=False)

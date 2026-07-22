@@ -5,7 +5,8 @@
       "name": "damu-dashboard",
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["app.py"],
-      "port": 8050
+      "port": 8050,
+      "autoPort": true
     }
   ]
 }

@@ -45,9 +45,14 @@ class Ctx:
         return f"{self.meta['title']} — {self.year} год"
 
     def scaled(self, df: pd.DataFrame, column: str = "value") -> pd.DataFrame:
-        """Добавляет колонку `shown` — значение, приведённое к масштабу показа."""
+        """Готовит колонки для показа.
+
+        `shown` — значение в масштабе показа (для осей и размеров).
+        `текст`  — то же значение строкой с разрядами и единицей (для подписей).
+        """
         out = df.copy()
         out["shown"] = out[column] / self.meta["divisor"]
+        out["текст"] = [data.format_value(v, self.indicator) for v in out[column]]
         return out
 
 
@@ -87,9 +92,47 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False) -> 
         log=bool(log) and entry["log_ok"],
     )
     fig = entry["builder"](ctx)
-    fig.update_layout(margin=dict(l=10, r=120, t=60, b=40), plot_bgcolor="white")
+    fig.update_layout(
+        margin=dict(l=10, r=120, t=60, b=40),
+        plot_bgcolor="white",
+        # Русская типографика чисел: запятая для дробей, неразрывный пробел
+        # для разрядов. Иначе plotly пишет по-английски: 454,416.0
+        separators=", ",
+    )
     if fig.layout.height is None:  # вид мог задать свою высоту
         fig.update_layout(height=700)
+    return fig
+
+
+#: Ниже этого размера подписи внутри секторов читать невозможно
+MIN_LABEL_SIZE = 12
+
+
+def _hierarchy_style(fig: go.Figure, ctx: "Ctx") -> go.Figure:
+    """Общая настройка круговой, плиток, лучей и сосулек.
+
+    Главное здесь — `uniformtext`. Без него plotly ужимает подпись под размер
+    сектора, и у мелких регионов вроде Ұлытау шрифт падает до нечитаемых
+    четырёх пикселей. `minsize` ставит нижнюю границу, `mode="show"` требует
+    показать подпись даже там, где она впритык.
+
+    Подпись строится по `%{value}`, а не по своей колонке с текстом: у секторов
+    верхнего уровня (макрорегионов) своей строки в данных нет, они считаются
+    суммой детей — и подстановка из колонки дала бы у них «(?)».
+
+    Заодно чинится подсказка при наведении: по умолчанию plotly показывает
+    служебное «labels=… parent=… id=…», человеку это не нужно.
+    """
+    number = f"%{{value:,.{ctx.meta['decimals']}f}}"
+    unit = ctx.meta["display_unit"]
+    suffix = f" {unit}" if unit else ""
+
+    fig.update_traces(
+        texttemplate=f"%{{label}}<br>{number}{suffix}",
+        hovertemplate=f"<b>%{{label}}</b><br>{number}{suffix}<extra></extra>",
+        insidetextfont=dict(size=MIN_LABEL_SIZE + 1),
+    )
+    fig.update_layout(uniformtext=dict(minsize=MIN_LABEL_SIZE, mode="show"))
     return fig
 
 
@@ -188,17 +231,20 @@ def _funnel(ctx: Ctx) -> go.Figure:
 @chart("pie", "Круговая — доли")
 def _pie(ctx: Ctx) -> go.Figure:
     df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
-    fig = px.pie(df, names="region", values="shown", title=ctx.title)
-    fig.update_traces(textposition="inside", textinfo="percent+label")
-    return fig
+    fig = px.pie(
+        df, names="region", values="shown", title=ctx.title
+    )
+    fig.update_traces(textposition="inside")
+    return _hierarchy_style(fig, ctx)
 
 
 @chart("treemap", "Плитки — структура")
 def _treemap(ctx: Ctx) -> go.Figure:
     df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
-    fig = px.treemap(df, path=["region"], values="shown", title=ctx.title)
-    fig.update_traces(texttemplate="%{label}<br>%{value:,.1f}")
-    return fig
+    fig = px.treemap(
+        df, path=["region"], values="shown", title=ctx.title
+    )
+    return _hierarchy_style(fig, ctx)
 
 
 @chart("sunburst", "Солнечные лучи — по макрорегионам")
@@ -209,8 +255,8 @@ def _sunburst(ctx: Ctx) -> go.Figure:
     fig = px.sunburst(
         df, path=["macroregion", "region"], values="shown", title=ctx.title
     )
-    fig.update_traces(texttemplate="%{label}<br>%{value:,.1f}")
-    return fig
+    fig.update_layout(height=800)  # крупнее круг — крупнее и сектора мелких регионов
+    return _hierarchy_style(fig, ctx)
 
 
 @chart("icicle", "Сосульки — по макрорегионам")
@@ -221,8 +267,8 @@ def _icicle(ctx: Ctx) -> go.Figure:
     fig = px.icicle(
         df, path=["macroregion", "region"], values="shown", title=ctx.title
     )
-    fig.update_traces(texttemplate="%{label}<br>%{value:,.1f}")
-    return fig
+    fig.update_layout(height=800)
+    return _hierarchy_style(fig, ctx)
 
 
 # ─────────────────────────── Изменение во времени ───────────────────────────
