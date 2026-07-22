@@ -177,15 +177,46 @@ def _years(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("slope", "Наклон — кто вырос, кто просел")
+@chart("slope", "Наклон — рост в процентах")
 def _slope(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_region_dynamics(ctx.indicator, ctx.regions))
-    df["год"] = df["report_year"].astype(str)
-    fig = px.line(
-        df, x="год", y="shown", color="region", markers=True,
-        labels={"shown": ctx.unit, "год": ""},
-        title=f"{ctx.meta['title']} — изменение по годам",
+    """Каждый регион приведён к 100 в первом году.
+
+    В абсолютных величинах этот график бесполезен: у Алматы 450 тысяч, у Ұлытау 20 —
+    на общей оси все линии выглядят плоскими. Приведение к 100 делает наклоны
+    сопоставимыми, а в этом и весь смысл вида.
+    """
+    df = data.get_region_dynamics(ctx.indicator, ctx.regions)
+    if df.empty:
+        return _message("Нет данных")
+
+    base_year = int(df["report_year"].min())
+    base = (
+        df[df.report_year == base_year][["region", "value"]]
+        .rename(columns={"value": "base"})
     )
+    df = df.merge(base, on="region")
+    df = df[df["base"] > 0]
+    if df.empty:
+        return _message("Нет данных за базовый год")
+
+    df["index"] = df["value"] / df["base"] * 100
+    df["год"] = df["report_year"].astype(str)
+    df["значение"] = [data.format_value(v, ctx.indicator) for v in df["value"]]
+
+    fig = px.line(
+        df, x="год", y="index", color="region", markers=True,
+        hover_data={"значение": True, "index": ":.1f", "год": False},
+        labels={"index": f"% к {base_year} году", "год": ""},
+        title=f"{ctx.meta['title']} — рост относительно {base_year} года",
+    )
+    fig.add_hline(
+        y=100, line_dash="dot", line_color="gray",
+        annotation_text=f"уровень {base_year}", annotation_position="right",
+    )
+    # Категориальная ось: позиции 0 и 1. Расширяем диапазон, чтобы крайние
+    # подписи и точки не липли к краям и не обрезались.
+    n = df["год"].nunique()
+    fig.update_xaxes(type="category", range=[-0.3, n - 0.7])
     return fig
 
 
@@ -246,13 +277,25 @@ def _parallel(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("box", "Ящик — разброс между регионами")
+@chart("box", "Ящик — разброс по макрорегионам")
 def _box(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
-    fig = px.box(
-        df, y="shown", points="all", hover_name="region",
-        labels={"shown": ctx.unit}, title=f"{ctx.title} — разброс",
+    """Ящик на каждый макрорегион.
+
+    Один ящик на всю страну растягивался на всю ширину, а точки уезжали от него
+    влево — смотреть было не на что. Разбивка по макрорегионам даёт шесть ящиков
+    нормальной ширины и заодно отвечает на осмысленный вопрос: где области
+    похожи друг на друга, а где разброс большой.
+    """
+    df = ctx.scaled(
+        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
     )
+    fig = px.box(
+        df, x="macroregion", y="shown", points="all", hover_name="region",
+        labels={"shown": ctx.unit, "macroregion": ""},
+        title=f"{ctx.title} — разброс внутри макрорегионов",
+    )
+    # Точки поверх ящика, а не сбоку от него
+    fig.update_traces(pointpos=0, jitter=0.4, width=0.5)
     return fig
 
 
