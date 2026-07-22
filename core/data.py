@@ -91,16 +91,64 @@ def get_kpi(year: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def get_regions(indicator: str, year: int, limit: int | None = None) -> pd.DataFrame:
-    """Значения по регионам за год, по убыванию. Строка итога исключена."""
+def get_region_choices() -> list[str]:
+    """Регионы по алфавиту — для фильтра. Строка итога исключена."""
+    df = load_facts()
+    return sorted(df.loc[~df.is_total, "region"].unique().tolist())
+
+
+def get_regions(
+    indicator: str,
+    year: int,
+    limit: int | None = None,
+    regions: list[str] | None = None,
+) -> pd.DataFrame:
+    """Значения по регионам за год, по убыванию. Строка итога исключена.
+
+    regions — показать только перечисленные; None или пустой список = все.
+    """
     df = load_facts()
     selected = df[
         (df.indicator == indicator) & (df.report_year == year) & (~df.is_total)
     ]
+    if regions:
+        selected = selected[selected.region.isin(regions)]
     selected = selected[["region", "value"]].sort_values("value", ascending=False)
     if limit:
         selected = selected.head(limit)
     return selected.reset_index(drop=True)
+
+
+def get_region_dynamics(
+    indicator: str, regions: list[str] | None = None
+) -> pd.DataFrame:
+    """Показатель по регионам за все годы сразу — для диаграммы «сравнение лет»."""
+    df = load_facts()
+    selected = df[(df.indicator == indicator) & (~df.is_total)]
+    if regions:
+        selected = selected[selected.region.isin(regions)]
+    return (
+        selected[["region", "report_year", "value"]]
+        .sort_values(["report_year", "value"])
+        .reset_index(drop=True)
+    )
+
+
+def get_table(year: int, regions: list[str] | None = None) -> pd.DataFrame:
+    """Широкая таблица для экрана: регион в строке, показатели в колонках.
+
+    Единственное место, где длинная таблица разворачивается в широкую, —
+    и только для показа. В хранилище всё остаётся длинным.
+    """
+    df = load_facts()
+    selected = df[(df.report_year == year) & (~df.is_total)]
+    if regions:
+        selected = selected[selected.region.isin(regions)]
+    wide = selected.pivot_table(
+        index="region", columns="indicator", values="value", aggfunc="sum"
+    ).reset_index()
+    order = ["region"] + [k for k in load_config()["kpi_order"] if k in wide.columns]
+    return wide[order]
 
 
 def get_last_update() -> str:
