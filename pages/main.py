@@ -17,6 +17,7 @@ CHART_TYPES = [
     {"label": "Круговая — доли", "value": "pie"},
     {"label": "Плитки — структура", "value": "treemap"},
     {"label": "Сравнение лет", "value": "years"},
+    {"label": "Точки — связь показателей", "value": "matrix"},
 ]
 
 # Формат чисел в таблице: разряды через пробел, без дробной части
@@ -161,7 +162,19 @@ def render_chart(indicator, year, chart_type, regions):
     regions = regions or None  # пустой список из фильтра означает «все»
     unit = meta["display_unit"] or meta["unit"]
 
-    if chart_type == "years":
+    if chart_type == "matrix":
+        # Единственный вид, которому нужны все показатели сразу, а не один выбранный
+        df = data.get_table(year, regions)
+        dimensions = list(df.columns[1:])
+        fig = px.scatter_matrix(
+            df,
+            dimensions=dimensions,
+            hover_name="region",
+            labels={k: data.get_indicator_meta(k)["short"] for k in dimensions},
+            title=f"Связь показателей между собой — {year} год",
+        )
+        fig.update_traces(diagonal_visible=False, showupperhalf=False)
+    elif chart_type == "years":
         # Единственный вид, которому нужны все годы сразу — фильтр года не участвует
         df = data.get_region_dynamics(indicator, regions)
         df["shown"] = df["value"] / meta["divisor"]
