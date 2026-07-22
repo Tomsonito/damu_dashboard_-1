@@ -11,11 +11,11 @@
 
 ## Статус на 22.07.2026
 
-Этап 0 — в работе (2 из 5 пунктов готовы). Этапы 1–5 — не начаты.
+Этап 0 — в работе (3 из 5 пунктов готовы). Этапы 1–5 — не начаты.
 
-Создан скелет проекта: venv на Python 3.12.1, `requirements.txt` и все зависимости установлены, разложены папки и файлы-заглушки. **Все `.py`-файлы, `config.yaml`, `.env` и `.gitignore` пустые (0 байт)** — кода пока нет. Git-репозиторий не инициализирован.
+Создан скелет проекта: venv на Python 3.12.1, `requirements.txt` и все зависимости установлены, разложены папки и файлы-заглушки, git-репозиторий заведён (ветка `main`, первый коммит `7fab8c5`). **Все `.py`-файлы и `config.yaml` пустые (0 байт)** — кода пока нет.
 
-Ближайшие шаги: `git init` + наполнить `.gitignore`, создать `assets/fonts/` и `data/samples/`, написать `app.py` и заглушку `pages/main.py` — это закроет этап 0.
+Ближайшие шаги: создать `assets/fonts/` и `data/samples/`, написать `app.py` и заглушку `pages/main.py` — это закроет этап 0.
 
 ## Как читать этот файл
 
@@ -88,8 +88,8 @@ dashboard/
   - Проверка: в терминале `(venv)`, `python --version` ≥ 3.12 — `.venv` создан, Python 3.12.1
 - [~] Создать структуру папок: `core/`, `pages/`, `assets/fonts/`, `etl/`, `data/samples/`
   - Проверка: структура совпадает с разделом «Архитектура» — созданы `core/`, `pages/`, `etl/`, `assets/`, `data/`; **не хватает** `assets/fonts/` и `data/samples/`
-- [ ] `git init`, `.gitignore` (`.env`, `data/`, `venv/`, `__pycache__/`), первый коммит
-  - Проверка: `git status` чист; файл в `data/` не виден git — репозиторий не инициализирован, `.gitignore` пустой (0 байт)
+- [x] `git init`, `.gitignore` (`.env`, `data/`, `venv/`, `__pycache__/`), первый коммит
+  - Проверка: `git status` чист; файл в `data/` не виден git — ✅ ветка `main`, коммит `7fab8c5` (17 файлов), `git status` чист, тестовый файл в `data/` git не увидел
 - [x] Установить `dash`, `plotly`, `pandas`, `dash-bootstrap-components`, `pyyaml`, `python-dotenv`; зафиксировать в `requirements.txt`
   - Проверка: `pip install -r requirements.txt` на чистом окружении без ошибок — установлены все пакеты всех этапов (dash 4.4.1, plotly 6.9.0, pandas 3.0.3, duckdb 1.5.4, SQLAlchemy 2.0.51, flask-caching, gunicorn, ldap3, pip-audit). Версии в файле заданы как `>=`, а не зафиксированы через `pip freeze`
 - [ ] **Контрольная точка:** `app.py` (`Dash(__name__, use_pages=True)`) + `pages/main.py` с заглушкой
