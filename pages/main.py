@@ -3,22 +3,12 @@
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
-import plotly.express as px
 from dash import Input, Output, callback, dash_table, dcc, html
 from dash.dash_table.Format import Format, Group, Scheme
 
-from core import data
+from core import charts, data
 
 dash.register_page(__name__, path="/", name="Главная", title="Дашборд Даму")
-
-# Виды диаграмм. Добавить вид = строка здесь + ветка в render_chart.
-CHART_TYPES = [
-    {"label": "Полосы — рейтинг", "value": "bar"},
-    {"label": "Круговая — доли", "value": "pie"},
-    {"label": "Плитки — структура", "value": "treemap"},
-    {"label": "Сравнение лет", "value": "years"},
-    {"label": "Точки — связь показателей", "value": "matrix"},
-]
 
 # Формат чисел в таблице: разряды через пробел, без дробной части
 TABLE_NUM_FORMAT = Format(
@@ -91,11 +81,10 @@ def layout(**kwargs):
                     dbc.Col(
                         [
                             dbc.Label("Вид диаграммы"),
-                            dbc.RadioItems(
+                            dbc.Select(
                                 id="filter-chart-type",
-                                options=CHART_TYPES,
+                                options=charts.get_choices(),
                                 value="bar",
-                                inline=True,
                             ),
                         ],
                         md=5,
@@ -157,69 +146,8 @@ def render_kpi(year):
     Input("filter-regions", "value"),
 )
 def render_chart(indicator, year, chart_type, regions):
-    meta = data.get_indicator_meta(indicator)
-    year = int(year)
-    regions = regions or None  # пустой список из фильтра означает «все»
-    unit = meta["display_unit"] or meta["unit"]
-
-    if chart_type == "matrix":
-        # Единственный вид, которому нужны все показатели сразу, а не один выбранный
-        df = data.get_table(year, regions)
-        dimensions = list(df.columns[1:])
-        fig = px.scatter_matrix(
-            df,
-            dimensions=dimensions,
-            hover_name="region",
-            labels={k: data.get_indicator_meta(k)["short"] for k in dimensions},
-            title=f"Связь показателей между собой — {year} год",
-        )
-        fig.update_traces(diagonal_visible=False, showupperhalf=False)
-    elif chart_type == "years":
-        # Единственный вид, которому нужны все годы сразу — фильтр года не участвует
-        df = data.get_region_dynamics(indicator, regions)
-        df["shown"] = df["value"] / meta["divisor"]
-        df["год"] = df["report_year"].astype(str)
-        fig = px.bar(
-            df,
-            x="shown",
-            y="region",
-            color="год",
-            barmode="group",
-            orientation="h",
-            labels={"shown": unit, "region": ""},
-            title=f"{meta['title']} — сравнение лет",
-        )
-        fig.update_yaxes(categoryorder="max ascending")
-    else:
-        df = data.get_regions(indicator, year, regions=regions)
-        df["shown"] = df["value"] / meta["divisor"]
-        title = f"{meta['title']} — {year} год"
-
-        if chart_type == "pie":
-            fig = px.pie(df, names="region", values="shown", title=title)
-            fig.update_traces(textposition="inside", textinfo="percent+label")
-        elif chart_type == "treemap":
-            fig = px.treemap(df, path=["region"], values="shown", title=title)
-            fig.update_traces(texttemplate="%{label}<br>%{value:,.1f}")
-        else:  # bar
-            fig = px.bar(
-                df,
-                x="shown",
-                y="region",
-                orientation="h",
-                text=[data.format_value(v, indicator) for v in df["value"]],
-                labels={"shown": unit, "region": ""},
-                title=title,
-            )
-            fig.update_traces(textposition="outside", cliponaxis=False)
-            fig.update_yaxes(categoryorder="total ascending")
-
-    fig.update_layout(
-        height=700,
-        margin=dict(l=10, r=120, t=60, b=40),
-        plot_bgcolor="white",
-    )
-    return fig
+    """Вся отрисовка живёт в core/charts.py — здесь только передача выбора."""
+    return charts.build(chart_type, indicator, year, regions)
 
 
 @callback(

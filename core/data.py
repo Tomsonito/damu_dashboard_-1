@@ -134,6 +134,44 @@ def get_region_dynamics(
     )
 
 
+def get_macroregion_map() -> dict[str, str]:
+    """Область → макрорегион. Разворачивает списки из config.yaml в плоский словарь."""
+    groups = load_config().get("macroregions", {})
+    return {region: group for group, members in groups.items() for region in members}
+
+
+def get_regions_grouped(
+    indicator: str, year: int, regions: list[str] | None = None
+) -> pd.DataFrame:
+    """Регионы с колонкой макрорегиона — для иерархических диаграмм."""
+    df = get_regions(indicator, year, regions=regions)
+    mapping = get_macroregion_map()
+    df["macroregion"] = df["region"].map(mapping).fillna("Прочие")
+    return df
+
+
+def get_change(indicator: str, regions: list[str] | None = None) -> pd.DataFrame:
+    """Изменение показателя между двумя последними годами, по регионам.
+
+    Колонки: region, prev, current, delta. Отсортировано по убыванию delta.
+    """
+    df = load_facts()
+    selected = df[(df.indicator == indicator) & (~df.is_total)]
+    if regions:
+        selected = selected[selected.region.isin(regions)]
+
+    years = sorted(selected["report_year"].unique())
+    if len(years) < 2:
+        return pd.DataFrame(columns=["region", "prev", "current", "delta"])
+
+    prev = selected[selected.report_year == years[-2]].set_index("region")["value"]
+    current = selected[selected.report_year == years[-1]].set_index("region")["value"]
+
+    out = pd.DataFrame({"prev": prev, "current": current}).dropna().reset_index()
+    out["delta"] = out["current"] - out["prev"]
+    return out.sort_values("delta", ascending=False).reset_index(drop=True)
+
+
 def get_table(year: int, regions: list[str] | None = None) -> pd.DataFrame:
     """Широкая таблица для экрана: регион в строке, показатели в колонках.
 
