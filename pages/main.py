@@ -102,6 +102,14 @@ def layout(**kwargs):
                             multi=True,
                             placeholder="Все регионы — можно выбрать несколько",
                         ),
+                        dbc.Checkbox(
+                            id="filter-log",
+                            label="Логарифмическая шкала — сжимает разрыв между "
+                                  "крупными и мелкими регионами "
+                                  "(работает на «Точках» и «Ящике»)",
+                            value=False,
+                            className="mt-2 small text-muted",
+                        ),
                     ],
                 ),
                 className="mb-4",
@@ -144,10 +152,11 @@ def render_kpi(year):
     Input("filter-year", "value"),
     Input("filter-chart-type", "value"),
     Input("filter-regions", "value"),
+    Input("filter-log", "value"),
 )
-def render_chart(indicator, year, chart_type, regions):
+def render_chart(indicator, year, chart_type, regions, log):
     """Вся отрисовка живёт в core/charts.py — здесь только передача выбора."""
-    return charts.build(chart_type, indicator, year, regions)
+    return charts.build(chart_type, indicator, year, regions, log)
 
 
 @callback(

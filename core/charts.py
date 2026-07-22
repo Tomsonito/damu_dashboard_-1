@@ -30,6 +30,7 @@ class Ctx:
     indicator: str
     year: int
     regions: list[str] | None
+    log: bool = False
 
     @property
     def meta(self) -> dict:
@@ -50,11 +51,17 @@ class Ctx:
         return out
 
 
-def chart(value: str, label: str):
-    """Регистрирует функцию как вид диаграммы."""
+def chart(value: str, label: str, log_ok: bool = False):
+    """Регистрирует функцию как вид диаграммы.
+
+    log_ok=True — вид умеет логарифмическую шкалу. Отмечен он только там,
+    где логарифм честен: на точках, ящиках и подобном. На столбцах и площадях
+    логарифм врёт, потому что длина столбца обязана быть пропорциональна
+    значению и отсчитываться от нуля.
+    """
 
     def register(fn):
-        _REGISTRY[value] = {"label": label, "builder": fn}
+        _REGISTRY[value] = {"label": label, "builder": fn, "log_ok": log_ok}
         return fn
 
     return register
@@ -65,16 +72,24 @@ def get_choices() -> list[dict]:
     return [{"label": item["label"], "value": key} for key, item in _REGISTRY.items()]
 
 
-def build(chart_type: str, indicator: str, year, regions) -> go.Figure:
+def supports_log(chart_type: str) -> bool:
+    entry = _REGISTRY.get(chart_type)
+    return bool(entry and entry["log_ok"])
+
+
+def build(chart_type: str, indicator: str, year, regions, log: bool = False) -> go.Figure:
     """Собирает выбранную диаграмму и навешивает общее оформление."""
-    ctx = Ctx(indicator=indicator, year=int(year), regions=regions or None)
     entry = _REGISTRY.get(chart_type) or _REGISTRY["bar"]
-    fig = entry["builder"](ctx)
-    fig.update_layout(
-        height=700,
-        margin=dict(l=10, r=120, t=60, b=40),
-        plot_bgcolor="white",
+    ctx = Ctx(
+        indicator=indicator,
+        year=int(year),
+        regions=regions or None,
+        log=bool(log) and entry["log_ok"],
     )
+    fig = entry["builder"](ctx)
+    fig.update_layout(margin=dict(l=10, r=120, t=60, b=40), plot_bgcolor="white")
+    if fig.layout.height is None:  # вид мог задать свою высоту
+        fig.update_layout(height=700)
     return fig
 
 
@@ -103,6 +118,56 @@ def _bar(ctx: Ctx) -> go.Figure:
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_yaxes(categoryorder="total ascending")
+    return fig
+
+
+@chart("dot", "Точки — рейтинг (умеет логарифм)", log_ok=True)
+def _dot(ctx: Ctx) -> go.Figure:
+    """То же, что полосы, но точкой.
+
+    Точка не подразумевает отсчёт от нуля — значит на ней логарифмическая шкала
+    честна. Это главный приём против «разница огромная»: на логарифме Ұлытау
+    с 19 тысячами и Алматы с 454 тысячами видны одинаково хорошо.
+    """
+    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    fig = px.scatter(
+        df, x="shown", y="region",
+        text=[data.format_value(v, ctx.indicator) for v in df["value"]],
+        labels={"shown": ctx.unit, "region": ""},
+        title=ctx.title + (" — логарифмическая шкала" if ctx.log else ""),
+    )
+    fig.update_traces(marker=dict(size=11), textposition="middle right")
+    fig.update_yaxes(categoryorder="total ascending")
+    fig.update_xaxes(showgrid=True, gridcolor="#eee")
+    if ctx.log:
+        fig.update_xaxes(type="log")
+    return fig
+
+
+@chart("facets", "Панели по макрорегионам — свой масштаб у каждой")
+def _facets(ctx: Ctx) -> go.Figure:
+    """Отдельная панель на макрорегион, оси независимы.
+
+    Второй приём против разброса: не втискивать всё в одну шкалу, а сравнивать
+    похожее с похожим. Ұлытау меряется с Карагандинской в своей панели,
+    а не теряется рядом с Алматы.
+    """
+    df = ctx.scaled(
+        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+    )
+    fig = px.bar(
+        df, x="shown", y="region", orientation="h",
+        facet_col="macroregion", facet_col_wrap=3,
+        text=[data.format_value(v, ctx.indicator) for v in df["value"]],
+        labels={"shown": ctx.unit, "region": ""},
+        title=f"{ctx.title} — по макрорегионам, у каждого своя шкала",
+    )
+    # Вот ради этой строки всё и затевалось: оси не общие
+    fig.update_xaxes(matches=None, showticklabels=True)
+    fig.update_yaxes(matches=None, showticklabels=True)
+    fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(height=900)
     return fig
 
 
@@ -277,7 +342,7 @@ def _parallel(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("box", "Ящик — разброс по макрорегионам")
+@chart("box", "Ящик — разброс по макрорегионам", log_ok=True)
 def _box(ctx: Ctx) -> go.Figure:
     """Ящик на каждый макрорегион.
 
@@ -296,6 +361,8 @@ def _box(ctx: Ctx) -> go.Figure:
     )
     # Точки поверх ящика, а не сбоку от него
     fig.update_traces(pointpos=0, jitter=0.4, width=0.5)
+    if ctx.log:
+        fig.update_yaxes(type="log")
     return fig
 
 
