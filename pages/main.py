@@ -3,7 +3,7 @@
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
-from dash import Input, Output, callback, dash_table, dcc, html
+from dash import Input, Output, State, callback, dash_table, dcc, html, no_update
 from dash.dash_table.Format import Format, Group, Scheme
 
 from core import charts, data
@@ -47,13 +47,19 @@ def layout(**kwargs):
         indicators = data.get_indicator_choices()
         regions = data.get_region_choices()
         updated = data.get_last_update()
+        version = data.get_data_version()
     except FileNotFoundError as e:
         return dbc.Alert(str(e), color="warning", className="m-4")
 
     return dbc.Container(
         [
             html.H2("Показатели МСП по регионам", className="mt-4"),
-            html.P(f"данные разобраны {updated}", className="text-muted small"),
+            html.P(f"данные обновлены в {updated}", id="data-updated",
+                   className="text-muted small"),
+            # Невидимая пара, на которой держится автообновление:
+            # таймер раз в 30 сек и запомненный номер версии данных
+            dcc.Interval(id="data-poll", interval=30 * 1000),
+            dcc.Store(id="data-version", data=version),
             dbc.Row(
                 [
                     dbc.Col(
@@ -140,8 +146,33 @@ def layout(**kwargs):
     )
 
 
-@callback(Output("kpi-row", "children"), Input("filter-year", "value"))
-def render_kpi(year):
+@callback(
+    Output("data-version", "data"),
+    Output("data-updated", "children"),
+    Input("data-poll", "n_intervals"),
+    State("data-version", "data"),
+)
+def poll_version(_, known_version):
+    """Раз в 30 сек сверяет версию хранилища с той, что помнит страница.
+
+    Совпала — `no_update`, и ничего не перерисовывается: холостая проверка
+    стоит одну строку из DuckDB. Выросла — записываем новый номер в Store,
+    и все коллбэки с `Input("data-version", ...)` перерисуются сами.
+    Фильтры при этом не трогаются: обновляются только выходы коллбэков,
+    а состояние фильтров живёт в браузере и переживает перерисовку.
+    """
+    fresh = data.get_data_version()
+    if known_version is not None and int(known_version) == fresh:
+        return no_update, no_update
+    return fresh, f"данные обновлены в {data.get_last_update()}"
+
+
+@callback(
+    Output("kpi-row", "children"),
+    Input("filter-year", "value"),
+    Input("data-version", "data"),
+)
+def render_kpi(year, _version):
     kpi = data.get_kpi(int(year))
     return [dbc.Col(kpi_card(row), md=3) for _, row in kpi.iterrows()]
 
@@ -153,8 +184,9 @@ def render_kpi(year):
     Input("filter-chart-type", "value"),
     Input("filter-regions", "value"),
     Input("filter-log", "value"),
+    Input("data-version", "data"),
 )
-def render_chart(indicator, year, chart_type, regions, log):
+def render_chart(indicator, year, chart_type, regions, log, _version):
     """Вся отрисовка живёт в core/charts.py — здесь только передача выбора."""
     return charts.build(chart_type, indicator, year, regions, log)
 
@@ -164,8 +196,9 @@ def render_chart(indicator, year, chart_type, regions, log):
     Output("regions-table", "columns"),
     Input("filter-year", "value"),
     Input("filter-regions", "value"),
+    Input("data-version", "data"),
 )
-def render_table(year, regions):
+def render_table(year, regions, _version):
     df = data.get_table(int(year), regions or None)
 
     columns = [{"name": "Регион", "id": "region"}]

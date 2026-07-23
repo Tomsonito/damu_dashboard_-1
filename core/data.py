@@ -4,40 +4,95 @@
 Благодаря этому смена источника (Excel → БД) не потребует правок в pages/.
 """
 
+import time
 from pathlib import Path
 
+import duckdb
 import pandas as pd
 import yaml
 
-FACTS_PATH = Path("data/facts.csv")
+from core.cache import cache
+
+DUCKDB_PATH = Path("data/analytics.duckdb")
 CONFIG_PATH = Path("config.yaml")
 
 
 def load_config() -> dict:
+    """Реестр показателей и настройки из config.yaml.
+
+    Кэшируется по времени правки файла: за одну отрисовку конфиг нужен
+    десятки раз, и до кэша каждое обращение перечитывало диск — на это
+    уходила большая часть времени отклика. Правка файла меняет mtime,
+    а значит и ключ кэша — свежий конфиг подхватится сам.
+    """
+    return _config_cached(CONFIG_PATH.stat().st_mtime)
+
+
+@cache.memoize()
+def _config_cached(mtime: float) -> dict:
+    # mtime не используется в теле — он часть ключа кэша
     with CONFIG_PATH.open(encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def load_facts() -> pd.DataFrame:
-    """Читает таблицу фактов.
+def _query_storage(query: str) -> pd.DataFrame:
+    """Чтение из DuckDB — единственное место, открывающее хранилище.
 
-    **Это единственная точка, знающая формат источника.** Excel/CSV сейчас —
-    временная затычка, пока нет доступа к боевой БД. При переезде на БД
-    меняется только тело этой функции: она должна вернуть DataFrame с теми же
-    колонками. Страницы, диаграммы и реестр показателей не трогаются.
-
-    Намеренно читаем на каждый вызов, а не один раз при импорте модуля:
-    тогда после перегона ETL страница показывает свежие цифры без перезапуска
-    приложения. Файл маленький (сотни строк), это ничего не стоит.
+    Пока etl.run переписывает файл, тот заперт на запись — доли секунды
+    раз в несколько минут. Попав в это окно, не падаем сразу, а пробуем
+    ещё несколько раз.
     """
-    parts = sorted(FACTS_PATH.parent.glob("facts*.csv"))
-    if not parts:
+    if not DUCKDB_PATH.exists():
         raise FileNotFoundError(
-            f"Нет файлов фактов в {FACTS_PATH.parent}. Сначала запустите:\n"
-            "  python -m etl.parse_msp    (выгрузка Excel)\n"
-            "  python -m etl.load_budget  (данные из БД)"
+            f"Нет хранилища {DUCKDB_PATH}. Сначала запустите:\n"
+            "  python -m etl.run   (БД -> DuckDB)"
         )
-    df = pd.concat([pd.read_csv(p) for p in parts], ignore_index=True)
+    last_error: Exception | None = None
+    for _ in range(5):
+        try:
+            con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+            try:
+                return con.execute(query).df()
+            finally:
+                con.close()
+        except duckdb.IOException as e:
+            last_error = e
+            time.sleep(0.2)
+    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше секунды: {last_error}")
+
+
+def get_data_version() -> int:
+    """Номер последней загрузки ETL — одна строка из `versions`, дёшево.
+
+    На этом номере держится «живость» сайта: он входит в ключ кэша фактов,
+    а открытая страница раз в 30 сек сверяет его со своим и перерисовывается,
+    когда номер вырос. Намеренно НЕ кэшируется — это и есть проба свежести.
+    """
+    df = _query_storage("SELECT coalesce(max(version), 0) AS v FROM versions")
+    return int(df.iloc[0]["v"])
+
+
+def load_facts() -> pd.DataFrame:
+    """Читает таблицу фактов из хранилища DuckDB.
+
+    **Это единственная точка, знающая формат источника.** До этапа 3 здесь
+    читались CSV-файлы — временная затычка. Теперь источник — таблица `facts`
+    в data/analytics.duckdb, которую ведёт `python -m etl.run`. Форма таблицы
+    не изменилась ни на колонку, поэтому страницы, диаграммы и реестр
+    показателей правок не потребовали.
+
+    Кэшируется по версии данных: пока ETL не записал новую версию, повторные
+    вызовы получают копию из памяти, а не ходят на диск. Записал — номер
+    версии вырос, ключ кэша сменился, факты перечитались. Поэтому свежесть
+    не страдает: кэш не «протухает», а привязан к данным.
+    """
+    return _facts_cached(get_data_version())
+
+
+@cache.memoize()
+def _facts_cached(version: int) -> pd.DataFrame:
+    # version не используется в теле — он часть ключа кэша
+    df = _query_storage("SELECT * FROM facts")
     df["is_total"] = df["is_total"].astype(bool)
     return df
 
@@ -269,5 +324,6 @@ def get_table(year: int, regions: list[str] | None = None) -> pd.DataFrame:
 
 
 def get_last_update() -> str:
-    """Когда данные были разобраны в последний раз."""
-    return load_facts()["loaded_at"].max()
+    """Когда хранилище обновлялось в последний раз — «ЧЧ:ММ» для подписи."""
+    ts = _query_storage("SELECT max(run_at) AS t FROM versions").iloc[0]["t"]
+    return "—" if pd.isna(ts) else pd.to_datetime(ts).strftime("%H:%M")

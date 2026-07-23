@@ -1,6 +1,8 @@
-import dash 
+import dash
 import dash_bootstrap_components as dbc
 from dash import html
+
+from core.cache import cache
 
 app = dash.Dash (
     __name__,
@@ -9,6 +11,12 @@ app = dash.Dash (
 )
 
 server = app.server
+
+# Подключить кэш к Flask-приложению сайта. Без этого flask-caching внутри
+# запроса не находит кэш и МОЛЧА работает без него: страница живёт, но
+# каждый клик заново читает диск. Проверять — по логу сервера: там были бы
+# строки «Exception possibly due to cache backend».
+cache.init_app(server)
 
 app.layout = html.Div([
     dbc.NavbarSimple(
