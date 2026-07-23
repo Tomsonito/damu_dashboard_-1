@@ -15,6 +15,11 @@ TABLE_NUM_FORMAT = Format(
     group=Group.yes, groups=3, group_delimiter=" ", precision=0, scheme=Scheme.fixed
 )
 
+# Подпись галки логарифма. Перечня видов в ней намеренно нет: кто умеет
+# логарифм, знает реестр диаграмм, и подпись собирается из него в toggle_log.
+LOG_LABEL = ("Логарифмическая шкала — сжимает разрыв между крупными "
+             "и мелкими регионами")
+
 
 def kpi_card(row: pd.Series) -> dbc.Card:
     """Карточка одного показателя: значение и изменение к прошлому году."""
@@ -113,9 +118,7 @@ def layout(**kwargs):
                         ),
                         dbc.Checkbox(
                             id="filter-log",
-                            label="Логарифмическая шкала — сжимает разрыв между "
-                                  "крупными и мелкими регионами "
-                                  "(работает на «Точках» и «Ящике»)",
+                            label=LOG_LABEL,
                             value=False,
                             className="mt-2 small text-muted",
                         ),
@@ -168,6 +171,28 @@ def poll_version(_, known_version):
     if known_version is not None and int(known_version) == fresh:
         return no_update, no_update
     return fresh, f"данные обновлены в {data.get_last_update()}"
+
+
+@callback(
+    Output("filter-log", "disabled"),
+    Output("filter-log", "label"),
+    Input("filter-chart-type", "value"),
+)
+def toggle_log(chart_type):
+    """Гасит галку логарифма на видах, которые его не умеют.
+
+    Логарифм честен только там, где длина не обещает отсчёта от нуля —
+    на точках и ящике. На столбцах он врёт, поэтому виды помечены в реестре
+    флагом `log_ok`, и `build()` игнорирует галку на остальных.
+
+    Раньше это было видно только по подписи, где виды перечислялись словами:
+    галка нажималась на всех 17 видах, а действовала на двух. Теперь и
+    доступность, и текст берутся из реестра — добавите вид с `log_ok=True`,
+    и он подхватится сам, без правки этой страницы.
+    """
+    if charts.supports_log(chart_type):
+        return False, LOG_LABEL
+    return True, f"{LOG_LABEL} (этот вид её не поддерживает)"
 
 
 @callback(
