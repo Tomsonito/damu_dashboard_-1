@@ -552,14 +552,38 @@ def _map(ctx: Ctx) -> go.Figure:
         geojson = json.load(f)
 
     df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    if df.empty:
+        return _message(NO_DATA)
+
+    # Названия областей в файле границ и в данных совпадают не все:
+    # у нас «Абай» и «г. Шымкент», в файле «Абайская» и «Чимкент».
+    # Расхождения перечислены в config.yaml -> geo.region_map.
+    renames = geo.get("region_map") or {}
+    df["geo_name"] = df["region"].map(lambda r: renames.get(r, r))
+
+    key = geo.get("feature_key", "properties.ADM1_RU")
+    prop = key.split(".")[-1]
+    known = {f["properties"].get(prop) for f in geojson.get("features", [])}
+    missing = sorted(set(df["geo_name"]) - known)
+    if missing:
+        # Молча пропавший регион хуже явной ошибки: на карте он просто
+        # не закрасится, и никто не заметит.
+        return _message(
+            "Эти области не найдены в файле границ:<br><b>"
+            + ", ".join(missing)
+            + "</b><br>Допишите соответствие в config.yaml → geo.region_map"
+        )
+
     fig = px.choropleth(
         df,
         geojson=geojson,
-        locations="region",
-        featureidkey=geo.get("feature_key", "properties.name"),
+        locations="geo_name",
+        featureidkey=key,
         color="shown",
         color_continuous_scale="Blues",
-        labels={"shown": ctx.unit},
+        hover_name="region",
+        hover_data={"geo_name": False, "shown": False, "текст": True},
+        labels={"shown": ctx.unit, "текст": ctx.meta["short"]},
         title=ctx.title,
     )
     fig.update_geos(fitbounds="locations", visible=False)
