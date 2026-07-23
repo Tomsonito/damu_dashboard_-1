@@ -10,7 +10,14 @@
    суммы с базой. Не сошлось — откат: в хранилище остаётся прошлая
    версия, а не кривая новая.
 
-Каждый прогон — и холостой, и полный — пишется в лог data/etl.log.
+С этапа 4 свежая загрузка НЕ показывается сайту сразу: она ложится
+снимком под новым номером версии со статусом «ждёт публикации», и до
+своих 9:00 её можно забраковать (core/publish.py). Сайт показывает
+версию со статусом «опубликована». Исключение — самая первая загрузка
+в жизни хранилища: ей нечего ждать, она публикуется сразу.
+
+Каждый прогон — и холостой, и полный — пишется в лог data/etl.log
+и заодно публикует всё, чей срок уже наступил.
 
 Запуск из корня проекта:   python -m etl.run
 Пересчёт без проверки:     python -m etl.run --force
@@ -26,7 +33,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from core import db
+from core import db, publish
 from etl import load_budget
 
 DB_PATH = Path("data/analytics.duckdb")
@@ -62,18 +69,6 @@ def setup_logging() -> None:
     log.setLevel(logging.INFO)
 
 
-def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
-    con.execute(
-        """CREATE TABLE IF NOT EXISTS versions (
-               version      INTEGER   NOT NULL,  -- порядковый номер загрузки
-               run_at       TIMESTAMP NOT NULL,
-               fingerprint  VARCHAR   NOT NULL,  -- отпечаток источника на момент загрузки
-               facts_rows   BIGINT    NOT NULL,
-               duration_sec DOUBLE    NOT NULL
-           )"""
-    )
-
-
 def source_fingerprint() -> str:
     row = db.read_sql(FINGERPRINT_QUERY).iloc[0]
     return f"{int(row.tables)} таблиц / {int(row.live_rows)} строк / {int(row.changes)} изменений"
@@ -84,13 +79,16 @@ def last_fingerprint(con: duckdb.DuckDBPyConnection) -> str | None:
     return row[0] if row else None
 
 
-def verify(con: duckdb.DuckDBPyConnection, tables: list[str]) -> list[str]:
+def verify(con: duckdb.DuckDBPyConnection, tables: list[str], version: int) -> list[str]:
     """Сверка записанного с источником. Возвращает список расхождений.
 
     Суммы по каждому показателю считаются в PostgreSQL заново — но другим
     запросом: напрямую по исходным колонкам, без разворота в длинную форму.
     Если разборщик где-то потерял или задвоил строки, суммы разойдутся.
     Сверка тем же запросом, что и загрузка, не поймала бы ничего.
+
+    Сверяется только свежий снимок (`version`): рядом в той же таблице
+    лежат снимки прошлых версий, и суммироваться с новым они не должны.
     """
     union = " UNION ALL ".join(f'SELECT * FROM public."{t}"' for t in tables)
     parts = [
@@ -100,7 +98,8 @@ def verify(con: duckdb.DuckDBPyConnection, tables: list[str]) -> list[str]:
     expected = db.read_sql(f"WITH all_months AS ({union})\n" + "\nUNION ALL\n".join(parts))
 
     actual = con.execute(
-        "SELECT indicator, sum(value) AS value FROM facts GROUP BY indicator"
+        "SELECT indicator, sum(value) AS value FROM facts WHERE version = ? GROUP BY indicator",
+        [version],
     ).df()
 
     # База — слева: ловим показатели, которые потерялись или съехали.
@@ -117,11 +116,38 @@ def verify(con: duckdb.DuckDBPyConnection, tables: list[str]) -> list[str]:
     return problems
 
 
+def publish_pending() -> None:
+    """Публикует всё, чей срок наступил. Ошибка публикации прогон не валит:
+    данные уже загружены, а публикацию повторит и сайт, и следующий прогон."""
+    try:
+        result = publish.publish_due()
+    except Exception:
+        log.exception("публикация дозревшего не прошла")
+        return
+    if result:
+        log.info("опубликовано: %s", result)
+
+
 def run(force: bool) -> None:
     started = time.perf_counter()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(DB_PATH))
-    ensure_schema(con)
+    # Закрыть соединение обязательно, а не «само закроется с процессом»:
+    # открытое на запись, оно держит файл запертым — сайт всё это время
+    # не может ни читать, ни публиковать
+    try:
+        _run(con, force, started)
+    finally:
+        con.close()
+    # Шлюз 9:00 — строго ПОСЛЕ закрытия соединения: publish_due открывает
+    # своё, а на чужом, только что принявшем большую вставку, ловилась
+    # внутренняя ошибка DuckDB (подробности — в докстринге publish_due)
+    publish_pending()
+
+
+def _run(con: duckdb.DuckDBPyConnection, force: bool, started: float) -> None:
+    # Схема и миграция старого хранилища — у core/publish.py, он хозяин схемы
+    publish.migrate(con)
 
     fingerprint = source_fingerprint()
     previous = last_fingerprint(con)
@@ -130,7 +156,7 @@ def run(force: bool) -> None:
             "источник не менялся (%s) — пересчёт пропущен, %.1f сек",
             fingerprint, time.perf_counter() - started,
         )
-        return
+        return  # но шлюз 9:00 всё равно проверится — в run(), после закрытия
 
     if force and fingerprint == previous:
         reason = "запуск с --force"
@@ -143,23 +169,44 @@ def run(force: bool) -> None:
     tables = load_budget.month_tables()
     df = load_budget.load()
 
-    # Факты и строка версии — одной транзакцией: если сверка не сошлась
-    # или запись оборвалась, откат вернёт прошлое состояние целиком.
-    # Момента «данные уже затёрты, а версии ещё нет» не существует.
+    # Снимок фактов и строка версии — одной транзакцией: если сверка не
+    # сошлась или запись оборвалась, откат вернёт прошлое состояние целиком.
+    # Момента «снимок уже лежит, а версии ещё нет» не существует.
     con.execute("BEGIN")
     try:
+        version = con.execute("SELECT coalesce(max(version), 0) + 1 FROM versions").fetchone()[0]
+        df["version"] = version
         con.register("fresh_facts", df)
-        con.execute("CREATE OR REPLACE TABLE facts AS SELECT * FROM fresh_facts")
 
-        problems = verify(con, tables)
+        # Снимки копятся рядом со старыми, а не затирают их: сайт продолжает
+        # показывать опубликованную версию, пока свежая ждёт своих 9:00
+        facts_exists = con.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'facts'"
+        ).fetchone()[0]
+        if facts_exists:
+            con.execute("INSERT INTO facts BY NAME SELECT * FROM fresh_facts")
+        else:
+            con.execute("CREATE TABLE facts AS SELECT * FROM fresh_facts")
+
+        problems = verify(con, tables, version)
         if problems:
             raise RuntimeError("сверка с БД не сошлась: " + "; ".join(problems))
 
-        version = con.execute("SELECT coalesce(max(version), 0) + 1 FROM versions").fetchone()[0]
+        # Первой версии в жизни хранилища ждать нечего — до неё сайту
+        # было нечего показывать. Остальные ждут своих 9:00.
+        bootstrap = con.execute(
+            "SELECT count(*) FROM versions WHERE status = ?", [publish.VER_PUBLISHED]
+        ).fetchone()[0] == 0
+        status = publish.VER_PUBLISHED if bootstrap else publish.VER_PENDING
+
         duration = time.perf_counter() - started
+        now = datetime.now()
         con.execute(
-            "INSERT INTO versions VALUES (?, ?, ?, ?, ?)",
-            [version, datetime.now(), fingerprint, len(df), round(duration, 1)],
+            """INSERT INTO versions
+               (version, run_at, fingerprint, facts_rows, duration_sec, status, published_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [version, now, fingerprint, len(df), round(duration, 1),
+             status, now if bootstrap else None],
         )
         con.execute("COMMIT")
     except Exception:
@@ -167,8 +214,10 @@ def run(force: bool) -> None:
         raise
 
     log.info(
-        "версия %d: %s строк, сверка по %d показателям сошлась, %.1f сек",
+        "версия %d: %s строк, сверка по %d показателям сошлась, %.1f сек — %s",
         version, f"{len(df):,}".replace(",", " "), len(load_budget.INDICATORS), duration,
+        "опубликована сразу (первая)" if bootstrap
+        else f"ждёт публикации {publish.describe_publish_time(publish.next_publish_time(now))}",
     )
 
 

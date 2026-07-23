@@ -1,12 +1,16 @@
 """Главный экран: показатели МСП по регионам."""
 
+import logging
+
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import Input, Output, State, callback, dash_table, dcc, html, no_update
 from dash.dash_table.Format import Format, Group, Scheme
 
-from core import charts, data
+from core import auth, charts, data, publish
+
+log = logging.getLogger(__name__)
 
 dash.register_page(__name__, path="/", name="Главная", title="Дашборд Даму")
 
@@ -48,6 +52,45 @@ def kpi_card(row: pd.Series) -> dbc.Card:
     )
 
 
+def publish_banner():
+    """Плашка «что ждёт публикации в 9:00» — видит только админ.
+
+    Так решено 23.07.2026: без неё окно на вето существовало бы только
+    на бумаге. Зрителям плашка не показывается — им незачем знать
+    про кухню публикации. Кто админ — спрашиваем у core/auth.py
+    (до этапа 5 там заглушка: в разработке админ каждый).
+    """
+    if not auth.is_admin():
+        return None
+    try:
+        pending = publish.pending_summary()
+    except Exception:
+        return None  # хранилища ещё нет — страница и так покажет подсказку
+
+    parts = []
+    if pending["version"] is not None:
+        when = publish.describe_publish_time(
+            publish.next_publish_time(pending["version_run_at"])
+        )
+        parts.append(
+            f"версия данных {pending['version']} "
+            f"(разобрана {pending['version_run_at']:%H:%M}) — выйдет {when}"
+        )
+    if pending["drafts"]:
+        parts.append(f"черновиков плана: {pending['drafts']}")
+    if not parts:
+        return None
+
+    return dbc.Alert(
+        [
+            html.Span("Ждёт публикации: " + "; ".join(parts) + ". "),
+            dcc.Link("Отменить или забраковать — на странице «Ввод плана»", href="/plan"),
+        ],
+        color="info",
+        className="py-2 small mb-3",
+    )
+
+
 def layout(**kwargs):
     """Собирается на каждое открытие страницы — значит фильтры всегда свежие."""
     try:
@@ -55,7 +98,7 @@ def layout(**kwargs):
         indicators = data.get_indicator_choices()
         regions = data.get_region_choices()
         updated = data.get_last_update()
-        version = data.get_data_version()
+        version = data.get_display_version()
     except FileNotFoundError as e:
         return dbc.Alert(str(e), color="warning", className="m-4")
 
@@ -64,8 +107,11 @@ def layout(**kwargs):
             html.H2("Показатели МСП по регионам", className="mt-4"),
             html.P(f"данные обновлены в {updated}", id="data-updated",
                    className="text-muted small"),
-            # Невидимая пара, на которой держится автообновление:
-            # таймер раз в 30 сек и запомненный номер версии данных
+            # Плашку заполняет poll_version: она видна только админу
+            # и живёт тем же 30-секундным ритмом, что и проверка версии
+            html.Div(publish_banner(), id="publish-banner"),
+            # Невидимая пара, на которой держится автообновление: таймер
+            # раз в 30 сек и запомненная display-версия (факты + план)
             dcc.Interval(id="data-poll", interval=30 * 1000),
             dcc.Store(id="data-version", data=version),
             dbc.Row(
@@ -155,22 +201,40 @@ def layout(**kwargs):
 @callback(
     Output("data-version", "data"),
     Output("data-updated", "children"),
+    Output("publish-banner", "children"),
     Input("data-poll", "n_intervals"),
     State("data-version", "data"),
 )
 def poll_version(_, known_version):
-    """Раз в 30 сек сверяет версию хранилища с той, что помнит страница.
+    """Раз в 30 сек: публикует дозревшее и сверяет версию с той, что помнит страница.
 
-    Совпала — `no_update`, и ничего не перерисовывается: холостая проверка
-    стоит одну строку из DuckDB. Выросла — записываем новый номер в Store,
-    и все коллбэки с `Input("data-version", ...)` перерисуются сами.
-    Фильтры при этом не трогаются: обновляются только выходы коллбэков,
-    а состояние фильтров живёт в браузере и переживает перерисовку.
+    Сначала шлюз: publish_due() выпускает всё, чей срок наступил, — так
+    ровно в первый опрос после 9:00 (или после подъёма сервера) публикация
+    и происходит, отдельного планировщика нет. В холостую это две дешёвые
+    строки чтения. До этапа 5 шлюз дёргается только отсюда и из прогонов
+    etl.run; на этапе 5 добавится cron — но и эта проверка не помешает.
+
+    Дальше как раньше: display-версия совпала — `no_update`, ничего не
+    перерисовывается. Изменилась (опубликованы данные или план) — новый
+    номер уходит в Store, и все коллбэки с `Input("data-version", ...)`
+    перерисуются сами. Фильтры при этом не трогаются: обновляются только
+    выходы коллбэков, а состояние фильтров живёт в браузере.
+
+    Плашка админа обновляется каждый опрос: черновики и pending-версии
+    появляются без смены опубликованной версии, no_update их бы прозевал.
     """
-    fresh = data.get_data_version()
-    if known_version is not None and int(known_version) == fresh:
-        return no_update, no_update
-    return fresh, f"данные обновлены в {data.get_last_update()}"
+    try:
+        published = publish.publish_due()
+        if published:
+            log.info("опубликовано: %s", published)
+    except Exception:
+        log.exception("публикация дозревшего не прошла — попробуем через 30 сек")
+
+    fresh = data.get_display_version()
+    banner = publish_banner()
+    if known_version is not None and str(known_version) == fresh:
+        return no_update, no_update, banner
+    return fresh, f"данные обновлены в {data.get_last_update()}", banner
 
 
 @callback(

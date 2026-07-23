@@ -5,6 +5,7 @@
 """
 
 import time
+from datetime import datetime
 from pathlib import Path
 
 import duckdb
@@ -36,11 +37,16 @@ def _config_cached(mtime: float) -> dict:
 
 
 def _query_storage(query: str) -> pd.DataFrame:
-    """Чтение из DuckDB — единственное место, открывающее хранилище.
+    """Чтение из DuckDB — единственное место, открывающее хранилище на чтение.
 
     Пока etl.run переписывает файл, тот заперт на запись — доли секунды
     раз в несколько минут. Попав в это окно, не падаем сразу, а пробуем
     ещё несколько раз.
+
+    ConnectionException — другая помеха с тем же лечением: в НАШЕМ процессе
+    другой поток сайта прямо сейчас держит соединение на запись (публикует
+    в 9:00 или сохраняет черновик плана — core/publish.py), а DuckDB не
+    смешивает чтение и запись в одном процессе. Запись мгновенная — ждём.
     """
     if not DUCKDB_PATH.exists():
         raise FileNotFoundError(
@@ -55,44 +61,84 @@ def _query_storage(query: str) -> pd.DataFrame:
                 return con.execute(query).df()
             finally:
                 con.close()
-        except duckdb.IOException as e:
+        except (duckdb.IOException, duckdb.ConnectionException) as e:
             last_error = e
             time.sleep(0.2)
     raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше секунды: {last_error}")
 
 
-def get_data_version() -> int:
-    """Номер последней загрузки ETL — одна строка из `versions`, дёшево.
+def get_published_version() -> int:
+    """Номер ОПУБЛИКОВАННОЙ версии данных — одна строка из `versions`, дёшево.
 
-    На этом номере держится «живость» сайта: он входит в ключ кэша фактов,
-    а открытая страница раз в 30 сек сверяет его со своим и перерисовывается,
-    когда номер вырос. Намеренно НЕ кэшируется — это и есть проба свежести.
+    С этапа 4 сайт показывает не последнюю загрузку, а последнюю
+    опубликованную: свежие загрузки ждут своих 9:00 со статусом pending
+    (шлюз — в core/publish.py). Номер входит в ключ кэша фактов.
+    Намеренно НЕ кэшируется — это и есть проба свежести.
     """
-    df = _query_storage("SELECT coalesce(max(version), 0) AS v FROM versions")
+    df = _query_storage(
+        "SELECT coalesce(max(version), 0) AS v FROM versions WHERE status = 'published'"
+    )
     return int(df.iloc[0]["v"])
 
 
+def _plan_stamp() -> str:
+    """Отпечаток опубликованного плана — вторая половина display-версии.
+
+    Публикация плана не меняет номер версии фактов, но экран перерисовать
+    должна. Считаем по `published_at`, а не по `updated_at`: правка могла
+    быть сделана давно, а на витрину она влияет с момента публикации.
+    """
+    try:
+        df = _query_storage(
+            "SELECT count(*) AS n, max(published_at) AS t "
+            "FROM plan WHERE status = 'published'"
+        )
+    except duckdb.Error:
+        return "0"  # хранилище старой схемы, таблицы plan ещё нет
+    return f"{int(df.iloc[0]['n'])}@{df.iloc[0]['t']}"
+
+
+def get_display_version() -> str:
+    """Что сейчас показывает витрина: версия фактов + отпечаток плана.
+
+    Эту строку страница держит в dcc.Store и раз в 30 сек сверяет со свежей.
+    Изменилась — значит, опубликована новая версия данных ИЛИ новый план,
+    и коллбэки перерисуются. Оба события меняют цифры на экране, поэтому
+    следить только за версией фактов было бы мало.
+    """
+    return f"{get_published_version()}|{_plan_stamp()}"
+
+
 def load_facts() -> pd.DataFrame:
-    """Читает таблицу фактов из хранилища DuckDB.
+    """Читает снимок опубликованной версии фактов из хранилища DuckDB.
 
     **Это единственная точка, знающая формат источника.** До этапа 3 здесь
     читались CSV-файлы — временная затычка. Теперь источник — таблица `facts`
-    в data/analytics.duckdb, которую ведёт `python -m etl.run`. Форма таблицы
-    не изменилась ни на колонку, поэтому страницы, диаграммы и реестр
-    показателей правок не потребовали.
+    в data/analytics.duckdb, которую ведёт `python -m etl.run`; с этапа 4
+    в ней лежат снимки нескольких версий, и наружу отдаётся только
+    опубликованный, без служебной колонки `version` — форма данных для
+    страниц не изменилась ни на колонку.
 
-    Кэшируется по версии данных: пока ETL не записал новую версию, повторные
-    вызовы получают копию из памяти, а не ходят на диск. Записал — номер
-    версии вырос, ключ кэша сменился, факты перечитались. Поэтому свежесть
-    не страдает: кэш не «протухает», а привязан к данным.
+    Кэшируется по номеру опубликованной версии: пока публикации не было,
+    повторные вызовы получают копию из памяти, а не ходят на диск.
+    Опубликовалась новая — ключ кэша сменился, факты перечитались.
+    Поэтому свежесть не страдает: кэш не «протухает», а привязан к данным.
     """
-    return _facts_cached(get_data_version())
+    version = get_published_version()
+    if version == 0:
+        # Тот же тип ошибки, что и при отсутствии файла: страницы уже умеют
+        # показывать его текст плашкой вместо экрана
+        raise FileNotFoundError(
+            "В хранилище нет опубликованных данных. Запустите:\n"
+            "  python -m etl.run   (первая загрузка публикуется сразу)"
+        )
+    return _facts_cached(version)
 
 
 @cache.memoize()
 def _facts_cached(version: int) -> pd.DataFrame:
-    # version не используется в теле — он часть ключа кэша
-    df = _query_storage("SELECT * FROM facts")
+    # version — и ключ кэша, и фильтр: в таблице лежат снимки разных версий
+    df = _query_storage(f"SELECT * EXCLUDE (version) FROM facts WHERE version = {version}")
     df["is_total"] = df["is_total"].astype(bool)
     return df
 
@@ -179,6 +225,25 @@ def _country_totals(df: pd.DataFrame, year: int) -> dict[str, float]:
     return totals
 
 
+def get_published_plan(year: int) -> dict[str, float]:
+    """Опубликованный ручной план на год: показатель -> значение.
+
+    Черновики сюда не попадают — витрина видит план только после его
+    публикации в 9:00 (core/publish.py). Значения лежат в единицах
+    показателя из config.yaml, как и факты. Сумма по программам — на
+    вырост: пока разреза по программам нет, строка на показатель одна.
+    """
+    try:
+        df = _query_storage(
+            "SELECT indicator, sum(value) AS value FROM plan "
+            f"WHERE status = 'published' AND period_year = {int(year)} "
+            "GROUP BY indicator"
+        )
+    except duckdb.Error:
+        return {}  # хранилище старой схемы, таблицы plan ещё нет
+    return dict(zip(df["indicator"], df["value"]))
+
+
 def _derived_value(totals: dict[str, float], spec: dict) -> float | None:
     """Производный показатель: доля числителя от знаменателя, в процентах.
 
@@ -205,16 +270,32 @@ def get_kpi(year: int) -> pd.DataFrame:
     current = _country_totals(df, year)
     previous = _country_totals(df, year - 1)
 
+    # Опубликованный ручной план. Если он введён, знаменатель производных
+    # карточек берётся из него, а не из фактов: «Согласно плану %» начинает
+    # считаться от годового плана, введённого админом. Плана нет — всё как
+    # раньше, от суммы показателя-знаменателя за загруженные месяцы.
+    plan_current = get_published_plan(year)
+    plan_previous = get_published_plan(year - 1)
+
     rows = []
     for indicator in cfg["kpi_order"]:
         meta = cfg["indicators"][indicator]
         derived = meta.get("derived")
 
         if derived:
-            value = _derived_value(current, derived)
+            # Подменяется только знаменатель: числитель — это факт,
+            # и ручным планом он быть не может
+            denom = derived["denominator"]
+            cur_totals = {**current, **(
+                {denom: plan_current[denom]} if denom in plan_current else {}
+            )}
+            prev_totals = {**previous, **(
+                {denom: plan_previous[denom]} if denom in plan_previous else {}
+            )}
+            value = _derived_value(cur_totals, derived)
             if value is None:
                 continue
-            before = _derived_value(previous, derived)
+            before = _derived_value(prev_totals, derived)
             # Проценты сравнивают вычитанием: рост с 78 % до 80 % — это
             # +2 процентных пункта, а не «+2.6 %». Отсюда отдельный вид
             # изменения, карточка подпишет его «п.п.»
@@ -390,6 +471,23 @@ def get_table(year: int, regions: list[str] | None = None) -> pd.DataFrame:
 
 
 def get_last_update() -> str:
-    """Когда хранилище обновлялось в последний раз — «ЧЧ:ММ» для подписи."""
-    ts = _query_storage("SELECT max(run_at) AS t FROM versions").iloc[0]["t"]
-    return "—" if pd.isna(ts) else pd.to_datetime(ts).strftime("%H:%M")
+    """Когда цифры на сайте менялись в последний раз — для подписи.
+
+    С этапа 4 это момент ПУБЛИКАЦИИ, а не разбора: свежая загрузка может
+    сутки лежать в ожидании, и писать её время значило бы обещать данные,
+    которых на экране ещё нет. У версий, опубликованных до этапа 4,
+    момента публикации не записано — берём момент разбора.
+
+    До 9:00 сайт показывает вчерашнюю публикацию — тогда к времени
+    добавляется дата, иначе «обновлены в 09:00» читалось бы как сегодня.
+    """
+    df = _query_storage(
+        "SELECT coalesce(published_at, run_at) AS t FROM versions "
+        "WHERE status = 'published' ORDER BY version DESC LIMIT 1"
+    )
+    if df.empty or pd.isna(df.iloc[0]["t"]):
+        return "—"
+    ts = pd.to_datetime(df.iloc[0]["t"])
+    if ts.date() == datetime.now().date():
+        return ts.strftime("%H:%M")
+    return ts.strftime("%d.%m %H:%M")
