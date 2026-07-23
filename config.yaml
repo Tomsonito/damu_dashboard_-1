@@ -57,7 +57,7 @@ indicators:
 
   budget_allocated:
     title: "Выделено бюджета"
-    short: "Выделено"
+    short: "План (выделено)"
     unit: "млн тенге"
     kind: flow
     divisor: 1000
@@ -67,13 +67,32 @@ indicators:
 
   budget_spent:
     title: "Освоено бюджета"
-    short: "Освоено"
+    short: "Факт (освоено)"
     unit: "млн тенге"
     kind: flow
     divisor: 1000
     display_unit: "млрд ₸"
     decimals: 1
     agg: sum
+
+  # Производный показатель: в данных его нет, считается из двух других.
+  # В исходных таблицах была готовая колонка execution_percent — её не берём
+  # осознанно: производное надо считать из частей, иначе однажды разойдётся.
+  #
+  # Пока процент считается «от плана за прошедшие месяцы»: и план, и факт
+  # берутся за загруженные месяцы года. Если заказчик решит «от годового
+  # плана» — правка здесь не поможет, надо будет менять расчёт в get_kpi.
+  budget_execution:
+    title: "Освоение бюджета — факт от плана"
+    short: "Согласно плану"
+    unit: "%"
+    kind: ratio
+    divisor: 1
+    display_unit: "%"
+    decimals: 1
+    derived:
+      numerator: budget_spent        # факт — освоено
+      denominator: budget_allocated  # план — выделено
 
   subsidies_issued:
     title: "Выдано субсидий"
@@ -128,7 +147,7 @@ indicators:
 # Порядок карточек на главном экране.
 # Показатели, которых нет в загруженных данных, пропускаются молча —
 # так реестр может описывать больше источников, чем подключено сейчас.
-kpi_order: [budget_allocated, budget_spent, subsidies_issued, workplaces_created]
+kpi_order: [budget_allocated, budget_spent, budget_execution, subsidies_issued, workplaces_created]
 
 # Группировка областей в макрорегионы — для диаграмм «структура»
 # (солнечные лучи, каскад). Деление условное, поправьте под принятое у вас.

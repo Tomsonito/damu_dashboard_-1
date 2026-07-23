@@ -179,8 +179,26 @@ def _country_totals(df: pd.DataFrame, year: int) -> dict[str, float]:
     return totals
 
 
+def _derived_value(totals: dict[str, float], spec: dict) -> float | None:
+    """Производный показатель: доля числителя от знаменателя, в процентах.
+
+    Считается из готовых итогов по стране, а не по строкам данных: сначала
+    сворачиваем факт и план каждый по своему правилу, потом делим итоги.
+    """
+    numerator = totals.get(spec["numerator"])
+    denominator = totals.get(spec["denominator"])
+    if numerator is None or not denominator:
+        return None
+    return numerator / denominator * 100
+
+
 def get_kpi(year: int) -> pd.DataFrame:
-    """Итоги по стране за год и изменение к предыдущему году."""
+    """Итоги по стране за год и изменение к предыдущему году.
+
+    Два сорта карточек. Обычные берут итог показателя из данных. Производные
+    (в конфиге есть блок `derived`) в данных не лежат — считаются из итогов
+    двух других показателей: «Согласно плану %» = освоено / выделено.
+    """
     df = load_facts()
     cfg = load_config()
 
@@ -189,15 +207,26 @@ def get_kpi(year: int) -> pd.DataFrame:
 
     rows = []
     for indicator in cfg["kpi_order"]:
-        if indicator not in current:
-            continue
         meta = cfg["indicators"][indicator]
-        value = current[indicator]
-        before = previous.get(indicator)
+        derived = meta.get("derived")
 
-        change = None
-        if before:
-            change = (value / before - 1) * 100
+        if derived:
+            value = _derived_value(current, derived)
+            if value is None:
+                continue
+            before = _derived_value(previous, derived)
+            # Проценты сравнивают вычитанием: рост с 78 % до 80 % — это
+            # +2 процентных пункта, а не «+2.6 %». Отсюда отдельный вид
+            # изменения, карточка подпишет его «п.п.»
+            change = None if before is None else value - before
+            change_kind = "pp"
+        else:
+            if indicator not in current:
+                continue
+            value = current[indicator]
+            before = previous.get(indicator)
+            change = (value / before - 1) * 100 if before else None
+            change_kind = "pct"
 
         rows.append(
             {
@@ -207,6 +236,7 @@ def get_kpi(year: int) -> pd.DataFrame:
                 "value": value,
                 "text": format_value(value, indicator),
                 "change_pct": change,
+                "change_kind": change_kind,
             }
         )
     return pd.DataFrame(rows)
@@ -242,6 +272,42 @@ def get_regions(
     if limit:
         selected = selected.head(limit)
     return selected.reset_index(drop=True)
+
+
+MONTH_NAMES = ["янв", "фев", "мар", "апр", "май", "июн",
+               "июл", "авг", "сен", "окт", "ноя", "дек"]
+
+
+def get_monthly(
+    indicator: str, year: int, regions: list[str] | None = None
+) -> pd.DataFrame:
+    """Показатель по месяцам выбранного года — для вида «динамика в году».
+
+    Здесь всё наоборот по сравнению с остальными функциями: обычно месяцы
+    сворачиваются в год, а регионы остаются; тут регионы сворачиваются
+    в страну, а месяцы остаются. Правило свёртки — то же, что у показателя:
+    средние усредняются, всё остальное складывается (сумма срезов по регионам —
+    это срез по стране, так что и для срезов сумма верна).
+    """
+    df = load_facts()
+    selected = df[
+        (df.indicator == indicator) & (df.report_year == year) & (~df.is_total)
+    ]
+    if regions:
+        selected = selected[selected.region.isin(regions)]
+    if selected.empty:
+        return pd.DataFrame(columns=["month", "month_name", "value"])
+
+    how = get_indicator_meta(indicator).get("agg", "sum")
+    per_month = selected.groupby("date", as_index=False)["value"].agg(
+        "mean" if how == "mean" else "sum"
+    )
+    per_month["month"] = pd.to_datetime(per_month["date"]).dt.month
+    per_month["month_name"] = per_month["month"].map(lambda m: MONTH_NAMES[m - 1])
+    return (
+        per_month.sort_values("month")[["month", "month_name", "value"]]
+        .reset_index(drop=True)
+    )
 
 
 def get_region_dynamics(

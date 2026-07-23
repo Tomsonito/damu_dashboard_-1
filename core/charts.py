@@ -381,6 +381,26 @@ def _icicle(ctx: Ctx) -> go.Figure:
 # ─────────────────────────── Изменение во времени ───────────────────────────
 
 
+@chart("months", "Динамика по месяцам — внутри года")
+def _months(ctx: Ctx) -> go.Figure:
+    """Единственный вид, показывающий месяцы, а не свёрнутый год.
+
+    Все остальные виды сворачивают двенадцать строк региона в одну годовую.
+    Здесь наоборот: регионы сворачиваются в страну, а месяцы остаются —
+    видно, как показатель шёл внутри отчётного года.
+    """
+    df = ctx.scaled(data.get_monthly(ctx.indicator, ctx.year, regions=ctx.regions))
+    if df.empty:
+        return _message(NO_DATA)
+    fig = px.bar(
+        df, x="month_name", y="shown", text="текст",
+        labels={"shown": ctx.unit, "month_name": ""},
+        title=f"{ctx.meta['title']} — по месяцам {ctx.year} года",
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    return fig
+
+
 @chart("years", "Сравнение лет")
 def _years(ctx: Ctx) -> go.Figure:
     """Все годы сразу — фильтр года на этот вид не влияет."""

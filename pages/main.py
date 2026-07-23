@@ -23,8 +23,11 @@ def kpi_card(row: pd.Series) -> dbc.Card:
         footer = html.Span("нет данных за прошлый год", className="small text-muted")
     else:
         grew = change >= 0
+        # У обычных карточек изменение в процентах, у карточки-доли
+        # («Согласно плану») — в процентных пунктах
+        unit = "п.п." if row.get("change_kind") == "pp" else "%"
         footer = html.Span(
-            f"{'▲' if grew else '▼'} {abs(change):.1f} % к прошлому году",
+            f"{'▲' if grew else '▼'} {abs(change):.1f} {unit} к прошлому году",
             className=f"small {'text-success' if grew else 'text-danger'}",
         )
 
@@ -174,7 +177,9 @@ def poll_version(_, known_version):
 )
 def render_kpi(year, _version):
     kpi = data.get_kpi(int(year))
-    return [dbc.Col(kpi_card(row), md=3) for _, row in kpi.iterrows()]
+    # md=True — поделить ряд поровну между карточками, сколько бы их ни было;
+    # xs=12 — на узких экранах карточки встают в столбик
+    return [dbc.Col(kpi_card(row), xs=12, md=True) for _, row in kpi.iterrows()]
 
 
 @callback(
