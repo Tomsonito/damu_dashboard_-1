@@ -10,12 +10,14 @@ plotly. Общее оформление — высота, поля, фон — �
 """
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.colors import sample_colorscale
 
 from core import data
 
@@ -537,8 +539,21 @@ def _histogram(ctx: Ctx) -> go.Figure:
 
 @chart("map", "Карта Казахстана")
 def _map(ctx: Ctx) -> go.Figure:
+    """Картограмма областей.
+
+    Рисуется обычными закрашенными контурами на простых осях, а не через
+    `px.choropleth`. Проекционная машинерия plotly с этим файлом не справилась:
+    ни `fitbounds="locations"`, ни ручной `projection.scale` не масштабировали
+    страну — она оставалась пятном в несколько пикселей. Проверено
+    растеризацией: в поле карты закрашивалось 4 тысячи пикселей вместо сотен
+    тысяч.
+
+    Здесь координаты кладутся на оси как есть, а искажение долготы
+    компенсируется соотношением сторон. Для одной страны этого достаточно,
+    и результат предсказуем.
+    """
     geo = data.load_config().get("geo", {})
-    path = Path(geo.get("geojson_path", "data/kz_regions.geojson"))
+    path = Path(geo.get("geojson_path", "assets/geo/kz_regions.geojson"))
 
     if not path.exists():
         return _message(
@@ -557,34 +572,113 @@ def _map(ctx: Ctx) -> go.Figure:
 
     # Названия областей в файле границ и в данных совпадают не все:
     # у нас «Абай» и «г. Шымкент», в файле «Абайская» и «Чимкент».
-    # Расхождения перечислены в config.yaml -> geo.region_map.
     renames = geo.get("region_map") or {}
     df["geo_name"] = df["region"].map(lambda r: renames.get(r, r))
 
-    key = geo.get("feature_key", "properties.ADM1_RU")
-    prop = key.split(".")[-1]
-    known = {f["properties"].get(prop) for f in geojson.get("features", [])}
-    missing = sorted(set(df["geo_name"]) - known)
+    prop = geo.get("feature_key", "properties.ADM1_RU").split(".")[-1]
+    shapes = {
+        feature["properties"].get(prop): feature["geometry"]
+        for feature in geojson.get("features", [])
+    }
+    missing = sorted(set(df["geo_name"]) - set(shapes))
     if missing:
-        # Молча пропавший регион хуже явной ошибки: на карте он просто
-        # не закрасится, и никто не заметит.
+        # Молча пропавший регион хуже явной ошибки: он просто не закрасился бы
         return _message(
             "Эти области не найдены в файле границ:<br><b>"
             + ", ".join(missing)
             + "</b><br>Допишите соответствие в config.yaml → geo.region_map"
         )
 
-    fig = px.choropleth(
-        df,
-        geojson=geojson,
-        locations="geo_name",
-        featureidkey=key,
-        color="shown",
-        color_continuous_scale="Blues",
-        hover_name="region",
-        hover_data={"geo_name": False, "shown": False, "текст": True},
-        labels={"shown": ctx.unit, "текст": ctx.meta["short"]},
-        title=ctx.title,
+    low, high = float(df["shown"].min()), float(df["shown"].max())
+    spread = high - low
+    shades = sample_colorscale(
+        "Blues",
+        [0.5 if spread == 0 else 0.15 + 0.85 * (v - low) / spread for v in df["shown"]],
     )
-    fig.update_geos(fitbounds="locations", visible=False)
+
+    fig = go.Figure()
+    all_lat: list[float] = []
+    for (_, row), shade in zip(df.iterrows(), shades):
+        xs, ys = _rings(shapes[row["geo_name"]])
+        all_lat += [y for y in ys if y is not None]
+        fig.add_trace(
+            go.Scatter(
+                x=xs, y=ys, fill="toself", fillcolor=shade,
+                line=dict(color="white", width=0.6),
+                mode="lines", hoveron="fills", hoverinfo="text",
+                text=f"<b>{row['region']}</b><br>{row['текст']}",
+                showlegend=False,
+            )
+        )
+
+    # Невидимая точка — только ради шкалы цвета сбоку
+    fig.add_trace(
+        go.Scatter(
+            x=[None], y=[None], mode="markers", hoverinfo="skip", showlegend=False,
+            marker=dict(
+                colorscale="Blues", cmin=low, cmax=high, color=[low], opacity=0,
+                colorbar=dict(title=ctx.unit),
+            ),
+        )
+    )
+
+    # Один градус долготы короче градуса широты — тем сильнее, чем севернее.
+    # Без поправки страна выглядит растянутой вширь.
+    mid_lat = sum(all_lat) / len(all_lat) if all_lat else 48.0
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(
+        visible=False, scaleanchor="x",
+        scaleratio=1 / max(math.cos(math.radians(mid_lat)), 0.1),
+    )
+    fig.update_layout(title=ctx.title, hovermode="closest")
     return fig
+
+
+def _rings(geometry: dict) -> tuple[list, list]:
+    """Контуры области одним списком точек, части разделены разрывом.
+
+    `None` между кольцами говорит plotly оборвать линию — иначе конец одного
+    острова соединился бы прямой с началом следующего.
+    """
+    polygons = (
+        geometry["coordinates"]
+        if geometry["type"] == "MultiPolygon"
+        else [geometry["coordinates"]]
+    )
+    xs: list = []
+    ys: list = []
+    for polygon in polygons:
+        for ring in polygon:
+            if xs:
+                xs.append(None)
+                ys.append(None)
+            xs += [point[0] for point in ring]
+            ys += [point[1] for point in ring]
+    return xs, ys
+
+
+def _geo_bounds(geojson: dict, prop: str, names: set[str]) -> tuple | None:
+    """Охватывающий прямоугольник показываемых областей: (lon_min, lat_min, lon_max, lat_max).
+
+    Обходит координаты вручную, потому что форма бывает и Polygon,
+    и MultiPolygon — вложенность разная, а нужен один плоский список точек.
+    """
+    lons: list[float] = []
+    lats: list[float] = []
+
+    def walk(node) -> None:
+        # Точка — это пара чисел; всё остальное — список списков
+        if isinstance(node, (list, tuple)) and len(node) == 2 and isinstance(node[0], (int, float)):
+            lons.append(float(node[0]))
+            lats.append(float(node[1]))
+            return
+        for item in node:
+            walk(item)
+
+    for feature in geojson.get("features", []):
+        if feature["properties"].get(prop) in names:
+            walk(feature["geometry"]["coordinates"])
+
+    if not lons:
+        return None
+    return min(lons), min(lats), max(lons), max(lats)
