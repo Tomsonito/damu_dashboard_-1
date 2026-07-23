@@ -151,6 +151,11 @@ def _flat_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
     return df, int((df["value"] < floor).sum())
 
 
+#: Что показать, когда за выбранный год у показателя нет данных.
+#: Источники разной длины: выгрузка МСП — 2024–2025, таблицы БД — 2022–2026.
+NO_DATA = "За этот год у показателя нет данных.<br>Выберите другой год или показатель."
+
+
 def _tree_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
     """Узлы для лучей и сосулек: макрорегионы и области.
 
@@ -158,6 +163,8 @@ def _tree_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
     макрорегионы — были и подтянутый размер, и настоящее значение в подписи.
     """
     df = data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+    if df.empty:
+        return pd.DataFrame(columns=["id", "label", "parent", "value", "display", "подпись"]), 0
     floor = _size_floor(df["value"])
 
     rows: list[dict] = []
@@ -291,6 +298,8 @@ def _funnel(ctx: Ctx) -> go.Figure:
 @chart("pie", "Круговая — доли")
 def _pie(ctx: Ctx) -> go.Figure:
     df, raised = _flat_nodes(ctx)
+    if df.empty:
+        return _message(NO_DATA)
     fig = go.Figure(
         go.Pie(
             labels=df["region"],
@@ -309,6 +318,8 @@ def _pie(ctx: Ctx) -> go.Figure:
 @chart("treemap", "Плитки — структура")
 def _treemap(ctx: Ctx) -> go.Figure:
     df, raised = _flat_nodes(ctx)
+    if df.empty:
+        return _message(NO_DATA)
     fig = go.Figure(
         go.Treemap(
             labels=df["region"],
@@ -326,6 +337,8 @@ def _treemap(ctx: Ctx) -> go.Figure:
 @chart("sunburst", "Солнечные лучи — по макрорегионам")
 def _sunburst(ctx: Ctx) -> go.Figure:
     nodes, raised = _tree_nodes(ctx)
+    if nodes.empty:
+        return _message(NO_DATA)
     fig = go.Figure(
         go.Sunburst(
             ids=nodes["id"],
@@ -345,6 +358,8 @@ def _sunburst(ctx: Ctx) -> go.Figure:
 @chart("icicle", "Сосульки — по макрорегионам")
 def _icicle(ctx: Ctx) -> go.Figure:
     nodes, raised = _tree_nodes(ctx)
+    if nodes.empty:
+        return _message(NO_DATA)
     fig = go.Figure(
         go.Icicle(
             ids=nodes["id"],
@@ -423,9 +438,9 @@ def _slope(ctx: Ctx) -> go.Figure:
 
 @chart("waterfall", "Каскад — вклад в изменение")
 def _waterfall(ctx: Ctx) -> go.Figure:
-    df = data.get_change(ctx.indicator, ctx.regions)
+    df = data.get_change(ctx.indicator, ctx.year, ctx.regions)
     if df.empty:
-        return _message("Нужны данные минимум за два года")
+        return _message(f"Нет данных за {ctx.year} или {ctx.year - 1} год<br>для сравнения")
 
     df = ctx.scaled(df, column="delta").sort_values("shown", ascending=False)
     fig = go.Figure(
@@ -440,7 +455,7 @@ def _waterfall(ctx: Ctx) -> go.Figure:
         )
     )
     fig.update_layout(
-        title=f"{ctx.meta['title']} — вклад регионов в изменение, {ctx.unit}",
+        title=f"{ctx.meta['title']} — вклад регионов, {ctx.year} к {ctx.year - 1}, {ctx.unit}",
         showlegend=False,
     )
     fig.update_xaxes(tickangle=-45)
@@ -455,6 +470,8 @@ def _matrix(ctx: Ctx) -> go.Figure:
     """Все показатели сразу — выбор показателя на этот вид не влияет."""
     df = data.get_table(ctx.year, ctx.regions)
     dimensions = list(df.columns[1:])
+    if df.empty or not dimensions:
+        return _message(NO_DATA)
     fig = px.scatter_matrix(
         df, dimensions=dimensions, hover_name="region",
         labels={k: data.get_indicator_meta(k)["short"] for k in dimensions},
@@ -468,6 +485,8 @@ def _matrix(ctx: Ctx) -> go.Figure:
 def _parallel(ctx: Ctx) -> go.Figure:
     df = data.get_table(ctx.year, ctx.regions)
     dimensions = list(df.columns[1:])
+    if df.empty or not dimensions:
+        return _message(NO_DATA)
     if len(df) < 2:
         return _message("Нужно хотя бы два региона")
     fig = px.parallel_coordinates(

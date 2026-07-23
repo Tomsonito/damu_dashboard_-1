@@ -8,6 +8,9 @@
 #   divisor      — на сколько делить перед показом
 #   display_unit — что писать после числа
 #   decimals     — знаков после запятой
+#   agg          — как сворачивать несколько строк в одну (помесячные данные
+#                  за год): sum — сложить, last — взять на последнюю дату,
+#                  mean — среднее. По умолчанию sum.
 
 indicators:
   registered_smb:
@@ -45,9 +48,87 @@ indicators:
     divisor: 1000000
     display_unit: "трлн ₸"
     decimals: 2
+    agg: last
 
-# Порядок карточек на главном экране
-kpi_order: [registered_smb, active_smb, employed, output]
+  # --- Из БД test_ai, помесячные таблицы budget_regions_ММ.ГГ ---
+  # Внимание: budget_sme_* меряют то же, что registered_smb/active_smb выше,
+  # но другим методом и за другой период — цифры не сходятся. Это разные
+  # показатели, сливать их в один нельзя.
+
+  budget_allocated:
+    title: "Выделено бюджета"
+    short: "Выделено"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 1
+    agg: sum
+
+  budget_spent:
+    title: "Освоено бюджета"
+    short: "Освоено"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 1
+    agg: sum
+
+  subsidies_issued:
+    title: "Выдано субсидий"
+    short: "Субсидии"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 2
+    agg: sum
+
+  workplaces_created:
+    title: "Создано рабочих мест"
+    short: "Рабочих мест"
+    unit: "мест"
+    kind: flow
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+    agg: sum
+
+  budget_sme_registered:
+    title: "Зарегистрировано МСП (данные БД)"
+    short: "Зарег. (БД)"
+    unit: "единиц"
+    kind: stock
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+    agg: last
+
+  budget_sme_active:
+    title: "Действующих МСП (данные БД)"
+    short: "Действ. (БД)"
+    unit: "единиц"
+    kind: stock
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+    agg: last
+
+  avg_execution_days:
+    title: "Средний срок освоения"
+    short: "Срок освоения"
+    unit: "дней"
+    kind: stock
+    divisor: 1
+    display_unit: "дней"
+    decimals: 0
+    agg: mean
+
+# Порядок карточек на главном экране.
+# Показатели, которых нет в загруженных данных, пропускаются молча —
+# так реестр может описывать больше источников, чем подключено сейчас.
+kpi_order: [budget_allocated, budget_spent, subsidies_issued, workplaces_created]
 
 # Группировка областей в макрорегионы — для диаграмм «структура»
 # (солнечные лучи, каскад). Деление условное, поправьте под принятое у вас.

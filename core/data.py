@@ -30,13 +30,34 @@ def load_facts() -> pd.DataFrame:
     тогда после перегона ETL страница показывает свежие цифры без перезапуска
     приложения. Файл маленький (сотни строк), это ничего не стоит.
     """
-    if not FACTS_PATH.exists():
+    parts = sorted(FACTS_PATH.parent.glob("facts*.csv"))
+    if not parts:
         raise FileNotFoundError(
-            f"Нет файла {FACTS_PATH}. Сначала запустите: python -m etl.parse_msp"
+            f"Нет файлов фактов в {FACTS_PATH.parent}. Сначала запустите:\n"
+            "  python -m etl.parse_msp    (выгрузка Excel)\n"
+            "  python -m etl.load_budget  (данные из БД)"
         )
-    df = pd.read_csv(FACTS_PATH)
+    df = pd.concat([pd.read_csv(p) for p in parts], ignore_index=True)
     df["is_total"] = df["is_total"].astype(bool)
     return df
+
+
+def _aggregate(df: pd.DataFrame, indicator: str, by: list[str]) -> pd.DataFrame:
+    """Сворачивает несколько строк в одну по правилу `agg` из конфига.
+
+    Нужно, потому что источники разной частоты: выгрузка МСП даёт одну строку
+    на год, а таблицы из БД — двенадцать, по месяцам. Складывать их одинаково
+    нельзя: потоки (выделено, освоено) суммируются, срезы на дату (сколько МСП
+    существует) берутся по последней дате, а средний срок — усредняется.
+    """
+    how = get_indicator_meta(indicator).get("agg", "sum")
+
+    if how == "last":
+        latest = df.loc[df.groupby(by)["date"].idxmax()]
+        return latest[by + ["value"]].reset_index(drop=True)
+    if how == "mean":
+        return df.groupby(by, as_index=False)["value"].mean()
+    return df.groupby(by, as_index=False)["value"].sum()
 
 
 def get_indicator_meta(indicator: str) -> dict:
@@ -44,9 +65,19 @@ def get_indicator_meta(indicator: str) -> dict:
 
 
 def get_indicator_choices() -> list[dict]:
-    """Список показателей для выпадающего фильтра."""
+    """Список показателей для выпадающего фильтра.
+
+    Показываем только те, по которым **реально есть данные**. Реестр в конфиге
+    может описывать больше, чем сейчас загружено: источники подключают и
+    отключают, и предлагать пользователю заведомо пустой показатель незачем.
+    """
     cfg = load_config()
-    return [{"label": m["title"], "value": key} for key, m in cfg["indicators"].items()]
+    present = set(load_facts()["indicator"].unique())
+    return [
+        {"label": meta["title"], "value": key}
+        for key, meta in cfg["indicators"].items()
+        if key in present
+    ]
 
 
 def get_years() -> list[int]:
@@ -63,25 +94,55 @@ def format_value(value: float, indicator: str) -> str:
     return f"{text} {meta['display_unit']}".strip()
 
 
+def _country_totals(df: pd.DataFrame, year: int) -> dict[str, float]:
+    """Итог по стране за год для каждого показателя.
+
+    Два случая. Если в источнике есть готовая строка-итог («Республика
+    Казахстан» в выгрузках статистики) — берём её: официальная цифра важнее
+    нашей суммы, и если они разойдутся, показать надо источник.
+
+    Если строки-итога нет — а в данных из БД её и не бывает — складываем
+    регионы сами, по правилу `agg` того же показателя.
+    """
+    totals: dict[str, float] = {}
+    for indicator, group in df[df.report_year == year].groupby("indicator"):
+        official = group[group.is_total]
+        if not official.empty:
+            totals[indicator] = float(
+                _aggregate(official, indicator, ["indicator"])["value"].iloc[0]
+            )
+            continue
+
+        per_region = _aggregate(group[~group.is_total], indicator, ["region"])
+        if per_region.empty:
+            continue
+        how = get_indicator_meta(indicator).get("agg", "sum")
+        # Средние по регионам усредняем, всё остальное складываем
+        totals[indicator] = float(
+            per_region["value"].mean() if how == "mean" else per_region["value"].sum()
+        )
+    return totals
+
+
 def get_kpi(year: int) -> pd.DataFrame:
     """Итоги по стране за год и изменение к предыдущему году."""
     df = load_facts()
     cfg = load_config()
 
-    current = df[(df.report_year == year) & df.is_total].set_index("indicator")["value"]
-    previous = df[(df.report_year == year - 1) & df.is_total].set_index("indicator")["value"]
+    current = _country_totals(df, year)
+    previous = _country_totals(df, year - 1)
 
     rows = []
     for indicator in cfg["kpi_order"]:
-        if indicator not in current.index:
+        if indicator not in current:
             continue
         meta = cfg["indicators"][indicator]
-        value = float(current[indicator])
+        value = current[indicator]
         before = previous.get(indicator)
 
         change = None
-        if before is not None and not pd.isna(before) and before != 0:
-            change = (value / float(before) - 1) * 100
+        if before:
+            change = (value / before - 1) * 100
 
         rows.append(
             {
@@ -118,7 +179,11 @@ def get_regions(
     ]
     if regions:
         selected = selected[selected.region.isin(regions)]
-    selected = selected[["region", "value"]].sort_values("value", ascending=False)
+    if selected.empty:
+        return pd.DataFrame(columns=["region", "value"])
+
+    selected = _aggregate(selected, indicator, ["region"])
+    selected = selected.sort_values("value", ascending=False)
     if limit:
         selected = selected.head(limit)
     return selected.reset_index(drop=True)
@@ -132,11 +197,11 @@ def get_region_dynamics(
     selected = df[(df.indicator == indicator) & (~df.is_total)]
     if regions:
         selected = selected[selected.region.isin(regions)]
-    return (
-        selected[["region", "report_year", "value"]]
-        .sort_values(["report_year", "value"])
-        .reset_index(drop=True)
-    )
+    if selected.empty:
+        return pd.DataFrame(columns=["region", "report_year", "value"])
+
+    out = _aggregate(selected, indicator, ["region", "report_year"])
+    return out.sort_values(["report_year", "value"]).reset_index(drop=True)
 
 
 def get_macroregion_map() -> dict[str, str]:
@@ -155,22 +220,31 @@ def get_regions_grouped(
     return df
 
 
-def get_change(indicator: str, regions: list[str] | None = None) -> pd.DataFrame:
-    """Изменение показателя между двумя последними годами, по регионам.
+def get_change(
+    indicator: str, year: int, regions: list[str] | None = None
+) -> pd.DataFrame:
+    """Изменение показателя за выбранный год к предыдущему, по регионам.
 
     Колонки: region, prev, current, delta. Отсортировано по убыванию delta.
+
+    Сравниваем именно `year` и `year - 1`, а не «два последних года в данных»:
+    последний год в источнике почти всегда неполный, и сравнение с ним
+    показало бы обвал там, где просто ещё не наступили остальные месяцы.
     """
+    empty = pd.DataFrame(columns=["region", "prev", "current", "delta"])
     df = load_facts()
     selected = df[(df.indicator == indicator) & (~df.is_total)]
     if regions:
         selected = selected[selected.region.isin(regions)]
+    if selected.empty:
+        return empty
 
-    years = sorted(selected["report_year"].unique())
-    if len(years) < 2:
-        return pd.DataFrame(columns=["region", "prev", "current", "delta"])
-
-    prev = selected[selected.report_year == years[-2]].set_index("region")["value"]
-    current = selected[selected.report_year == years[-1]].set_index("region")["value"]
+    # Сначала сворачиваем месяцы в год, иначе на регион придётся 12 строк
+    per_year = _aggregate(selected, indicator, ["region", "report_year"])
+    prev = per_year[per_year.report_year == year - 1].set_index("region")["value"]
+    current = per_year[per_year.report_year == year].set_index("region")["value"]
+    if prev.empty or current.empty:
+        return empty
 
     out = pd.DataFrame({"prev": prev, "current": current}).dropna().reset_index()
     out["delta"] = out["current"] - out["prev"]

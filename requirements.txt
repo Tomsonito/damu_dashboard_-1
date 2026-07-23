@@ -14,7 +14,7 @@ openpyxl>=3.1
 sqlalchemy>=2.0
 duckdb>=1.0
 # + драйвер вашей СУБД, добавите когда узнаете тип базы:
-# psycopg2-binary   — для PostgreSQL
+psycopg2-binary>=2.9      # PostgreSQL (проверено на локальной 16.3)
 # pyodbc            — для MS SQL Server
 # oracledb          — для Oracle
 
