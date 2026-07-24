@@ -4,6 +4,7 @@
 Благодаря этому смена источника (Excel → БД) не потребует правок в pages/.
 """
 
+import random
 import time
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,29 @@ from core.cache import cache
 
 DUCKDB_PATH = Path("data/analytics.duckdb")
 CONFIG_PATH = Path("config.yaml")
+
+# Повторы при занятом хранилище. DuckDB — «один писатель ИЛИ много читателей»:
+# пока один процесс пишет (публикация в 9:00, правка плана, прогон ETL),
+# другие процессы получают IOException уже на открытии файла. На этапе 5
+# под Gunicorn воркеров будет несколько, поэтому это не редкость.
+#
+# !! Это НЕ порча данных, а честный отказ: стресс-тест (24.07.2026, 9 процессов
+# молотили один файл 15 сек) подтвердил — конкуренция даёт IOException, но
+# транзакции ACID держат целостность, инвариант «одна опубликованная версия»
+# не ломается. Лечится ожиданием: запись мгновенная. Задержки растут
+# экспоненциально и с разбросом (jitter) — чтобы конкурирующие писатели
+# расходились по времени, а не били в файл синхронно каждые 0.2 сек и
+# не мешали друг другу до бесконечности. Суммарное окно ожидания ~4 сек.
+_RETRY_ATTEMPTS = 8
+_RETRY_BASE = 0.1
+_RETRY_CAP = 1.0
+_LOCK_ERRORS = (duckdb.IOException, duckdb.ConnectionException)
+
+
+def _lock_delay(attempt: int) -> float:
+    """Пауза перед попыткой №attempt (с нуля): экспонента с потолком и jitter."""
+    base = min(_RETRY_BASE * 2 ** attempt, _RETRY_CAP)
+    return random.uniform(0.5 * base, base)
 
 
 def load_config() -> dict:
@@ -54,17 +78,17 @@ def _query_storage(query: str) -> pd.DataFrame:
             "  python -m etl.run   (БД -> DuckDB)"
         )
     last_error: Exception | None = None
-    for _ in range(5):
+    for attempt in range(_RETRY_ATTEMPTS):
         try:
             con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
             try:
                 return con.execute(query).df()
             finally:
                 con.close()
-        except (duckdb.IOException, duckdb.ConnectionException) as e:
+        except _LOCK_ERRORS as e:
             last_error = e
-            time.sleep(0.2)
-    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше секунды: {last_error}")
+            time.sleep(_lock_delay(attempt))
+    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше ожидания: {last_error}")
 
 
 def get_published_version() -> int:

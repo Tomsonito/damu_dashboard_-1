@@ -1,4 +1,5 @@
 import logging
+import os
 
 import dash
 import dash_bootstrap_components as dbc
@@ -67,8 +68,17 @@ def serve_layout():
 app.layout = serve_layout
 
 if __name__ == "__main__":
-    # dev_tools_hot_reload=False — иначе Dash сам перезагружает страницу при любой
-    # правке файла, и все выбранные фильтры слетают на исходные. Понятные сообщения
-    # об ошибках от debug=True при этом остаются.
-    # Правки кода теперь видны после ручного обновления страницы (F5).
-    app.run(debug=True, dev_tools_hot_reload=False)
+    # !! debug берётся из переменной окружения и по умолчанию ВЫКЛЮЧЕН.
+    # debug=True поднимает отладчик Werkzeug, а он при падении даёт
+    # интерактивную Python-консоль прямо в браузере — на боевом сервере это
+    # дыра (кто угодно вызовет ошибку и получит консоль). Поэтому включается
+    # только явно: DASHBOARD_DEBUG=1 python app.py — для локальной разработки.
+    #
+    # На сервере (этап 5) сайт вообще поднимает Gunicorn, а не этот блок:
+    # он импортирует объект `server`, и ветка `__main__` не исполняется —
+    # но пусть безопасное значение будет и здесь, на случай ручного запуска.
+    #
+    # dev_tools_hot_reload=False — иначе Dash перезагружает страницу при любой
+    # правке файла, и выбранные фильтры слетают. Правки кода видны по F5.
+    debug = os.getenv("DASHBOARD_DEBUG", "") == "1"
+    app.run(debug=debug, dev_tools_hot_reload=False)

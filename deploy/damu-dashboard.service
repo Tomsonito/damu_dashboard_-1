@@ -1,0 +1,55 @@
+# systemd-юнит: держит сайт под Gunicorn и поднимает его сам после
+# перезагрузки сервера. Файл — ШАБЛОН: подставьте свои пути и имя
+# пользователя (помечены <...>) и положите в /etc/systemd/system/.
+#
+# Установка (этап 5, на сервере, из-под sudo):
+#   sudo cp deploy/damu-dashboard.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now damu-dashboard
+#   systemctl status damu-dashboard      # должно быть active (running)
+#
+# Проверка автозапуска: перезагрузить сервер, убедиться что сайт поднялся сам.
+
+[Unit]
+Description=Дашборд Даму — аналитический дашборд МСП (Dash/Gunicorn)
+After=network.target
+
+[Service]
+Type=simple
+
+# Пользователь БЕЗ прав root: если сайт скомпрометируют, ущерб ограничен.
+# Заведите отдельного (напр. useradd -r -s /usr/sbin/nologin damu).
+User=<служебный-пользователь>
+Group=<служебная-группа>
+
+# Корень проекта на сервере (куда сделали git clone).
+WorkingDirectory=<путь-к-проекту>/damu_dashboard
+
+# Переменные окружения — из файла .env (строка подключения к БД и пр.).
+# Файл держать с правами 600, владелец — служебный пользователь.
+EnvironmentFile=<путь-к-проекту>/damu_dashboard/.env
+
+# DASHBOARD_DEBUG НЕ задаём — отладчик Werkzeug на бою выключен (см. app.py).
+# Часовой пояс сервера ДОЛЖЕН быть казахстанским: публикация в 9:00 идёт
+# по часам сервера (решение 23.07.2026). Проверить: timedatectl.
+
+# 4 воркера — нижняя граница из ROADMAP; поднять до 8, если понадобится.
+# --preload: код загружается один раз до форка воркеров — экономит память
+# и ловит ошибку импорта сразу, а не в каждом воркере. server — это
+# app.server (Flask-объект внутри Dash), см. app.py.
+ExecStart=<путь-к-проекту>/damu_dashboard/.venv/bin/gunicorn \
+    --workers 4 \
+    --bind 127.0.0.1:8050 \
+    --timeout 60 \
+    --preload \
+    --access-logfile - \
+    --error-logfile - \
+    app:server
+
+# Перезапускать при падении, но не чаще раза в 5 сек — иначе при стойкой
+# ошибке systemd молотил бы рестарты без остановки.
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

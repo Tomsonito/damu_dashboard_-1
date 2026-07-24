@@ -41,7 +41,13 @@ from datetime import datetime, timedelta
 import duckdb
 import pandas as pd
 
-from core.data import DUCKDB_PATH, _query_storage
+from core.data import (
+    _LOCK_ERRORS,
+    _RETRY_ATTEMPTS,
+    DUCKDB_PATH,
+    _lock_delay,
+    _query_storage,
+)
 
 PUBLISH_HOUR = 9
 
@@ -105,17 +111,18 @@ def _connect_write() -> duckdb.DuckDBPyConnection:
     в несколько минут. Логика та же, что у чтения в core/data.py.
     """
     last_error: Exception | None = None
-    for _ in range(5):
+    for attempt in range(_RETRY_ATTEMPTS):
         try:
             return duckdb.connect(str(DUCKDB_PATH))
-        # IOException — файл заперт другим процессом (etl.run пишет).
-        # ConnectionException — в ЭТОМ процессе прямо сейчас открыто
-        # читающее соединение (другой поток сайта): DuckDB не смешивает
-        # чтение и запись в одном процессе. И то и другое лечится ожиданием.
-        except (duckdb.IOException, duckdb.ConnectionException) as e:
+        # IOException — файл заперт другим процессом (etl.run или другой
+        # воркер Gunicorn пишет). ConnectionException — в ЭТОМ процессе прямо
+        # сейчас открыто читающее соединение (другой поток сайта): DuckDB не
+        # смешивает чтение и запись в одном процессе. И то и другое лечится
+        # ожиданием — общий backoff с jitter из core/data.py.
+        except _LOCK_ERRORS as e:
             last_error = e
-            time.sleep(0.2)
-    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью: {last_error}")
+            time.sleep(_lock_delay(attempt))
+    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше ожидания: {last_error}")
 
 
 def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:
