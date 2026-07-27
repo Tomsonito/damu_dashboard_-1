@@ -37,6 +37,9 @@ class Ctx:
     year: int
     regions: list[str] | None
     log: bool = False
+    #: Раздел (колонка `program`). None — считать по всем разделам сразу:
+    #: так смотрят главная и «Разбор». Страница раздела передаёт свой.
+    program: str | None = None
 
     @property
     def meta(self) -> dict:
@@ -89,7 +92,7 @@ def supports_log(chart_type: str) -> bool:
 
 
 def build(chart_type: str, indicator: str, year, regions, log: bool = False,
-          height: int | None = None) -> go.Figure:
+          height: int | None = None, program: str | None = None) -> go.Figure:
     """Собирает выбранную диаграмму и навешивает общее оформление.
 
     height — высота в пикселях. Задан (виджет на главной со своим пресетом
@@ -103,6 +106,7 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         year=int(year),
         regions=regions or None,
         log=bool(log) and entry["log_ok"],
+        program=program,
     )
     # Оформление сайта распространяется и на диаграммы: иначе страница была
     # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
@@ -187,7 +191,7 @@ def _adjusted_note(raised: int, ctx: "Ctx") -> str:
 
 def _flat_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
     """Плоский список регионов для круговой и плиток."""
-    df = data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions).copy()
+    df = data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program).copy()
     floor = _size_floor(df["value"])
     df["display"] = df["value"].clip(lower=floor)
     df["подпись"] = [_label(v, ctx) for v in df["value"]]
@@ -205,7 +209,7 @@ def _tree_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
     Строим вручную, а не через `px`, чтобы у каждого узла — включая
     макрорегионы — были и подтянутый размер, и настоящее значение в подписи.
     """
-    df = data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+    df = data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program)
     if df.empty:
         return pd.DataFrame(columns=["id", "label", "parent", "value", "display", "подпись"]), 0
     floor = _size_floor(df["value"])
@@ -282,7 +286,7 @@ def _message(text: str) -> go.Figure:
 
 @chart("bar", "Полосы — рейтинг")
 def _bar(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.bar(
         df, x="shown", y="region", orientation="h",
         text=[data.format_value(v, ctx.indicator) for v in df["value"]],
@@ -301,7 +305,7 @@ def _dot(ctx: Ctx) -> go.Figure:
     честна. Это главный приём против «разница огромная»: на логарифме Ұлытау
     с 19 тысячами и Алматы с 454 тысячами видны одинаково хорошо.
     """
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.scatter(
         df, x="shown", y="region",
         text=[data.format_value(v, ctx.indicator) for v in df["value"]],
@@ -325,7 +329,7 @@ def _facets(ctx: Ctx) -> go.Figure:
     а не теряется рядом с Алматы.
     """
     df = ctx.scaled(
-        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program)
     )
     fig = px.bar(
         df, x="shown", y="region", orientation="h",
@@ -345,7 +349,7 @@ def _facets(ctx: Ctx) -> go.Figure:
 
 @chart("funnel", "Воронка — убывание")
 def _funnel(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.funnel(
         df, x="shown", y="region",
         labels={"shown": ctx.unit, "region": ""}, title=ctx.title,
@@ -460,7 +464,7 @@ def _months(ctx: Ctx) -> go.Figure:
     Здесь наоборот: регионы сворачиваются в страну, а месяцы остаются —
     видно, как показатель шёл внутри отчётного года.
     """
-    df = ctx.scaled(data.get_monthly(ctx.indicator, ctx.year, regions=ctx.regions))
+    df = ctx.scaled(data.get_monthly(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     if df.empty:
         return _message(NO_DATA)
     fig = px.bar(
@@ -475,7 +479,7 @@ def _months(ctx: Ctx) -> go.Figure:
 @chart("years", "Сравнение лет")
 def _years(ctx: Ctx) -> go.Figure:
     """Все годы сразу — фильтр года на этот вид не влияет."""
-    df = ctx.scaled(data.get_region_dynamics(ctx.indicator, ctx.regions))
+    df = ctx.scaled(data.get_region_dynamics(ctx.indicator, ctx.regions, ctx.program))
     df["год"] = df["report_year"].astype(str)
     fig = px.bar(
         df, x="shown", y="region", color="год", barmode="group", orientation="h",
@@ -494,7 +498,7 @@ def _slope(ctx: Ctx) -> go.Figure:
     на общей оси все линии выглядят плоскими. Приведение к 100 делает наклоны
     сопоставимыми, а в этом и весь смысл вида.
     """
-    df = data.get_region_dynamics(ctx.indicator, ctx.regions)
+    df = data.get_region_dynamics(ctx.indicator, ctx.regions, ctx.program)
     if df.empty:
         return _message("Нет данных")
 
@@ -531,7 +535,7 @@ def _slope(ctx: Ctx) -> go.Figure:
 
 @chart("waterfall", "Каскад — вклад в изменение")
 def _waterfall(ctx: Ctx) -> go.Figure:
-    df = data.get_change(ctx.indicator, ctx.year, ctx.regions)
+    df = data.get_change(ctx.indicator, ctx.year, ctx.regions, ctx.program)
     if df.empty:
         return _message(f"Нет данных за {ctx.year} или {ctx.year - 1} год<br>для сравнения")
 
@@ -561,7 +565,7 @@ def _waterfall(ctx: Ctx) -> go.Figure:
 @chart("matrix", "Точки — связь показателей")
 def _matrix(ctx: Ctx) -> go.Figure:
     """Все показатели сразу — выбор показателя на этот вид не влияет."""
-    df = data.get_table(ctx.year, ctx.regions)
+    df = data.get_table(ctx.year, ctx.regions, ctx.program)
     dimensions = list(df.columns[1:])
     if df.empty or not dimensions:
         return _message(NO_DATA)
@@ -576,7 +580,7 @@ def _matrix(ctx: Ctx) -> go.Figure:
 
 @chart("parallel", "Параллельные оси — профиль регионов")
 def _parallel(ctx: Ctx) -> go.Figure:
-    df = data.get_table(ctx.year, ctx.regions)
+    df = data.get_table(ctx.year, ctx.regions, ctx.program)
     dimensions = list(df.columns[1:])
     if df.empty or not dimensions:
         return _message(NO_DATA)
@@ -600,7 +604,7 @@ def _box(ctx: Ctx) -> go.Figure:
     похожи друг на друга, а где разброс большой.
     """
     df = ctx.scaled(
-        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions)
+        data.get_regions_grouped(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program)
     )
     fig = px.box(
         df, x="macroregion", y="shown", points="all", hover_name="region",
@@ -616,7 +620,7 @@ def _box(ctx: Ctx) -> go.Figure:
 
 @chart("histogram", "Гистограмма — распределение")
 def _histogram(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.histogram(
         df, x="shown", nbins=10,
         labels={"shown": ctx.unit}, title=f"{ctx.title} — распределение регионов",
@@ -653,11 +657,11 @@ def _total(ctx: Ctx) -> go.Figure:
         # Показатель-доля в фактах не лежит, он считается из двух других.
         # Без этой ветки виджет «Число» с «Согласно плану» показывал бы
         # «нет данных», хотя цифра прекрасно считается — просто иначе.
-        value, _ = data.get_derived_percent(ctx.indicator, ctx.year, ctx.regions)
-        previous, _ = data.get_derived_percent(ctx.indicator, ctx.year - 1, ctx.regions)
+        value, _ = data.get_derived_percent(ctx.indicator, ctx.year, ctx.regions, ctx.program)
+        previous, _ = data.get_derived_percent(ctx.indicator, ctx.year - 1, ctx.regions, ctx.program)
     else:
-        value = data.get_country_total(ctx.indicator, ctx.year, ctx.regions)
-        previous = data.get_country_total(ctx.indicator, ctx.year - 1, ctx.regions)
+        value = data.get_country_total(ctx.indicator, ctx.year, ctx.regions, ctx.program)
+        previous = data.get_country_total(ctx.indicator, ctx.year - 1, ctx.regions, ctx.program)
     if value is None:
         return _message(NO_DATA)
     unit = meta["display_unit"] or meta["unit"]
@@ -700,7 +704,7 @@ def _gauge(ctx: Ctx) -> go.Figure:
             "или другой показатель с блоком derived в config.yaml."
         )
 
-    value, source = data.get_derived_percent(ctx.indicator, ctx.year, ctx.regions)
+    value, source = data.get_derived_percent(ctx.indicator, ctx.year, ctx.regions, ctx.program)
     if value is None:
         return _message(NO_DATA)
 
@@ -725,7 +729,7 @@ def _gauge(ctx: Ctx) -> go.Figure:
 @chart("years_total", "Годы — итог по стране")
 def _years_total(ctx: Ctx) -> go.Figure:
     """Как показатель менялся по годам, без разбивки по областям."""
-    df = data.get_country_years(ctx.indicator, regions=ctx.regions)
+    df = data.get_country_years(ctx.indicator, regions=ctx.regions, program=ctx.program)
     if df.empty:
         return _message(NO_DATA)
 
@@ -773,7 +777,7 @@ def _map(ctx: Ctx) -> go.Figure:
     with path.open(encoding="utf-8") as f:
         geojson = json.load(f)
 
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions))
+    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     if df.empty:
         return _message(NO_DATA)
 

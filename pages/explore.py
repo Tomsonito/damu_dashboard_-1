@@ -49,25 +49,10 @@ def layout(**kwargs):
     return dbc.Container(
         [
             html.H2("Разбор показателей", className="mt-4"),
-            html.P(f"данные обновлены в {updated}", id="ex-updated",
-                   className="text-muted small"),
-            # Невидимая пара, на которой держится автообновление: таймер
-            # раз в 30 сек и запомненная display-версия (факты + план)
-            dcc.Interval(id="ex-poll", interval=30 * 1000),
-            dcc.Store(id="ex-version", data=version),
+            html.P("Год и регионы — общие, они сверху и переживают переход "
+                   "между страницами.", className="text-muted small"),
             dbc.Row(
                 [
-                    dbc.Col(
-                        [
-                            dbc.Label("Отчётный год"),
-                            dbc.Select(
-                                id="ex-year",
-                                options=[{"label": str(y), "value": y} for y in years],
-                                value=years[0],
-                            ),
-                        ],
-                        md=2,
-                    ),
                     dbc.Col(
                         [
                             dbc.Label("Показатель на графике"),
@@ -90,28 +75,17 @@ def layout(**kwargs):
                         ],
                         md=5,
                     ),
-                ],
-                className="mb-3 g-3",
-            ),
-            dbc.Row(
-                dbc.Col(
-                    [
-                        dbc.Label("Регионы (пусто = все)"),
-                        dcc.Dropdown(
-                            id="ex-regions",
-                            options=regions,
-                            multi=True,
-                            placeholder="Все регионы — можно выбрать несколько",
-                        ),
+                    dbc.Col(
                         dbc.Checkbox(
                             id="ex-log",
                             label=LOG_LABEL,
                             value=False,
                             className="mt-2 small text-muted",
                         ),
-                    ],
-                ),
-                className="mb-4",
+                        md=12,
+                    ),
+                ],
+                className="mb-3 g-3",
             ),
             dcc.Graph(
                 id="ex-chart",
@@ -155,31 +129,6 @@ def layout(**kwargs):
 
 
 @callback(
-    Output("ex-version", "data"),
-    Output("ex-updated", "children"),
-    Input("ex-poll", "n_intervals"),
-    State("ex-version", "data"),
-)
-def poll_version(_, known_version):
-    """Раз в 30 сек сверяет версию данных с той, что помнит страница.
-
-    Совпала — `no_update`, ничего не перерисовывается. Изменилась
-    (опубликованы данные или план) — новый номер уходит в Store, и все
-    коллбэки с `Input("ex-version", ...)` перерисуются сами. Фильтры при
-    этом не трогаются: обновляются только выходы коллбэков, а состояние
-    фильтров живёт в браузере.
-
-    Шлюз публикации отсюда НЕ дёргается — им занимается главная страница
-    и прогоны etl.run. Иначе две открытые вкладки лезли бы в хранилище
-    на запись одновременно, а толку от второй нет.
-    """
-    fresh = data.get_display_version()
-    if known_version is not None and str(known_version) == fresh:
-        return no_update, no_update
-    return fresh, f"данные обновлены в {data.get_last_update()}"
-
-
-@callback(
     Output("ex-log", "disabled"),
     Output("ex-log", "label"),
     Input("ex-chart-type", "value"),
@@ -204,11 +153,11 @@ def toggle_log(chart_type):
 @callback(
     Output("ex-chart", "figure"),
     Input("ex-indicator", "value"),
-    Input("ex-year", "value"),
+    Input("filter-year", "value"),
     Input("ex-chart-type", "value"),
-    Input("ex-regions", "value"),
+    Input("filter-regions", "value"),
     Input("ex-log", "value"),
-    Input("ex-version", "data"),
+    Input("data-version", "data"),
 )
 def render_chart(indicator, year, chart_type, regions, log, _version):
     """Вся отрисовка живёт в core/charts.py — здесь только передача выбора."""
@@ -218,9 +167,9 @@ def render_chart(indicator, year, chart_type, regions, log, _version):
 @callback(
     Output("ex-table", "data"),
     Output("ex-table", "columns"),
-    Input("ex-year", "value"),
-    Input("ex-regions", "value"),
-    Input("ex-version", "data"),
+    Input("filter-year", "value"),
+    Input("filter-regions", "value"),
+    Input("data-version", "data"),
 )
 def render_table(year, regions, _version):
     df = data.get_table(int(year), regions or None)

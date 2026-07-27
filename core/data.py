@@ -182,15 +182,69 @@ def load_facts() -> pd.DataFrame:
             "В хранилище нет опубликованных данных. Запустите:\n"
             "  python -m etl.run   (первая загрузка публикуется сразу)"
         )
-    return _facts_cached(version)
+    return _facts_cached(version, _demo_stamp())
+
+
+def _demo_stamp() -> str:
+    """Отпечаток демо-данных — вторая половина ключа кэша фактов.
+
+    Пусто, когда демо выключены в `config.yaml` (`demo_data: false`)
+    или таблицы `demo_facts` нет вовсе. Переключили флаг — сменился
+    ключ, и факты перечитались: макет включается и выключается
+    без перезапуска сайта.
+    """
+    if not load_config().get("demo_data"):
+        return ""
+    try:
+        df = _query_storage("SELECT count(*) AS n, max(loaded_at) AS t FROM demo_facts")
+    except duckdb.Error:
+        return ""  # демо-таблицы ещё нет — работаем на настоящих данных
+    return f"{int(df.iloc[0]['n'])}@{df.iloc[0]['t']}"
 
 
 @cache.memoize()
-def _facts_cached(version: int) -> pd.DataFrame:
+def _facts_cached(version: int, demo: str) -> pd.DataFrame:
     # version — и ключ кэша, и фильтр: в таблице лежат снимки разных версий
     df = _query_storage(f"SELECT * EXCLUDE (version) FROM facts WHERE version = {version}")
     df["is_total"] = df["is_total"].astype(bool)
+
+    if demo:
+        # !! Демо-строки лежат в своей таблице и подмешиваются только здесь.
+        # Спутаться с настоящими они не могут: у них свои коды показателей
+        # (demo_*), поэтому в одну сумму эти строки никогда не попадают —
+        # все расчёты в проекте идут по конкретному показателю.
+        extra = _query_storage("SELECT * FROM demo_facts")
+        extra["is_total"] = extra["is_total"].astype(bool)
+        df = pd.concat([df, extra], ignore_index=True)
+
     return df
+
+
+def get_programs() -> list[str]:
+    """Программы (они же разделы), по которым в данных есть строки.
+
+    Колонка `program` в настоящих данных пока пуста — заполнена она только
+    у демо-строк макета. Пустые значения отбрасываем: раздел «ничего»
+    в меню не нужен.
+    """
+    df = load_facts()
+    found = df.loc[df["program"].astype(str) != "", "program"].unique().tolist()
+    return sorted(found)
+
+
+def _only_program(df: pd.DataFrame, program: str | None) -> pd.DataFrame:
+    """Оставляет строки одного раздела (колонка `program`).
+
+    `None` — не фильтровать: так ведут себя главная страница и «Разбор»,
+    они смотрят на всё сразу. Страница раздела передаёт своё название,
+    и дальше все расчёты идут только по его строкам.
+
+    Отдельная функция, а не одна строка внутри каждого места, потому что
+    мест этих полтора десятка, и правило отбора должно быть одно.
+    """
+    if not program:
+        return df
+    return df[df["program"] == program]
 
 
 def _aggregate(df: pd.DataFrame, indicator: str, by: list[str]) -> pd.DataFrame:
@@ -276,7 +330,8 @@ def _country_totals(df: pd.DataFrame, year: int) -> dict[str, float]:
 
 
 def get_country_total(
-    indicator: str, year: int, regions: list[str] | None = None
+    indicator: str, year: int, regions: list[str] | None = None,
+    program: str | None = None,
 ) -> float | None:
     """Одна цифра: итог показателя по стране за год.
 
@@ -288,7 +343,9 @@ def get_country_total(
     не годится (она про всю страну) — тогда складываем только выбранные.
     """
     df = load_facts()
-    selected = df[(df.indicator == indicator) & (df.report_year == year)]
+    selected = _only_program(
+        df[(df.indicator == indicator) & (df.report_year == year)], program
+    )
     if selected.empty:
         return None
 
@@ -309,7 +366,7 @@ def get_country_total(
 
 
 def get_country_years(
-    indicator: str, regions: list[str] | None = None
+    indicator: str, regions: list[str] | None = None, program: str | None = None,
 ) -> pd.DataFrame:
     """Показатель по годам, страна целиком. Колонки: report_year, value.
 
@@ -319,14 +376,15 @@ def get_country_years(
     years = sorted(load_facts()["report_year"].unique().tolist())
     rows = []
     for year in years:
-        value = get_country_total(indicator, int(year), regions)
+        value = get_country_total(indicator, int(year), regions, program)
         if value is not None:
             rows.append({"report_year": int(year), "value": value})
     return pd.DataFrame(rows, columns=["report_year", "value"])
 
 
 def get_derived_percent(
-    indicator: str, year: int, regions: list[str] | None = None
+    indicator: str, year: int, regions: list[str] | None = None,
+    program: str | None = None,
 ) -> tuple[float | None, str]:
     """Производный процент («Согласно плану») и подпись, от чего он считан.
 
@@ -344,8 +402,8 @@ def get_derived_percent(
     if not spec:
         return None, ""
 
-    numerator = get_country_total(spec["numerator"], year, regions)
-    denominator = get_country_total(spec["denominator"], year, regions)
+    numerator = get_country_total(spec["numerator"], year, regions, program)
+    denominator = get_country_total(spec["denominator"], year, regions, program)
     source = "от факта за загруженные месяцы"
 
     if not regions:
@@ -390,15 +448,48 @@ def _derived_value(totals: dict[str, float], spec: dict) -> float | None:
     return numerator / denominator * 100
 
 
-def get_kpi(year: int) -> pd.DataFrame:
+def kpi_indicators(present: set[str]) -> list[str]:
+    """Какие карточки показать, если состав задан не списком, а данными.
+
+    Нужно страницам разделов: `kpi_order` в конфиге описывает витрину
+    главного экрана, а у раздела свои показатели, и перечислять их
+    двадцать раз в YAML — путь к рассинхрону. Берём всё, что есть
+    в данных раздела, в порядке объявления в реестре, плюс производные,
+    у которых на месте и числитель, и знаменатель.
+    """
+    cfg = load_config()
+    order = []
+    for key, meta in cfg["indicators"].items():
+        derived = meta.get("derived")
+        difference = meta.get("difference")
+        if derived:
+            parts = {derived["numerator"], derived["denominator"]}
+            if parts <= present:
+                order.append(key)
+        elif difference:
+            if set(difference) <= present:
+                order.append(key)
+        elif key in present:
+            order.append(key)
+    return order
+
+
+def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
     """Итоги по стране за год и изменение к предыдущему году.
 
     Два сорта карточек. Обычные берут итог показателя из данных. Производные
     (в конфиге есть блок `derived`) в данных не лежат — считаются из итогов
     двух других показателей: «Согласно плану %» = освоено / выделено.
+
+    Без раздела состав карточек берётся из `kpi_order` — это витрина
+    главного экрана, её собирали руками. Для раздела список строится
+    по его данным (см. `kpi_indicators`).
     """
-    df = load_facts()
+    df = _only_program(load_facts(), program)
     cfg = load_config()
+    order = (
+        kpi_indicators(set(df["indicator"].unique())) if program else cfg["kpi_order"]
+    )
 
     current = _country_totals(df, year)
     previous = _country_totals(df, year - 1)
@@ -411,11 +502,27 @@ def get_kpi(year: int) -> pd.DataFrame:
     plan_previous = get_published_plan(year - 1)
 
     rows = []
-    for indicator in cfg["kpi_order"]:
+    for indicator in order:
         meta = cfg["indicators"][indicator]
         derived = meta.get("derived")
+        difference = meta.get("difference")
 
-        if derived:
+        if difference:
+            # Второй вид производного показателя: разность, а не доля.
+            # Так считается «Остаток» = план − факт. В данных его нет,
+            # и это правильно: производное надо считать из частей, иначе
+            # однажды разойдётся с ними
+            left, right = difference
+            if left not in current or right not in current:
+                continue
+            value = current[left] - current[right]
+            before = (
+                previous[left] - previous[right]
+                if left in previous and right in previous else None
+            )
+            change = (value / before - 1) * 100 if before else None
+            change_kind = "pct"
+        elif derived:
             # Подменяется только знаменатель: числитель — это факт,
             # и ручным планом он быть не может
             denom = derived["denominator"]
@@ -467,15 +574,17 @@ def get_regions(
     year: int,
     limit: int | None = None,
     regions: list[str] | None = None,
+    program: str | None = None,
 ) -> pd.DataFrame:
     """Значения по регионам за год, по убыванию. Строка итога исключена.
 
     regions — показать только перечисленные; None или пустой список = все.
     """
     df = load_facts()
-    selected = df[
-        (df.indicator == indicator) & (df.report_year == year) & (~df.is_total)
-    ]
+    selected = _only_program(
+        df[(df.indicator == indicator) & (df.report_year == year) & (~df.is_total)],
+        program,
+    )
     if regions:
         selected = selected[selected.region.isin(regions)]
     if selected.empty:
@@ -493,7 +602,8 @@ MONTH_NAMES = ["янв", "фев", "мар", "апр", "май", "июн",
 
 
 def get_monthly(
-    indicator: str, year: int, regions: list[str] | None = None
+    indicator: str, year: int, regions: list[str] | None = None,
+    program: str | None = None,
 ) -> pd.DataFrame:
     """Показатель по месяцам выбранного года — для вида «динамика в году».
 
@@ -504,9 +614,10 @@ def get_monthly(
     это срез по стране, так что и для срезов сумма верна).
     """
     df = load_facts()
-    selected = df[
-        (df.indicator == indicator) & (df.report_year == year) & (~df.is_total)
-    ]
+    selected = _only_program(
+        df[(df.indicator == indicator) & (df.report_year == year) & (~df.is_total)],
+        program,
+    )
     if regions:
         selected = selected[selected.region.isin(regions)]
     if selected.empty:
@@ -525,11 +636,11 @@ def get_monthly(
 
 
 def get_region_dynamics(
-    indicator: str, regions: list[str] | None = None
+    indicator: str, regions: list[str] | None = None, program: str | None = None,
 ) -> pd.DataFrame:
     """Показатель по регионам за все годы сразу — для диаграммы «сравнение лет»."""
     df = load_facts()
-    selected = df[(df.indicator == indicator) & (~df.is_total)]
+    selected = _only_program(df[(df.indicator == indicator) & (~df.is_total)], program)
     if regions:
         selected = selected[selected.region.isin(regions)]
     if selected.empty:
@@ -546,17 +657,19 @@ def get_macroregion_map() -> dict[str, str]:
 
 
 def get_regions_grouped(
-    indicator: str, year: int, regions: list[str] | None = None
+    indicator: str, year: int, regions: list[str] | None = None,
+    program: str | None = None,
 ) -> pd.DataFrame:
     """Регионы с колонкой макрорегиона — для иерархических диаграмм."""
-    df = get_regions(indicator, year, regions=regions)
+    df = get_regions(indicator, year, regions=regions, program=program)
     mapping = get_macroregion_map()
     df["macroregion"] = df["region"].map(mapping).fillna("Прочие")
     return df
 
 
 def get_change(
-    indicator: str, year: int, regions: list[str] | None = None
+    indicator: str, year: int, regions: list[str] | None = None,
+    program: str | None = None,
 ) -> pd.DataFrame:
     """Изменение показателя за выбранный год к предыдущему, по регионам.
 
@@ -568,7 +681,7 @@ def get_change(
     """
     empty = pd.DataFrame(columns=["region", "prev", "current", "delta"])
     df = load_facts()
-    selected = df[(df.indicator == indicator) & (~df.is_total)]
+    selected = _only_program(df[(df.indicator == indicator) & (~df.is_total)], program)
     if regions:
         selected = selected[selected.region.isin(regions)]
     if selected.empty:
@@ -586,21 +699,27 @@ def get_change(
     return out.sort_values("delta", ascending=False).reset_index(drop=True)
 
 
-def get_table(year: int, regions: list[str] | None = None) -> pd.DataFrame:
+def get_table(year: int, regions: list[str] | None = None,
+              program: str | None = None) -> pd.DataFrame:
     """Широкая таблица для экрана: регион в строке, показатели в колонках.
 
     Единственное место, где длинная таблица разворачивается в широкую, —
     и только для показа. В хранилище всё остаётся длинным.
     """
     df = load_facts()
-    selected = df[(df.report_year == year) & (~df.is_total)]
+    selected = _only_program(df[(df.report_year == year) & (~df.is_total)], program)
     if regions:
         selected = selected[selected.region.isin(regions)]
     wide = selected.pivot_table(
         index="region", columns="indicator", values="value", aggfunc="sum"
     ).reset_index()
-    order = ["region"] + [k for k in load_config()["kpi_order"] if k in wide.columns]
-    return wide[order]
+    # Колонки: на главной — витринный список `kpi_order`, у раздела — всё,
+    # что в нём есть, в порядке реестра. Тот же принцип, что у карточек
+    if program:
+        columns = [k for k in load_config()["indicators"] if k in wide.columns]
+    else:
+        columns = [k for k in load_config()["kpi_order"] if k in wide.columns]
+    return wide[["region"] + columns]
 
 
 def get_last_update() -> str:

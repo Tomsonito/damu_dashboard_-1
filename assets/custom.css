@@ -32,27 +32,6 @@ h1, h2, h3, h4, h5, h6,
     font-family: var(--damu-font, system-ui, sans-serif);
 }
 
-/* --- Шапка «в основной цвет».
-   Класс навешивает app.py, когда админ выбрал такой вид шапки.
-   Цвет текста считается от яркости фона (core/theme.py, readable_on):
-   на светлом акценте белые буквы не читались бы. */
-.damu-navbar-accent {
-    background-color: var(--damu-accent, #0d6efd) !important;
-}
-.damu-navbar-accent .navbar-brand,
-.damu-navbar-accent .nav-link {
-    color: var(--damu-on-accent, #ffffff) !important;
-}
-
-/* Логотип в шапке: высота фиксированная, ширина по пропорции.
-   Так любая картинка из assets/ встаёт в шапку, не разнося её. */
-.damu-logo {
-    height: 28px;
-    width: auto;
-    margin-right: 0.5rem;
-    vertical-align: text-bottom;
-}
-
 /* --- Основные кнопки и ссылки — в цвет темы.
    Bootstrap красит их своим синим через .btn-primary; правило ниже
    идёт после его файла, поэтому побеждает без !important. */
@@ -89,6 +68,181 @@ a:hover {
 .form-select:focus {
     border-color: var(--damu-accent, #0d6efd);
     box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(13, 110, 253, 0.25));
+}
+
+
+/* ================== КАРКАС: ШАПКА, ВКЛАДКИ, СОДЕРЖИМОЕ ==================
+
+   Раскладка главной по эскизу: логотип слева, фильтры справа, под ними
+   полоса вкладок, ниже — виджеты. Полный список разделов не занимает
+   места на экране: он всплывает поверх страницы по кнопке. */
+
+.damu-header {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem 0.5rem;
+    background-color: #ffffff;
+    border-bottom: 1px solid #dee2e6;
+}
+
+/* Логотип и название — одним блоком, чтобы не разъезжались */
+.damu-brand-box {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-width: 12rem;
+}
+.damu-logo {
+    height: 44px;
+    width: auto;
+    max-width: 160px;
+}
+.damu-brand {
+    font-weight: 600;
+    font-size: 1.05rem;
+    line-height: 1.15;
+}
+
+/* Полоса вкладок: несколько разделов слева, кнопка полного списка справа.
+   Липнет к верху при прокрутке — переключаться можно с любого места */
+.damu-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;        /* вкладки сверху, кнопка списка под ними */
+    gap: 0.35rem;
+    padding: 0.4rem 1rem 0.5rem;
+    background-color: var(--damu-accent, #0d6efd);
+}
+.damu-tabs-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;              /* на узком экране вкладки прокручиваются */
+}
+
+/* Кнопка полного списка — во всю ширину полосы вкладок.
+   Цвета берутся от полосы: светлая подложка на цветном фоне читается
+   при любом основном цвете, потому что цвет текста считает Python
+   по яркости фона (core/theme.py, readable_on) */
+.damu-all-sections {
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    color: var(--damu-on-accent, #ffffff);
+    font-size: 0.9rem;
+    padding: 0.25rem;
+}
+.damu-all-sections:hover,
+.damu-all-sections:focus {
+    background-color: rgba(255, 255, 255, 0.32);
+    border-color: var(--damu-on-accent, #ffffff);
+    color: var(--damu-on-accent, #ffffff);
+}
+.damu-tabs .nav-link {
+    color: var(--damu-on-accent, #ffffff);
+    opacity: 0.9;
+    white-space: nowrap;
+    padding: 0.3rem 0.9rem;
+}
+.damu-tabs .nav-link:hover {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.12);
+}
+/* Открытая сейчас вкладка — светлая плашка на цветной полосе */
+.damu-tabs .nav-link.active {
+    background-color: #ffffff !important;
+    color: #212529 !important;
+    opacity: 1;
+}
+
+.damu-content {
+    padding: 0 1rem;
+}
+
+/* ---------- Страница раздела: список слева, вкладки сверху ----------
+   Раскладка повторяет боевой портал: узкая колонка со всеми разделами
+   (внутри раздела удобно прыгать к соседнему) и два ряда вкладок-разрезов
+   над содержимым. */
+
+.damu-sec-wrap {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+.damu-side-list {
+    flex: 0 0 190px;
+    max-width: 190px;
+    padding: 0.5rem 0.4rem;
+    border-radius: 0.4rem;
+    background-color: var(--damu-accent, #0d6efd);
+}
+.damu-side-list .nav-link {
+    color: var(--damu-on-accent, #ffffff);
+    font-size: 0.85rem;
+    padding: 0.25rem 0.5rem;
+    opacity: 0.92;
+}
+.damu-side-list .nav-link:hover {
+    background-color: rgba(0, 0, 0, 0.12);
+    opacity: 1;
+}
+.damu-side-list .nav-link.active {
+    background-color: var(--damu-accent-dark, #0a58ca) !important;
+    opacity: 1;
+}
+
+/* min-width: 0 обязателен: без него длинная таблица внутри распирает
+   колонку, и список слева уезжает за край экрана */
+.damu-sec-main {
+    flex: 1;
+    min-width: 0;
+}
+.damu-sec-title {
+    margin: 0.5rem 0 0.75rem;
+    color: var(--damu-accent-dark, #0a58ca);
+}
+
+/* Ряд вкладок-разрезов: кнопки одной ширины, как на портале */
+.damu-sec-tabs {
+    display: flex;
+    gap: 0.35rem;
+    margin-bottom: 0.4rem;
+    flex-wrap: wrap;
+}
+.damu-sec-tab {
+    flex: 1 1 0;
+    min-width: 9rem;
+    border: none;
+    border-radius: 0.25rem;
+    padding: 0.35rem 0.8rem;
+    font-size: 0.9rem;
+    background-color: var(--damu-accent, #0d6efd);
+    color: var(--damu-on-accent, #ffffff);
+}
+.damu-sec-tab:hover {
+    background-color: var(--damu-accent-dark, #0a58ca);
+    color: var(--damu-on-accent, #ffffff);
+}
+/* Выбранная вкладка — темнее остальных, как активный пункт в меню */
+.damu-sec-tab.active {
+    background-color: var(--damu-accent-dark, #0a58ca);
+    box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Всплывающий список разделов: ссылки в три колонки */
+.damu-modal-link {
+    padding: 0.35rem 0.5rem;
+    border-radius: 0.3rem;
+}
+.damu-modal-link:hover {
+    background-color: var(--damu-accent-soft, #e9ecef);
+}
+/* Раздел без данных — приглушён, но виден: замысел понятен, пустота честная */
+.damu-empty {
+    opacity: 0.5;
+    font-style: italic;
 }
 
 

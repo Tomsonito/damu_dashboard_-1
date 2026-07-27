@@ -144,6 +144,88 @@ indicators:
     decimals: 0
     agg: mean
 
+  # --- ДЕМОНСТРАЦИОННЫЕ показатели (макет разделов) -------------------
+  # !! Числа выдуманы генератором `python -m etl.make_samples`, к настоящим
+  # показателям Фонда отношения не имеют. Живут в отдельной таблице
+  # `demo_facts` и подмешиваются только при `demo_data: true` ниже.
+  # Коды нарочно свои (demo_*): сложиться с настоящими в одну сумму
+  # они не могут. Когда придут реальные данные по разделам — эти пять
+  # блоков удаляются, и всё, что на них построено, исчезает вместе с ними.
+  demo_plan:
+    title: "План"
+    short: "План"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 1
+    agg: sum
+
+  demo_fact:
+    title: "Факт"
+    short: "Факт"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 1
+    agg: sum
+
+  demo_issued:
+    title: "Выдано"
+    short: "Выдано"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 1
+    agg: sum
+
+  demo_contracts:
+    title: "Договоров"
+    short: "Договоров"
+    unit: "штук"
+    kind: flow
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+    agg: sum
+
+  demo_jobs:
+    title: "Рабочих мест"
+    short: "Рабочих мест"
+    unit: "мест"
+    kind: flow
+    divisor: 1
+    display_unit: ""
+    decimals: 0
+    agg: sum
+
+  # Остаток = план минус факт. Второй вид производного показателя:
+  # не доля, а разность. В данных его нет, считается на лету.
+  demo_rest:
+    title: "Остаток"
+    short: "Остаток"
+    unit: "млн тенге"
+    kind: flow
+    divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 1
+    difference: [demo_plan, demo_fact]
+
+  # Производная к демо-показателям: та же механика, что у «Согласно плану»
+  demo_execution:
+    title: "Освоение — факт от плана"
+    short: "Освоение"
+    unit: "%"
+    kind: ratio
+    divisor: 1
+    display_unit: "%"
+    decimals: 1
+    derived:
+      numerator: demo_fact
+      denominator: demo_plan
+
 # Порядок карточек на главном экране.
 # Показатели, которых нет в загруженных данных, пропускаются молча —
 # так реестр может описывать больше источников, чем подключено сейчас.
@@ -158,6 +240,84 @@ macroregions:
   Запад: [Актюбинская, Атырауская, Западно-Казахстанская, Мангистауская]
   Восток: [Восточно-Казахстанская, Абай]
   Центр: [Карагандинская, Ұлытау]
+
+# !! ДЕМОНСТРАЦИОННЫЕ ДАННЫЕ — переключатель макета.
+#
+# true  — к настоящим фактам подмешиваются выдуманные строки из таблицы
+#         `demo_facts`, чтобы разделы меню не стояли пустыми;
+# false — сайт показывает только реальные данные, демо-таблица остаётся
+#         лежать нетронутой.
+#
+# Одна строка выключает весь макет. Перед показом с настоящей базой —
+# поставить false (или удалить таблицу: DROP TABLE demo_facts).
+# Откуда берутся числа: python -m etl.make_samples
+demo_data: true
+
+# Вкладки-разрезы внутри раздела — верхний ряд на странице раздела.
+# Взяты с боевого портала: там раздел смотрят под этими углами.
+#
+#   key   — попадает в ключ набора виджетов (раздел:вкладка)
+#   title — надпись на вкладке
+#   data  — есть ли под этот разрез данные. Нет — вкладка открывается
+#           заглушкой «ждёт источника», а не пустыми рамками.
+#
+# !! Сейчас данные есть только под два разреза: годы и регионы. Программы,
+# ОКЭД, БВУ и бюджет ждут источника — колонки под них в таблице фактов
+# заведены (`program`, `instrument`), но пусты.
+section_tabs:
+  - {key: years,    title: "Динамика по годам",      data: true}
+  - {key: programs, title: "Программы/Цели займа",   data: false}
+  - {key: regions,  title: "ОКЭД/Регионы",           data: true}
+  - {key: banks,    title: "БВУ/Субъектность",       data: false}
+  - {key: budget,   title: "Бюджет",                 data: false}
+
+# Второй ряд вкладок — подрезы выбранного разреза. Пока общий для всех:
+# на портале это «План освоения / Іскер Аймақ лимиты / Іскер Аймақ пайп».
+section_subtabs:
+  - {key: plan,   title: "План освоения",      data: true}
+  - {key: limits, title: "Іскер Аймақ лимиты", data: false}
+  - {key: pipe,   title: "Іскер Аймақ пайп",   data: false}
+
+# Карточки на странице раздела — как на портале: план, освоено, остаток
+# и процент. Показатели берутся из реестра `indicators` выше.
+section_kpi: [demo_plan, demo_fact, demo_rest, demo_execution]
+
+# Какие разделы вынесены вкладками наверх — те, куда ходят чаще всего.
+# Остальные никуда не деваются: они в списке «Все разделы», который
+# открывается поверх страницы. Ключи — из блока `sections` ниже.
+main_tabs: [subsidy, credit, guarantee, nonfin]
+
+# Разделы сайта. Порядок здесь = порядок во всплывающем списке.
+#
+#   key   — латиницей, попадает в адрес страницы (/section/plan)
+#   title — как называется в меню
+#   data  — есть ли под разделом данные. Раздел без данных показывает
+#           заглушку «ждёт источника», а в меню выглядит приглушённым:
+#           лучше честно сказать, что пусто, чем дать человеку тыкаться
+#
+# Значение `title` должно совпадать с колонкой «программа» в данных —
+# по нему страница и отбирает свои строки.
+sections:
+  - {key: plan,          title: "План освоения",     data: true}
+  - {key: see,           title: "СЭЭ",               data: true}
+  - {key: guarantee,     title: "Гар. выдача",       data: true}
+  - {key: gf2,           title: "ГФ2",               data: true}
+  - {key: guarantee_debt, title: "Гар. — Осн. долг", data: true}
+  - {key: credit,        title: "Кредит. выдача",    data: true}
+  - {key: orleu,         title: "Өрлеу",             data: true}
+  - {key: subsidy,       title: "Суб. выдача",       data: true}
+  - {key: subsidy_debt,  title: "Суб. — Осн. долг",  data: true}
+  - {key: subsidy_pay,   title: "Суб. — Выплаты",    data: true}
+  - {key: finance,       title: "Фин. показатели",   data: true}
+  - {key: treasury,      title: "Казначейство",      data: true}
+  - {key: procurement,   title: "Закупки",           data: true}
+  - {key: risk,          title: "Риск-менеджмент",   data: true}
+  - {key: monitoring,    title: "Мониторинг",        data: true}
+  - {key: nonfin,        title: "Нефин. поддержка",  data: true}
+  - {key: marketing,     title: "Маркетинг",         data: true}
+  - {key: bad_assets,    title: "Пробл. активы",     data: true}
+  - {key: staff,         title: "Персонал",          data: true}
+  - {key: skpd,          title: "СКПД",              data: true}
 
 # Оформление сайта — значения ПО УМОЛЧАНИЮ.
 #
@@ -179,7 +339,10 @@ theme:
   navbar: dark
   font: system
   font_scale: normal
-  logo: ""
+  # Файл ждём в assets/logo.png. Пока его нет, строка ничего не ломает:
+  # core/theme.py проверяет наличие файла и молча показывает одно название.
+  # Положили файл — логотип появится сам, перезапуск не нужен.
+  logo: "logo.png"
 
 # Наборы шрифтов, между которыми выбирает админ.
 #
@@ -251,6 +414,21 @@ default_widgets:
   - {chart: bar,        indicator: budget_allocated,      size: large}
   - {chart: months,     indicator: budget_spent,          size: medium}
   - {chart: years_total, indicator: budget_sme_registered, size: medium}
+
+# Набор виджетов ПО УМОЛЧАНИЮ для страницы раздела — общий для всех
+# разделов (так решено: разделы одинаковые). Показатели здесь свои,
+# разделовские: на главной витрине живут бюджетные, а внутри раздела —
+# его собственные план, факт, выдача.
+#
+# Админ может собрать любому разделу свой набор на странице «Виджеты» —
+# тогда для этого раздела список ниже перестаёт действовать.
+section_widgets:
+  - {chart: total,       indicator: demo_plan,      size: small}
+  - {chart: gauge,       indicator: demo_execution, size: small}
+  - {chart: total,       indicator: demo_issued,    size: small}
+  - {chart: bar,         indicator: demo_plan,      size: large}
+  - {chart: months,      indicator: demo_fact,      size: medium}
+  - {chart: years_total, indicator: demo_issued,    size: medium}
 
 # Настройки диаграмм
 charts:

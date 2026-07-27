@@ -49,9 +49,9 @@ def _select(kind: str, widget_id: int, options: list[dict], value: str, width: s
     )
 
 
-def widgets_list():
-    """Таблица виджетов: по строке на каждый, поля прямо в строке."""
-    items = widgets.get_widgets()
+def widgets_list(page: str):
+    """Таблица виджетов выбранной страницы: по строке на каждый."""
+    items = widgets.get_widgets(page)
     if not items:
         return html.P("Виджетов нет — добавьте первый ниже.",
                       className="text-muted small")
@@ -88,15 +88,15 @@ def widgets_list():
                      className="align-middle")
 
 
-def status_line():
-    """Откуда сейчас берётся набор и кто его правил последним."""
-    if not widgets.is_customized():
+def status_line(page: str):
+    """Откуда сейчас берётся набор этой страницы и кто его правил."""
+    if not widgets.is_customized(page):
         return html.P(
             "Сейчас показывается набор по умолчанию из config.yaml. "
             "Первая же правка сохранит его в хранилище как ваш.",
             className="text-muted small",
         )
-    changed = widgets.last_change()
+    changed = widgets.last_change(page)
     tail = f" Последняя правка: {changed[0]}, {changed[1]:%d.%m %H:%M}." if changed else ""
     return html.P("Набор настроен вручную и хранится в базе." + tail,
                   className="text-muted small")
@@ -123,8 +123,23 @@ def layout(**kwargs):
                 "откройте главную заново (F5).",
                 className="text-muted small",
             ),
-            html.Div(status_line(), id="w-status"),
-            html.Div(widgets_list(), id="w-list", className="mb-4"),
+            dbc.Row(
+                dbc.Col([
+                    dbc.Label("Какую страницу настраиваем"),
+                    dbc.Select(
+                        id="w-page",
+                        options=widgets.page_choices(),
+                        value=widgets.MAIN_PAGE,
+                    ),
+                    dbc.FormText(
+                        "У главной витрины и у каждого раздела свой набор. "
+                        "Правка одного раздела не трогает остальные."
+                    ),
+                ], md=6),
+                class_name="mb-3",
+            ),
+            html.Div(status_line(widgets.MAIN_PAGE), id="w-status"),
+            html.Div(widgets_list(widgets.MAIN_PAGE), id="w-list", className="mb-4"),
             html.H5("Добавить виджет"),
             dbc.Row(
                 [
@@ -165,12 +180,13 @@ def layout(**kwargs):
     Input({"type": "w-up", "index": ALL}, "n_clicks"),
     Input({"type": "w-down", "index": ALL}, "n_clicks"),
     Input({"type": "w-del", "index": ALL}, "n_clicks"),
+    Input("w-page", "value"),
     State("w-new-indicator", "value"),
     State("w-new-chart", "value"),
     State("w-new-size", "value"),
     prevent_initial_call=True,
 )
-def change_structure(_add, _reset, _up, _down, _del, indicator, chart, size):
+def change_structure(_add, _reset, _up, _down, _del, page, indicator, chart, size):
     """Добавить, убрать, переставить, сбросить — всё, что меняет состав списка.
 
     `ctx.triggered_id` говорит, какую кнопку нажали; проверка значения
@@ -178,6 +194,12 @@ def change_structure(_add, _reset, _up, _down, _del, indicator, chart, size):
     на странице (у них n_clicks = None).
     """
     trigger = ctx.triggered_id
+    page = page or widgets.MAIN_PAGE
+
+    # Сменили страницу в списке — просто показываем её набор, ничего не пишем
+    if trigger == "w-page":
+        return widgets_list(page), status_line(page), None
+
     clicked = bool(ctx.triggered) and ctx.triggered[0]["value"]
     if not clicked:
         return no_update, no_update, no_update
@@ -186,21 +208,21 @@ def change_structure(_add, _reset, _up, _down, _del, indicator, chart, size):
     feedback = no_update
     try:
         if trigger == "w-add":
-            widgets.add(chart, indicator, size, author)
+            widgets.add(chart, indicator, size, author, page)
             feedback = dbc.Alert("Виджет добавлен в конец.", color="success",
                                  className="py-2")
         elif trigger == "w-reset":
-            widgets.reset()
+            widgets.reset(page)
             feedback = dbc.Alert("Вернули набор из config.yaml.",
                                  color="secondary", className="py-2")
         elif isinstance(trigger, dict):
             if trigger["type"] == "w-del":
-                widgets.remove(trigger["index"], author)
+                widgets.remove(trigger["index"], author, page)
                 feedback = dbc.Alert("Виджет убран.", color="secondary",
                                      className="py-2")
             elif trigger["type"] in ("w-up", "w-down"):
                 widgets.move(trigger["index"], 1 if trigger["type"] == "w-down" else -1,
-                             author)
+                             author, page)
                 feedback = dbc.Alert("Порядок изменён.", color="secondary",
                                      className="py-2")
     except ValueError as e:
@@ -210,7 +232,7 @@ def change_structure(_add, _reset, _up, _down, _del, indicator, chart, size):
         return no_update, no_update, dbc.Alert(f"Не получилось: {e}", color="danger",
                                                className="py-2")
 
-    return widgets_list(), status_line(), feedback
+    return widgets_list(page), status_line(page), feedback
 
 
 @callback(
@@ -219,9 +241,10 @@ def change_structure(_add, _reset, _up, _down, _del, indicator, chart, size):
     Input({"type": "w-indicator", "index": ALL}, "value"),
     Input({"type": "w-chart", "index": ALL}, "value"),
     Input({"type": "w-size", "index": ALL}, "value"),
+    State("w-page", "value"),
     prevent_initial_call=True,
 )
-def change_field(_indicators, _charts, _sizes):
+def change_field(_indicators, _charts, _sizes, page):
     """Смена показателя, вида или размера у существующего виджета.
 
     Список НЕ перерисовывается: строка и так уже показывает выбранное,
@@ -240,8 +263,9 @@ def change_field(_indicators, _charts, _sizes):
     if value in (None, ""):
         return no_update, no_update
 
+    page = page or widgets.MAIN_PAGE
     field = {"w-indicator": "indicator", "w-chart": "chart", "w-size": "size"}[trigger["type"]]
-    current = {item["id"]: item for item in widgets.get_widgets()}.get(trigger["index"])
+    current = {item["id"]: item for item in widgets.get_widgets(page)}.get(trigger["index"])
     if current is None:
         return dbc.Alert("Виджет уже удалён — обновите страницу.", color="warning",
                          className="py-2"), no_update
@@ -249,7 +273,7 @@ def change_field(_indicators, _charts, _sizes):
         return no_update, no_update  # ничего не изменилось
 
     try:
-        widgets.update(trigger["index"], field, value, auth.current_user())
+        widgets.update(trigger["index"], field, value, auth.current_user(), page)
     except ValueError as e:
         return dbc.Alert(str(e), color="danger", className="py-2"), no_update
     except Exception as e:
@@ -259,5 +283,5 @@ def change_field(_indicators, _charts, _sizes):
     return (
         dbc.Alert("Сохранено. Откройте главную заново, чтобы увидеть.",
                   color="success", className="py-2"),
-        status_line(),
+        status_line(page),
     )
