@@ -122,6 +122,13 @@ def widget_grid(items: list[dict]):
                     dcc.Graph(
                         id={"type": "widget-graph", "index": item["id"]},
                         style={"height": f"{preset['height']}px"},
+                        # Панель инструментов plotly (лупа, лассо, «камера»)
+                        # на витрине убрана: она всплывает при наведении,
+                        # мешает читать и ведёт на plotly.com — чужой сайт,
+                        # который во внутренней сети всё равно не откроется.
+                        # Кому нужно покопаться в графике — страница «Разбор»,
+                        # там панель оставлена.
+                        config={"displayModeBar": False},
                     ),
                     className="shadow-sm p-2 h-100",
                 ),

@@ -139,8 +139,16 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
     return fig
 
 
-#: Ниже этого размера подписи внутри секторов читать невозможно
-MIN_LABEL_SIZE = 12
+#: Ниже этого размера подписи внутри секторов читать невозможно.
+#:
+#: !! Было 12 (то есть шрифт 13). При таком размере plotly **прятал две
+#: подписи** — «Западно-Казахстанская» и «Восточно-Казахстанская»: они
+#: длиннее остальных и не влезали в свой сектор, а режим `hide` убирает
+#: то, что не влезло, целиком. Сектор оставался, подпись исчезала.
+#: Замерено в браузере (27.07.2026) на высотах 700, 420 и 320 px:
+#: при 13 px прячутся ровно эти две на любой высоте, при 11 px — ни одной.
+#: Поэтому 10 (шрифт 11): два пикселя размера в обмен на две подписи.
+MIN_LABEL_SIZE = 10
 
 
 def _size_floor(values: pd.Series) -> float:
@@ -231,10 +239,20 @@ def _tree_nodes(ctx: "Ctx") -> tuple[pd.DataFrame, int]:
     return nodes, int((df["value"] < floor).sum())
 
 
-def _hierarchy_style(fig: go.Figure) -> go.Figure:
-    """Общее для круговой, плиток, лучей и сосулек: размер шрифта подписей."""
-    fig.update_traces(insidetextfont=dict(size=MIN_LABEL_SIZE + 1))
-    fig.update_layout(uniformtext=dict(minsize=MIN_LABEL_SIZE, mode="hide"))
+def _hierarchy_style(fig: go.Figure, size: int = MIN_LABEL_SIZE + 1) -> go.Figure:
+    """Общее для круговой, плиток, лучей и сосулек: размер шрифта подписей.
+
+    `size` — на случай, когда виду тесно даже при общем размере. Такой вид
+    один, «сосульки»: там ширина ячейки пропорциональна значению, и у самых
+    маленьких областей места под подпись меньше, чем у остальных.
+
+    Режим `hide` значит: то, что не влезло, plotly **убирает целиком** —
+    сектор остаётся, подпись исчезает. Это осознанный выбор: альтернатива —
+    подписи, налезающие друг на друга и на соседние сектора. Но раз уж
+    исчезновение молчаливое, размер подобран замером, а не на глаз.
+    """
+    fig.update_traces(insidetextfont=dict(size=size))
+    fig.update_layout(uniformtext=dict(minsize=size - 1, mode="hide"))
     return fig
 
 
@@ -393,6 +411,13 @@ def _sunburst(ctx: Ctx) -> go.Figure:
             branchvalues="total",
             texttemplate="%{label}<br>%{text}",
             hovertemplate="<b>%{label}</b><br>%{text}<extra></extra>",
+            # Все подписи вдоль луча — ради единообразия. По умолчанию
+            # (`auto`) plotly выбирает ориентацию каждому сектору отдельно:
+            # широким оставляет горизонтальную, узким разворачивает, и вид
+            # получается разнобойным. Замер (27.07.2026, шрифт 11 px):
+            # auto — 0 скрытых, повёрнуто 6 из 26; radial — 0 скрытых,
+            # повёрнуты все; horizontal — 3 подписи прячутся, так нельзя.
+            insidetextorientation="radial",
         )
     )
     fig.update_layout(title=ctx.title + _adjusted_note(raised, ctx), height=900)
@@ -417,7 +442,11 @@ def _icicle(ctx: Ctx) -> go.Figure:
         )
     )
     fig.update_layout(title=ctx.title + _adjusted_note(raised, ctx), height=900)
-    return _hierarchy_style(fig)
+    # Шрифт мельче, чем у остальных иерархических видов: ширина ячейки здесь
+    # пропорциональна значению, и при 11 px у трёх самых маленьких областей
+    # (Актюбинская, г. Алматы, Карагандинская) подпись пропадала. При 9 px
+    # видны все 27 — замерено в браузере 27.07.2026.
+    return _hierarchy_style(fig, size=9)
 
 
 # ─────────────────────────── Изменение во времени ───────────────────────────
