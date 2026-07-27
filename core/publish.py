@@ -35,17 +35,14 @@
 Страницы по-прежнему не открывают хранилище сами.
 """
 
-import time
 from datetime import datetime, timedelta
 
 import duckdb
 import pandas as pd
 
 from core.data import (
-    _LOCK_ERRORS,
-    _RETRY_ATTEMPTS,
     DUCKDB_PATH,
-    _lock_delay,
+    _connect_write,
     _query_storage,
 )
 
@@ -104,25 +101,9 @@ def describe_publish_time(moment: datetime, now: datetime | None = None) -> str:
 
 # ------------------------------------------------------------- хранилище
 
-def _connect_write() -> duckdb.DuckDBPyConnection:
-    """Соединение на запись, с повторами.
-
-    Файл может быть заперт прогоном etl.run — это доли секунды раз
-    в несколько минут. Логика та же, что у чтения в core/data.py.
-    """
-    last_error: Exception | None = None
-    for attempt in range(_RETRY_ATTEMPTS):
-        try:
-            return duckdb.connect(str(DUCKDB_PATH))
-        # IOException — файл заперт другим процессом (etl.run или другой
-        # воркер Gunicorn пишет). ConnectionException — в ЭТОМ процессе прямо
-        # сейчас открыто читающее соединение (другой поток сайта): DuckDB не
-        # смешивает чтение и запись в одном процессе. И то и другое лечится
-        # ожиданием — общий backoff с jitter из core/data.py.
-        except _LOCK_ERRORS as e:
-            last_error = e
-            time.sleep(_lock_delay(attempt))
-    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше ожидания: {last_error}")
+# Соединение на запись берём из core/data.py — там же, где чтение:
+# у хранилища одна дверь, и повторы при занятом файле общие.
+# Имя publish._connect_write при этом работает по-прежнему.
 
 
 def ensure_schema(con: duckdb.DuckDBPyConnection) -> None:

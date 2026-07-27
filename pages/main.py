@@ -1,28 +1,38 @@
-"""Главный экран: показатели МСП по регионам."""
+"""Главный экран: карточки-показатели и несколько виджетов сразу.
+
+Что изменилось по сравнению с прежним экраном. Раньше здесь был **один**
+график, который зритель выбирал из списка. Теперь на экране **несколько**
+диаграмм, а их состав — какой показатель, каким видом, какого размера —
+задаёт админ на странице «Виджеты» (core/widgets.py). Прежний экран
+никуда не делся: он переехал на страницу «Разбор» (pages/explore.py),
+где по-прежнему можно перебирать виды и показатели самому.
+
+Фильтры года и регионов остались общими: они действуют сразу на все
+виджеты и на карточки. Так и задумано — на дашборде смотрят один срез
+данных под разными углами, а не каждый виджет в своём году.
+
+Как рисуется сетка. Виджет знает свой пресет размера, пресет знает
+ширину в колонках Bootstrap (4, 6 или 12) и высоту в пикселях. Строк
+как таковых нет: колонки переносятся сами, когда 12 набралось, —
+поэтому «два средних в ряд» получается само собой.
+
+Один коллбэк рисует все виджеты разом (pattern-matching по id). Отдельный
+коллбэк на каждый пришлось бы объявлять заранее и на фиксированное число,
+а число виджетов заранее неизвестно — их набор меняет админ.
+"""
 
 import logging
 
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
-from dash import Input, Output, State, callback, dash_table, dcc, html, no_update
-from dash.dash_table.Format import Format, Group, Scheme
+from dash import ALL, Input, Output, State, callback, dcc, html, no_update
 
-from core import auth, charts, data, publish
+from core import auth, charts, data, publish, widgets
 
 log = logging.getLogger(__name__)
 
 dash.register_page(__name__, path="/", name="Главная", title="Дашборд Даму")
-
-# Формат чисел в таблице: разряды через пробел, без дробной части
-TABLE_NUM_FORMAT = Format(
-    group=Group.yes, groups=3, group_delimiter=" ", precision=0, scheme=Scheme.fixed
-)
-
-# Подпись галки логарифма. Перечня видов в ней намеренно нет: кто умеет
-# логарифм, знает реестр диаграмм, и подпись собирается из него в toggle_log.
-LOG_LABEL = ("Логарифмическая шкала — сжимает разрыв между крупными "
-             "и мелкими регионами")
 
 
 def kpi_card(row: pd.Series) -> dbc.Card:
@@ -55,10 +65,9 @@ def kpi_card(row: pd.Series) -> dbc.Card:
 def publish_banner():
     """Плашка «что ждёт публикации в 9:00» — видит только админ.
 
-    Так решено 23.07.2026: без неё окно на вето существовало бы только
-    на бумаге. Зрителям плашка не показывается — им незачем знать
-    про кухню публикации. Кто админ — спрашиваем у core/auth.py
-    (до этапа 5 там заглушка: в разработке админ каждый).
+    Без неё окно на вето существовало бы только на бумаге. Зрителям плашка
+    не показывается — им незачем знать про кухню публикации. Кто админ —
+    спрашиваем у core/auth.py (до этапа 5 там заглушка: админ каждый).
     """
     if not auth.is_admin():
         return None
@@ -91,24 +100,68 @@ def publish_banner():
     )
 
 
+def widget_grid(items: list[dict]):
+    """Сетка виджетов: каждый — своей ширины, с высотой из пресета.
+
+    Сами фигуры сюда не кладутся: их подставит коллбэк. Здесь только места
+    под них — иначе при открытии страницы пришлось бы строить все диаграммы
+    дважды, сначала в разметке, потом в коллбэке.
+    """
+    if not items:
+        return dbc.Alert(
+            "Виджетов нет. Добавьте их на странице «Виджеты».",
+            color="light", className="border",
+        )
+
+    columns = []
+    for item in items:
+        preset = widgets.size_meta(item["size"])
+        columns.append(
+            dbc.Col(
+                dbc.Card(
+                    dcc.Graph(
+                        id={"type": "widget-graph", "index": item["id"]},
+                        style={"height": f"{preset['height']}px"},
+                    ),
+                    className="shadow-sm p-2 h-100",
+                ),
+                xs=12,               # на узком экране виджеты встают в столбик
+                lg=preset["columns"],  # на широком — по пресету
+                className="mb-3",
+            )
+        )
+    return dbc.Row(columns, className="g-3")
+
+
 def layout(**kwargs):
-    """Собирается на каждое открытие страницы — значит фильтры всегда свежие."""
+    """Собирается на каждое открытие страницы — значит и фильтры, и набор свежие."""
     try:
         years = data.get_years()
-        indicators = data.get_indicator_choices()
         regions = data.get_region_choices()
         updated = data.get_last_update()
         version = data.get_display_version()
     except FileNotFoundError as e:
         return dbc.Alert(str(e), color="warning", className="m-4")
 
+    items = widgets.get_widgets()
+
+    hint = None
+    if auth.is_admin():
+        hint = html.P(
+            [
+                "Набор виджетов " +
+                ("настроен вручную. " if widgets.is_customized()
+                 else "взят из config.yaml (по умолчанию). "),
+                dcc.Link("Изменить — на странице «Виджеты»", href="/widgets"),
+            ],
+            className="text-muted small",
+        )
+
     return dbc.Container(
         [
             html.H2("Показатели МСП по регионам", className="mt-4"),
             html.P(f"данные обновлены в {updated}", id="data-updated",
                    className="text-muted small"),
-            # Плашку заполняет poll_version: она видна только админу
-            # и живёт тем же 30-секундным ритмом, что и проверка версии
             html.Div(publish_banner(), id="publish-banner"),
             # Невидимая пара, на которой держится автообновление: таймер
             # раз в 30 сек и запомненная display-версия (факты + план)
@@ -129,69 +182,22 @@ def layout(**kwargs):
                     ),
                     dbc.Col(
                         [
-                            dbc.Label("Показатель на графике"),
-                            dbc.Select(
-                                id="filter-indicator",
-                                options=indicators,
-                                value=indicators[0]["value"],
+                            dbc.Label("Регионы (пусто = все)"),
+                            dcc.Dropdown(
+                                id="filter-regions",
+                                options=regions,
+                                multi=True,
+                                placeholder="Все регионы — можно выбрать несколько",
                             ),
                         ],
-                        md=5,
-                    ),
-                    dbc.Col(
-                        [
-                            dbc.Label("Вид диаграммы"),
-                            dbc.Select(
-                                id="filter-chart-type",
-                                options=charts.get_choices(),
-                                value="bar",
-                            ),
-                        ],
-                        md=5,
+                        md=10,
                     ),
                 ],
-                className="mb-3 g-3",
-            ),
-            dbc.Row(
-                dbc.Col(
-                    [
-                        dbc.Label("Регионы (пусто = все)"),
-                        dcc.Dropdown(
-                            id="filter-regions",
-                            options=regions,
-                            multi=True,
-                            placeholder="Все регионы — можно выбрать несколько",
-                        ),
-                        dbc.Checkbox(
-                            id="filter-log",
-                            label=LOG_LABEL,
-                            value=False,
-                            className="mt-2 small text-muted",
-                        ),
-                    ],
-                ),
-                className="mb-4",
+                className="mb-4 g-3",
             ),
             dbc.Row(id="kpi-row", className="mb-4 g-3"),
-            dcc.Graph(id="regions-chart"),
-            html.H4("Данные таблицей", className="mt-4"),
-            html.P(
-                "Клик по заголовку колонки сортирует",
-                className="text-muted small",
-            ),
-            dash_table.DataTable(
-                id="regions-table",
-                sort_action="native",
-                style_table={"overflowX": "auto"},
-                style_cell={
-                    "fontFamily": "system-ui, sans-serif",
-                    "padding": "6px 12px",
-                },
-                style_cell_conditional=[
-                    {"if": {"column_id": "region"}, "textAlign": "left"}
-                ],
-                style_header={"fontWeight": "bold"},
-            ),
+            widget_grid(items),
+            hint,
         ],
         fluid=True,
         className="pb-5",
@@ -206,22 +212,16 @@ def layout(**kwargs):
     State("data-version", "data"),
 )
 def poll_version(_, known_version):
-    """Раз в 30 сек: публикует дозревшее и сверяет версию с той, что помнит страница.
+    """Раз в 30 сек: публикует дозревшее и сверяет версию данных.
 
     Сначала шлюз: publish_due() выпускает всё, чей срок наступил, — так
     ровно в первый опрос после 9:00 (или после подъёма сервера) публикация
     и происходит, отдельного планировщика нет. В холостую это две дешёвые
-    строки чтения. До этапа 5 шлюз дёргается только отсюда и из прогонов
-    etl.run; на этапе 5 добавится cron — но и эта проверка не помешает.
+    строки чтения.
 
-    Дальше как раньше: display-версия совпала — `no_update`, ничего не
-    перерисовывается. Изменилась (опубликованы данные или план) — новый
-    номер уходит в Store, и все коллбэки с `Input("data-version", ...)`
-    перерисуются сами. Фильтры при этом не трогаются: обновляются только
-    выходы коллбэков, а состояние фильтров живёт в браузере.
-
-    Плашка админа обновляется каждый опрос: черновики и pending-версии
-    появляются без смены опубликованной версии, no_update их бы прозевал.
+    Дальше: display-версия совпала — `no_update`, ничего не перерисовывается.
+    Изменилась — новый номер уходит в Store, и коллбэки перерисуются сами.
+    Фильтры при этом не трогаются: обновляются только выходы коллбэков.
     """
     try:
         published = publish.publish_due()
@@ -238,28 +238,6 @@ def poll_version(_, known_version):
 
 
 @callback(
-    Output("filter-log", "disabled"),
-    Output("filter-log", "label"),
-    Input("filter-chart-type", "value"),
-)
-def toggle_log(chart_type):
-    """Гасит галку логарифма на видах, которые его не умеют.
-
-    Логарифм честен только там, где длина не обещает отсчёта от нуля —
-    на точках и ящике. На столбцах он врёт, поэтому виды помечены в реестре
-    флагом `log_ok`, и `build()` игнорирует галку на остальных.
-
-    Раньше это было видно только по подписи, где виды перечислялись словами:
-    галка нажималась на всех 17 видах, а действовала на двух. Теперь и
-    доступность, и текст берутся из реестра — добавите вид с `log_ok=True`,
-    и он подхватится сам, без правки этой страницы.
-    """
-    if charts.supports_log(chart_type):
-        return False, LOG_LABEL
-    return True, f"{LOG_LABEL} (этот вид её не поддерживает)"
-
-
-@callback(
     Output("kpi-row", "children"),
     Input("filter-year", "value"),
     Input("data-version", "data"),
@@ -272,38 +250,34 @@ def render_kpi(year, _version):
 
 
 @callback(
-    Output("regions-chart", "figure"),
-    Input("filter-indicator", "value"),
-    Input("filter-year", "value"),
-    Input("filter-chart-type", "value"),
-    Input("filter-regions", "value"),
-    Input("filter-log", "value"),
-    Input("data-version", "data"),
-)
-def render_chart(indicator, year, chart_type, regions, log, _version):
-    """Вся отрисовка живёт в core/charts.py — здесь только передача выбора."""
-    return charts.build(chart_type, indicator, year, regions, log)
-
-
-@callback(
-    Output("regions-table", "data"),
-    Output("regions-table", "columns"),
+    Output({"type": "widget-graph", "index": ALL}, "figure"),
     Input("filter-year", "value"),
     Input("filter-regions", "value"),
     Input("data-version", "data"),
+    State({"type": "widget-graph", "index": ALL}, "id"),
 )
-def render_table(year, regions, _version):
-    df = data.get_table(int(year), regions or None)
+def render_widgets(year, regions, _version, ids):
+    """Рисует все виджеты разом — по одному вызову на смену фильтра.
 
-    columns = [{"name": "Регион", "id": "region"}]
-    for key in df.columns[1:]:
-        meta = data.get_indicator_meta(key)
-        columns.append(
-            {
-                "name": f"{meta['short']}, {meta['unit']}",
-                "id": key,
-                "type": "numeric",  # без этого сортировка была бы алфавитной
-                "format": TABLE_NUM_FORMAT,
-            }
+    Набор перечитывается здесь, а не берётся из разметки: между открытием
+    страницы и этим вызовом админ мог его поменять. Если виджет за это
+    время исчез, на его месте появляется надпись, а не пустота и не ошибка —
+    остальные виджеты при этом рисуются как ни в чём не бывало.
+    """
+    by_id = {item["id"]: item for item in widgets.get_widgets()}
+    figures = []
+    for graph_id in ids:
+        item = by_id.get(graph_id["index"])
+        if item is None:
+            figures.append(charts.message(
+                "Этот виджет удалили.<br>Обновите страницу (F5)."
+            ))
+            continue
+        preset = widgets.size_meta(item["size"])
+        figures.append(
+            charts.build(
+                item["chart"], item["indicator"], year, regions,
+                log=False, height=preset["height"],
+            )
         )
-    return df.to_dict("records"), columns
+    return figures

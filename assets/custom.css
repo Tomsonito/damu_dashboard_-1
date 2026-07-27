@@ -5,6 +5,93 @@
    не изменился — Ctrl+F5 (жёсткое обновление). */
 
 
+/* ================== ПЕРЕМЕННЫЕ ТЕМЫ ==================
+
+   Значения переменных --damu-* сюда НЕ вписаны: их подставляет
+   core/theme.py прямо в <head> на каждый запрос (см. app.py,
+   ThemedDash.interpolate_index). Здесь — только правила: какой элемент
+   какую переменную берёт.
+
+   Разделение труда: Python отвечает за «какой сейчас цвет», CSS —
+   за «что этим цветом красить». Поэтому вёрстку можно править, не
+   трогая Python, а настройки менять, не трогая CSS.
+
+   Запасные значения после запятой — на случай, если страница
+   отрисовалась без подстановки (например, открыли .html отдельно):
+   сайт останется читаемым, просто в цветах по умолчанию. */
+
+body {
+    font-family: var(--damu-font, system-ui, sans-serif);
+    font-size: var(--damu-font-size, 16px);
+}
+
+/* Заголовки и таблицы Dash идут своим шрифтом, если не сказать иначе */
+h1, h2, h3, h4, h5, h6,
+.dash-table-container,
+.Select, .Select-control, .Select-menu-outer {
+    font-family: var(--damu-font, system-ui, sans-serif);
+}
+
+/* --- Шапка «в основной цвет».
+   Класс навешивает app.py, когда админ выбрал такой вид шапки.
+   Цвет текста считается от яркости фона (core/theme.py, readable_on):
+   на светлом акценте белые буквы не читались бы. */
+.damu-navbar-accent {
+    background-color: var(--damu-accent, #0d6efd) !important;
+}
+.damu-navbar-accent .navbar-brand,
+.damu-navbar-accent .nav-link {
+    color: var(--damu-on-accent, #ffffff) !important;
+}
+
+/* Логотип в шапке: высота фиксированная, ширина по пропорции.
+   Так любая картинка из assets/ встаёт в шапку, не разнося её. */
+.damu-logo {
+    height: 28px;
+    width: auto;
+    margin-right: 0.5rem;
+    vertical-align: text-bottom;
+}
+
+/* --- Основные кнопки и ссылки — в цвет темы.
+   Bootstrap красит их своим синим через .btn-primary; правило ниже
+   идёт после его файла, поэтому побеждает без !important. */
+.btn-primary {
+    background-color: var(--damu-accent, #0d6efd);
+    border-color: var(--damu-accent, #0d6efd);
+    color: var(--damu-on-accent, #ffffff);
+}
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary:active {
+    background-color: var(--damu-accent-dark, #0a58ca);
+    border-color: var(--damu-accent-dark, #0a58ca);
+    color: var(--damu-on-accent, #ffffff);
+}
+.btn-outline-primary {
+    color: var(--damu-accent, #0d6efd);
+    border-color: var(--damu-accent, #0d6efd);
+}
+.btn-outline-primary:hover {
+    background-color: var(--damu-accent, #0d6efd);
+    border-color: var(--damu-accent, #0d6efd);
+    color: var(--damu-on-accent, #ffffff);
+}
+a, .page-link {
+    color: var(--damu-accent, #0d6efd);
+}
+a:hover {
+    color: var(--damu-accent-dark, #0a58ca);
+}
+
+/* Поле ввода в фокусе — рамка тем же цветом, что и остальное */
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--damu-accent, #0d6efd);
+    box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(13, 110, 253, 0.25));
+}
+
+
 /* --- Галки: у Bootstrap они почти не видны ---
 
    По умолчанию галка 14x14 px с рамкой 0.8 px цвета #dee2e6 — на белом
@@ -21,21 +108,22 @@
     cursor: pointer;
 }
 
-/* Отмеченная — синяя заливка Bootstrap, рамку подгоняем под неё,
-   иначе вокруг синего квадрата остаётся серый кант */
+/* Отмеченная — заливка цветом темы, рамку подгоняем под неё,
+   иначе вокруг залитого квадрата остаётся серый кант */
 .form-check-input:checked {
-    border-color: #0d6efd;
+    background-color: var(--damu-accent, #0d6efd);
+    border-color: var(--damu-accent, #0d6efd);
 }
 
 /* Наведение мышью: рамка темнеет — подсказка, что элемент живой */
 .form-check-input:not(:disabled):hover {
-    border-color: #0a58ca;
+    border-color: var(--damu-accent-dark, #0a58ca);
 }
 
 /* Клавиатурный фокус: кольцо вокруг галки.
    Нужно тем, кто ходит по странице через Tab, а не мышью */
 .form-check-input:focus {
-    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(13, 110, 253, 0.25));
 }
 
 /* Недоступная галка (вид не умеет логарифм): бледная рамка и курсор

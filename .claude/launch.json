@@ -7,6 +7,16 @@
       "runtimeArgs": ["app.py"],
       "port": 8050,
       "autoPort": true
+    },
+    {
+      "name": "damu-widgets-sandbox",
+      "runtimeExecutable": "../damu_dashboard_widgets/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-c",
+        "import os, runpy; os.chdir(os.path.abspath('../damu_dashboard_widgets')); runpy.run_path('app.py', run_name='__main__')"
+      ],
+      "port": 8050,
+      "autoPort": true
     }
   ]
 }

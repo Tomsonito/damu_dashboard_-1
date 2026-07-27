@@ -19,10 +19,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.colors import sample_colorscale
 
-from core import data
+from core import data, theme
 
 # Реестр заполняется декоратором при импорте модуля
 _REGISTRY: dict[str, dict] = {}
+
+#: Запасные цвета для рядов после первого. Первым идёт цвет темы —
+#: у большинства наших видов ряд всего один, и он окрашивается им.
+_PALETTE_TAIL = px.colors.qualitative.Plotly[1:]
 
 
 @dataclass
@@ -84,8 +88,15 @@ def supports_log(chart_type: str) -> bool:
     return bool(entry and entry["log_ok"])
 
 
-def build(chart_type: str, indicator: str, year, regions, log: bool = False) -> go.Figure:
-    """Собирает выбранную диаграмму и навешивает общее оформление."""
+def build(chart_type: str, indicator: str, year, regions, log: bool = False,
+          height: int | None = None) -> go.Figure:
+    """Собирает выбранную диаграмму и навешивает общее оформление.
+
+    height — высота в пикселях. Задан (виджет на главной со своим пресетом
+    размера) — диаграмма подгоняется под него, даже если вид просил себе
+    другую высоту. Не задан (страница «Разбор», один график во весь экран) —
+    вид оставляет свою, а если не просил — 700, как было.
+    """
     entry = _REGISTRY.get(chart_type) or _REGISTRY["bar"]
     ctx = Ctx(
         indicator=indicator,
@@ -93,15 +104,37 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False) -> 
         regions=regions or None,
         log=bool(log) and entry["log_ok"],
     )
+    # Оформление сайта распространяется и на диаграммы: иначе страница была
+    # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
+    # здесь, в единственном общем месте, а не в каждой из 17 функций.
+    settings = theme.get_theme()
+    palette = [settings["accent"], *_PALETTE_TAIL]
+
+    # !! Цвет приходится задавать ДО постройки, и вот почему: plotly express
+    # вписывает цвет прямо в ряд данных, а не берёт его из разметки в момент
+    # показа. Поэтому layout.colorway на столбцы уже не влияет (проверено
+    # в браузере: столбцы оставались синими #636efa). px.defaults —
+    # единственный способ поменять палитру всем 17 видам разом, не трогая
+    # каждую функцию.
+    px.defaults.color_discrete_sequence = palette
+
     fig = entry["builder"](ctx)
     fig.update_layout(
+        font=dict(family=theme.font_stack(settings)),
+        # Для видов, собранных не через express, а руками на go.Figure:
+        # у них цвет ряда не задан, и они берут его отсюда
+        colorway=palette,
         margin=dict(l=10, r=120, t=60, b=40),
         plot_bgcolor="white",
         # Русская типографика чисел: запятая для дробей, неразрывный пробел
         # для разрядов. Иначе plotly пишет по-английски: 454,416.0
         separators=", ",
     )
-    if fig.layout.height is None:  # вид мог задать свою высоту
+    if height:
+        # Пресет виджета сильнее собственной высоты вида: на экране из
+        # нескольких виджетов сетку задаёт раскладка, а не диаграмма
+        fig.update_layout(height=int(height))
+    elif fig.layout.height is None:  # вид мог задать свою высоту
         fig.update_layout(height=700)
     return fig
 
@@ -203,6 +236,15 @@ def _hierarchy_style(fig: go.Figure) -> go.Figure:
     fig.update_traces(insidetextfont=dict(size=MIN_LABEL_SIZE + 1))
     fig.update_layout(uniformtext=dict(minsize=MIN_LABEL_SIZE, mode="hide"))
     return fig
+
+
+def message(text: str) -> go.Figure:
+    """Та же пустая фигура с текстом, но для страниц.
+
+    Нужна главной: если набор виджетов изменили в другой вкладке, на месте
+    исчезнувшего виджета честнее показать надпись, чем пустой прямоугольник.
+    """
+    return _message(text)
 
 
 def _message(text: str) -> go.Figure:
@@ -551,6 +593,122 @@ def _histogram(ctx: Ctx) -> go.Figure:
         labels={"shown": ctx.unit}, title=f"{ctx.title} — распределение регионов",
     )
     fig.update_layout(yaxis_title="регионов")
+    return fig
+
+
+# ──────────────────── Общие цифры по стране ────────────────────
+#
+# Эти виды — не разрез по областям, а «сколько всего». Именно они нужны
+# виджетам вроде «сколько МСП» или «как идёт освоение плана»: на главном
+# экране рядом с подробными разрезами должно быть и общее число, иначе
+# читателю приходится складывать двадцать столбцов глазами.
+#
+# Фильтр регионов они уважают: выбрали три области — цифра будет по трём.
+
+
+def _accent() -> str:
+    """Цвет темы. build() кладёт палитру сюда перед постройкой диаграммы."""
+    palette = px.defaults.color_discrete_sequence
+    return palette[0] if palette else "#0d6efd"
+
+
+@chart("total", "Число — итог по стране")
+def _total(ctx: Ctx) -> go.Figure:
+    """Одна крупная цифра и изменение к прошлому году.
+
+    Показывается в масштабе показа из config.yaml (млрд ₸, трлн ₸), иначе
+    на экране был бы ряд из двенадцати цифр, который никто не прочтёт.
+    """
+    meta = ctx.meta
+    if meta.get("derived"):
+        # Показатель-доля в фактах не лежит, он считается из двух других.
+        # Без этой ветки виджет «Число» с «Согласно плану» показывал бы
+        # «нет данных», хотя цифра прекрасно считается — просто иначе.
+        value, _ = data.get_derived_percent(ctx.indicator, ctx.year, ctx.regions)
+        previous, _ = data.get_derived_percent(ctx.indicator, ctx.year - 1, ctx.regions)
+    else:
+        value = data.get_country_total(ctx.indicator, ctx.year, ctx.regions)
+        previous = data.get_country_total(ctx.indicator, ctx.year - 1, ctx.regions)
+    if value is None:
+        return _message(NO_DATA)
+    unit = meta["display_unit"] or meta["unit"]
+
+    number = {
+        "valueformat": f",.{meta['decimals']}f",
+        "suffix": f" {unit}" if unit else "",
+        "font": {"size": 44, "color": _accent()},
+    }
+    indicator_kwargs = dict(value=value / meta["divisor"], number=number)
+    if previous:
+        indicator_kwargs["mode"] = "number+delta"
+        indicator_kwargs["delta"] = {
+            "reference": previous / meta["divisor"],
+            "relative": True,
+            "valueformat": ".1%",
+        }
+    else:
+        indicator_kwargs["mode"] = "number"
+
+    fig = go.Figure(go.Indicator(**indicator_kwargs))
+    fig.update_layout(title=ctx.title)
+    return fig
+
+
+@chart("gauge", "Шкала — процент выполнения")
+def _gauge(ctx: Ctx) -> go.Figure:
+    """Полукруглая шкала для производного показателя — «Согласно плану %».
+
+    Работает только с показателями, у которых в config.yaml есть блок
+    `derived`: шкала показывает долю одного показателя от другого. Для
+    обычного показателя доли не существует — тогда честнее сказать это
+    словами, чем нарисовать шкалу непонятно чего.
+    """
+    spec = ctx.meta.get("derived")
+    if not spec:
+        return _message(
+            "Этот вид — для показателей-долей.<br>"
+            "Выберите «Освоение бюджета — факт от плана»<br>"
+            "или другой показатель с блоком derived в config.yaml."
+        )
+
+    value, source = data.get_derived_percent(ctx.indicator, ctx.year, ctx.regions)
+    if value is None:
+        return _message(NO_DATA)
+
+    # Шкала до 100 %, но если перевыполнили — до самого значения, иначе
+    # стрелка упиралась бы в край и «120 %» выглядели бы как «100 %»
+    top = max(100, value)
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=value,
+        number={"suffix": " %", "valueformat": ".1f", "font": {"size": 36}},
+        gauge={
+            "axis": {"range": [0, top]},
+            "bar": {"color": _accent()},
+            # Бледная засечка на 100 %: видно, добрали до плана или нет
+            "threshold": {"value": 100, "line": {"color": "#6c757d", "width": 2}},
+        },
+    ))
+    fig.update_layout(title=f"{ctx.title}<br><sub>считается {source}</sub>")
+    return fig
+
+
+@chart("years_total", "Годы — итог по стране")
+def _years_total(ctx: Ctx) -> go.Figure:
+    """Как показатель менялся по годам, без разбивки по областям."""
+    df = data.get_country_years(ctx.indicator, regions=ctx.regions)
+    if df.empty:
+        return _message(NO_DATA)
+
+    df = ctx.scaled(df)
+    fig = px.bar(
+        df, x="report_year", y="shown", text="текст",
+        labels={"shown": ctx.unit, "report_year": ""},
+        title=f"{ctx.meta['title']} — по годам",
+    )
+    fig.update_traces(textposition="outside")
+    # Год — подпись, а не число на шкале: 2 022,5 года не бывает
+    fig.update_xaxes(type="category")
     return fig
 
 

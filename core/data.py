@@ -91,6 +91,32 @@ def _query_storage(query: str) -> pd.DataFrame:
     raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше ожидания: {last_error}")
 
 
+def _connect_write() -> duckdb.DuckDBPyConnection:
+    """Соединение на запись — с теми же повторами, что и чтение выше.
+
+    Живёт здесь, а не у того, кто пишет: писателей в проекте уже трое
+    (публикация в 9:00, черновики плана, настройки оформления), и правило
+    «дверь к хранилищу одна» должно держаться и для записи. core/publish.py
+    и core/theme.py берут эту функцию отсюда.
+
+    Файл может быть заперт прогоном etl.run — доли секунды раз в несколько
+    минут; под Gunicorn к этому добавятся соседние воркеры.
+    """
+    last_error: Exception | None = None
+    for attempt in range(_RETRY_ATTEMPTS):
+        try:
+            return duckdb.connect(str(DUCKDB_PATH))
+        # IOException — файл заперт другим процессом (etl.run или другой
+        # воркер Gunicorn пишет). ConnectionException — в ЭТОМ процессе прямо
+        # сейчас открыто читающее соединение (другой поток сайта): DuckDB не
+        # смешивает чтение и запись в одном процессе. И то и другое лечится
+        # ожиданием — общий backoff с jitter, _lock_delay выше.
+        except _LOCK_ERRORS as e:
+            last_error = e
+            time.sleep(_lock_delay(attempt))
+    raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше ожидания: {last_error}")
+
+
 def get_published_version() -> int:
     """Номер ОПУБЛИКОВАННОЙ версии данных — одна строка из `versions`, дёшево.
 
@@ -247,6 +273,89 @@ def _country_totals(df: pd.DataFrame, year: int) -> dict[str, float]:
             per_region["value"].mean() if how == "mean" else per_region["value"].sum()
         )
     return totals
+
+
+def get_country_total(
+    indicator: str, year: int, regions: list[str] | None = None
+) -> float | None:
+    """Одна цифра: итог показателя по стране за год.
+
+    Нужна виджетам «общий показатель» — тем, что показывают не разрез
+    по областям, а одно число: сколько всего МСП, сколько освоено.
+    Регионы в них сворачиваются в страну по правилу `agg` показателя.
+
+    Если в фильтре выбраны отдельные области, готовая строка-итог
+    не годится (она про всю страну) — тогда складываем только выбранные.
+    """
+    df = load_facts()
+    selected = df[(df.indicator == indicator) & (df.report_year == year)]
+    if selected.empty:
+        return None
+
+    official = selected[selected.is_total]
+    if not regions and not official.empty:
+        return float(_aggregate(official, indicator, ["indicator"])["value"].iloc[0])
+
+    per_region = selected[~selected.is_total]
+    if regions:
+        per_region = per_region[per_region.region.isin(regions)]
+    if per_region.empty:
+        return None
+    per_region = _aggregate(per_region, indicator, ["region"])
+    how = get_indicator_meta(indicator).get("agg", "sum")
+    return float(
+        per_region["value"].mean() if how == "mean" else per_region["value"].sum()
+    )
+
+
+def get_country_years(
+    indicator: str, regions: list[str] | None = None
+) -> pd.DataFrame:
+    """Показатель по годам, страна целиком. Колонки: report_year, value.
+
+    Отличие от `get_region_dynamics`: там строка на каждую область,
+    здесь — на каждый год. Для виджета «как менялось в целом».
+    """
+    years = sorted(load_facts()["report_year"].unique().tolist())
+    rows = []
+    for year in years:
+        value = get_country_total(indicator, int(year), regions)
+        if value is not None:
+            rows.append({"report_year": int(year), "value": value})
+    return pd.DataFrame(rows, columns=["report_year", "value"])
+
+
+def get_derived_percent(
+    indicator: str, year: int, regions: list[str] | None = None
+) -> tuple[float | None, str]:
+    """Производный процент («Согласно плану») и подпись, от чего он считан.
+
+    Тот же расчёт, что у карточки на главной: числитель — факт,
+    знаменатель — план. Если админ опубликовал годовой план, знаменатель
+    берётся из него.
+
+    !! С одной оговоркой: **при выбранных областях план не применяется.**
+    План вводится один на страну, к трём выбранным областям он отношения
+    не имеет, и делить их факт на общий план значило бы показать
+    бессмыслицу. В таком случае считаем от фактов и говорим об этом
+    подписью — чтобы цифра не выглядела не тем, чем она является.
+    """
+    spec = get_indicator_meta(indicator).get("derived")
+    if not spec:
+        return None, ""
+
+    numerator = get_country_total(spec["numerator"], year, regions)
+    denominator = get_country_total(spec["denominator"], year, regions)
+    source = "от факта за загруженные месяцы"
+
+    if not regions:
+        plan = get_published_plan(year).get(spec["denominator"])
+        if plan:
+            denominator, source = float(plan), "от годового плана"
+
+    if numerator is None or not denominator:
+        return None, source
+    return numerator / denominator * 100, source
 
 
 def get_published_plan(year: int) -> dict[str, float]:
