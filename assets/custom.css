@@ -2,242 +2,757 @@
    Dash подхватывает всё из assets/ сам, подключать в коде не нужно.
 
    Правки видны после F5. Если браузер закешировал файл и стиль
-   не изменился — Ctrl+F5 (жёсткое обновление). */
+   не изменился — Ctrl+F5 (жёсткое обновление).
+
+   С 29.07.2026 файл собран по макету из Claude Design (дизайн-система
+   «Modernist»): плоские карточки, прямые углы, зелёный + золотистый,
+   тонкие тени, 2 px разделители. Разбор макета — в CODE_GUIDE. */
+
+
+/* ================== ШРИФТ ==================
+
+   Golos Text лежит у нас в assets/fonts/, а не грузится с Google Fonts:
+   сеть внутренняя, до fonts.googleapis.com оттуда не достучаться — тот же
+   принцип, что у Bootstrap и файла границ карты.
+
+   Четыре файла — это подмножества (subsets) одного шрифта: браузер скачает
+   только те, чьи буквы реально встретились на странице. unicode-range
+   и говорит ему, какие это буквы. Кириллица у нас на каждой странице,
+   вьетнамских букв нет никогда — и вьетнамский файл не скачается.
+
+   Файлы вариативные (один файл на все насыщенности), поэтому вес указан
+   диапазоном `400 900`, а не числом: браузер сам выставит и 400, и 800.
+
+   !! Знак тенге ₸ (U+20B8) живёт в наборе latin-ext, а не в кириллическом —
+   без этого файла числа были бы с ₸ из подменного шрифта. */
+
+@font-face {
+    font-family: 'Golos Text';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('fonts/golos-text-cyrillic.woff2') format('woff2');
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+    font-family: 'Golos Text';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('fonts/golos-text-cyrillic-ext.woff2') format('woff2');
+    unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+    font-family: 'Golos Text';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('fonts/golos-text-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+                   U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+                   U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: 'Golos Text';
+    font-style: normal;
+    font-weight: 400 900;
+    font-display: swap;
+    src: url('fonts/golos-text-latin-ext.woff2') format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+                   U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
+                   U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 
 /* ================== ПЕРЕМЕННЫЕ ТЕМЫ ==================
 
-   Значения переменных --damu-* сюда НЕ вписаны: их подставляет
-   core/theme.py прямо в <head> на каждый запрос (см. app.py,
-   ThemedDash.interpolate_index). Здесь — только правила: какой элемент
-   какую переменную берёт.
+   Значения --damu-accent, --damu-font и прочего настраиваемого сюда
+   НЕ вписаны: их подставляет core/theme.py прямо в <head> на каждый запрос
+   (см. app.py, ThemedDash.interpolate_index).
 
    Разделение труда: Python отвечает за «какой сейчас цвет», CSS —
    за «что этим цветом красить». Поэтому вёрстку можно править, не
    трогая Python, а настройки менять, не трогая CSS.
 
-   Запасные значения после запятой — на случай, если страница
-   отрисовалась без подстановки (например, открыли .html отдельно):
-   сайт останется читаемым, просто в цветах по умолчанию. */
+   Ниже — только ПОСТОЯННЫЕ величины дизайн-системы: их админ не меняет,
+   и гонять их через Python значило бы каждый запрос пересобирать то,
+   что никогда не меняется.
+
+   Запасные значения после запятой (var(--damu-accent, #1f7a4d)) — на случай,
+   если страница отрисовалась без подстановки: сайт останется читаемым. */
+
+:root {
+    --damu-bg: #f3f2f2;          /* фон страницы */
+    --damu-surface: #eae9e9;     /* поверхность карточки */
+    --damu-white: #ffffff;       /* плитка под диаграммой */
+    --damu-ink: #201e1d;         /* текст: тёплый чёрный, не #000 */
+    --damu-divider: rgba(32, 30, 29, 0.4);
+    --damu-hairline: rgba(32, 30, 29, 0.12);
+    --damu-muted: rgba(32, 30, 29, 0.55);
+    --damu-track: #eae7e7;       /* незаполненная часть полосок и шкал */
+
+    /* Тени взяты из дизайн-системы: мягкие, «чернильные», без синевы */
+    --damu-shadow-sm: 0 1px 2px rgba(45, 43, 43, 0.14);
+    --damu-shadow-md: 0 3px 10px rgba(45, 43, 43, 0.16);
+}
+
+
+/* ================== БАЗА И ПЕРЕНАСТРОЙКА BOOTSTRAP ==================
+
+   Bootstrap 5.3 почти весь построен на своих переменных --bs-*. Поэтому
+   вместо охоты за отдельными правилами достаточно один раз перенастроить
+   переменные — и карточки, кнопки, поля, плашки и окна разом приезжают
+   в наш вид. Это дешевле и переживёт обновление пакета.
+
+   !! Радиус приравнен к нулю ВЕЗДЕ: в дизайн-системе макета
+   --radius-sm/md/lg = 0px, скруглений нет ни у чего. */
+
+:root {
+    --bs-body-bg: var(--damu-bg);
+    --bs-body-color: var(--damu-ink);
+    --bs-body-font-family: var(--damu-font, system-ui, sans-serif);
+    --bs-border-color: var(--damu-hairline);
+
+    --bs-border-radius: 0;
+    --bs-border-radius-sm: 0;
+    --bs-border-radius-lg: 0;
+    --bs-border-radius-xl: 0;
+    --bs-border-radius-xxl: 0;
+    --bs-border-radius-2xl: 0;
+    --bs-border-radius-pill: 0;
+
+    --bs-box-shadow-sm: var(--damu-shadow-sm);
+    --bs-box-shadow: var(--damu-shadow-md);
+}
 
 body {
+    background-color: var(--damu-bg);
+    color: var(--damu-ink);
     font-family: var(--damu-font, system-ui, sans-serif);
     font-size: var(--damu-font-size, 16px);
 }
 
-/* Заголовки и таблицы Dash идут своим шрифтом, если не сказать иначе */
+/* Заголовки и таблицы Dash идут своим шрифтом, если не сказать иначе.
+   Насыщенность 800 и минусовой межбуквенный интервал — из дизайн-системы:
+   заголовки там подчёркнуто плотные и тяжёлые. */
 h1, h2, h3, h4, h5, h6,
 .dash-table-container,
 .Select, .Select-control, .Select-menu-outer {
     font-family: var(--damu-font, system-ui, sans-serif);
 }
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 800;
+    letter-spacing: -0.015em;
+    line-height: 1.14;
+}
+h1 { font-size: 2.2rem; }
+h2 { font-size: 1.7rem; }
+h3 { font-size: 1.35rem; }
+h4 { font-size: 1.15rem; }
 
 /* --- Основные кнопки и ссылки — в цвет темы.
    Bootstrap красит их своим синим через .btn-primary; правило ниже
    идёт после его файла, поэтому побеждает без !important. */
 .btn-primary {
-    background-color: var(--damu-accent, #0d6efd);
-    border-color: var(--damu-accent, #0d6efd);
+    background-color: var(--damu-accent, #1f7a4d);
+    border-color: var(--damu-accent, #1f7a4d);
     color: var(--damu-on-accent, #ffffff);
 }
 .btn-primary:hover,
 .btn-primary:focus,
 .btn-primary:active {
-    background-color: var(--damu-accent-dark, #0a58ca);
-    border-color: var(--damu-accent-dark, #0a58ca);
+    background-color: var(--damu-accent-dark, #185f3d);
+    border-color: var(--damu-accent-dark, #185f3d);
     color: var(--damu-on-accent, #ffffff);
 }
 .btn-outline-primary {
-    color: var(--damu-accent, #0d6efd);
-    border-color: var(--damu-accent, #0d6efd);
+    color: var(--damu-accent, #1f7a4d);
+    border-color: var(--damu-accent, #1f7a4d);
 }
 .btn-outline-primary:hover {
-    background-color: var(--damu-accent, #0d6efd);
-    border-color: var(--damu-accent, #0d6efd);
+    background-color: var(--damu-accent, #1f7a4d);
+    border-color: var(--damu-accent, #1f7a4d);
     color: var(--damu-on-accent, #ffffff);
 }
 a, .page-link {
-    color: var(--damu-accent, #0d6efd);
+    color: var(--damu-accent, #1f7a4d);
 }
 a:hover {
-    color: var(--damu-accent-dark, #0a58ca);
+    color: var(--damu-accent-dark, #185f3d);
 }
 
-/* Поле ввода в фокусе — рамка тем же цветом, что и остальное */
+/* Поля ввода: подложка чуть темнее фона — как в макете, где поле
+   отличается от страницы не рамкой, а тоном */
+.form-control,
+.form-select {
+    background-color: var(--damu-surface);
+    border-color: var(--damu-divider);
+    color: var(--damu-ink);
+}
 .form-control:focus,
 .form-select:focus {
-    border-color: var(--damu-accent, #0d6efd);
-    box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(13, 110, 253, 0.25));
+    border-color: var(--damu-accent, #1f7a4d);
+    box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(31, 122, 77, 0.25));
+}
+
+/* Карточка: плоская поверхность без рамки — тень и тон делают всю работу */
+.card {
+    --bs-card-bg: var(--damu-surface);
+    --bs-card-border-width: 0;
+    --bs-card-border-radius: 0;
+    --bs-card-inner-border-radius: 0;
+}
+
+/* Плашки-подсказки (dbc.Alert) — тоже без скруглений и без пестроты */
+.alert {
+    border-radius: 0;
+    border-color: var(--damu-hairline);
 }
 
 
-/* ================== КАРКАС: ШАПКА, ВКЛАДКИ, СОДЕРЖИМОЕ ==================
+/* ================== ШАПКА И ФИЛЬТРЫ ==================
 
-   Раскладка главной по эскизу: логотип слева, фильтры справа, под ними
-   полоса вкладок, ниже — виджеты. Полный список разделов не занимает
-   места на экране: он всплывает поверх страницы по кнопке. */
+   Раскладка из макета: одна строка навигации (название слева, ссылки
+   и админ-меню справа), под ней ряд фильтров с блоком свежести данных
+   у правого края. Обе полосы разделены линиями в 2 px. */
 
-.damu-header {
+.damu-nav {
     display: flex;
-    align-items: flex-end;
-    gap: 1.5rem;
-    flex-wrap: wrap;
-    padding: 0.75rem 1rem 0.5rem;
-    background-color: #ffffff;
-    border-bottom: 1px solid #dee2e6;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.85rem 1.75rem;
+    background-color: var(--damu-nav-bg, #f3f2f2);
+    color: var(--damu-nav-fg, #201e1d);
+    border-bottom: 2px solid var(--damu-divider);
 }
 
-/* Логотип и название — одним блоком, чтобы не разъезжались */
+/* Название и логотип — одним блоком; margin-right:auto отжимает
+   всё остальное к правому краю, как в макете */
 .damu-brand-box {
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    min-width: 12rem;
+    margin-right: auto;
 }
 .damu-logo {
-    height: 44px;
+    height: 34px;
     width: auto;
-    max-width: 160px;
+    max-width: 150px;
 }
 .damu-brand {
+    font-weight: 800;
+    font-size: 1.15rem;
+    line-height: 1.15;
+    letter-spacing: -0.015em;
+}
+
+/* Ссылки навигации: цвет наследуют от шапки, а открытая страница —
+   в основной цвет. Подчёркивания нет, как в дизайн-системе */
+.damu-nav .nav-link,
+.damu-nav .damu-nav-link {
+    color: inherit;
+    font-size: 0.9rem;
+    padding: 0.2rem 0.35rem;
+    text-decoration: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+.damu-nav .nav-link:hover,
+.damu-nav .damu-nav-link:hover,
+.damu-nav .nav-link.active {
+    color: var(--damu-accent, #1f7a4d);
+}
+/* Открытая страница в тёмной шапке: основной цвет на тёмном читается
+   плохо, поэтому там подсветка идёт светлым и подчёркиванием */
+.damu-nav[data-navbar="dark"] .nav-link.active,
+.damu-nav[data-navbar="dark"] .nav-link:hover,
+.damu-nav[data-navbar="dark"] .damu-nav-link:hover {
+    color: var(--damu-nav-fg, #f3f2f2);
+    box-shadow: inset 0 -2px 0 currentColor;
+}
+
+/* Метка роли — рамка в основной цвет, без заливки */
+.damu-tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    letter-spacing: 0.02em;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--damu-accent, #1f7a4d);
+    color: var(--damu-accent, #1f7a4d);
+    white-space: nowrap;
+}
+
+/* Меню админа: у Bootstrap кнопка выпадающего меню цветная и скруглённая —
+   здесь она такая же плоская ссылка, как остальные пункты шапки */
+.damu-admin-menu .btn {
+    background: none;
+    border: none;
+    color: var(--damu-accent, #1f7a4d);
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.2rem 0.4rem;
+}
+.damu-admin-menu .btn:hover,
+.damu-admin-menu .btn:focus,
+.damu-admin-menu .btn:active,
+.damu-admin-menu .show > .btn {
+    background-color: var(--damu-accent-soft, #e9f2ed);
+    color: var(--damu-accent-dark, #185f3d);
+    box-shadow: none;
+}
+.damu-admin-menu .dropdown-menu {
+    border-radius: 0;
+    border-color: var(--damu-divider);
+    box-shadow: var(--damu-shadow-md);
+}
+
+/* --- Ряд фильтров --- */
+.damu-filters {
+    display: flex;
+    align-items: flex-end;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.75rem 0.9rem;
+    border-bottom: 2px solid var(--damu-divider);
+    background-color: var(--damu-bg);
+}
+.damu-filters .form-label,
+.damu-filters label {
+    display: block;
+    font-size: 0.75rem;
+    margin-bottom: 0.3rem;
+    color: rgba(32, 30, 29, 0.7);
+}
+.damu-filter-year { width: 8rem; }
+.damu-filter-regions { min-width: 20rem; flex: 0 1 26rem; }
+
+/* Свежесть данных: прижата к правому краю, с пульсирующей точкой —
+   она и есть весь «живой» акцент страницы */
+.damu-updated {
+    margin-left: auto;
+    text-align: right;
+    line-height: 1.25;
+}
+.damu-updated-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--damu-muted);
+}
+.damu-updated-value {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.4rem;
     font-weight: 600;
     font-size: 1.05rem;
-    line-height: 1.15;
 }
-
-/* Полоса вкладок: несколько разделов слева, кнопка полного списка справа.
-   Липнет к верху при прокрутке — переключаться можно с любого места */
-.damu-tabs {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;        /* вкладки сверху, кнопка списка под ними */
-    gap: 0.35rem;
-    padding: 0.4rem 1rem 0.5rem;
-    background-color: var(--damu-accent, #0d6efd);
+.damu-live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--damu-accent, #1f7a4d);
+    display: inline-block;
+    animation: damu-live-pulse 2s ease-in-out infinite;
 }
-.damu-tabs-nav {
-    flex-wrap: nowrap;
-    overflow-x: auto;              /* на узком экране вкладки прокручиваются */
+@keyframes damu-live-pulse {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.35; }
+    100% { opacity: 1; }
 }
-
-/* Кнопка полного списка — во всю ширину полосы вкладок.
-   Цвета берутся от полосы: светлая подложка на цветном фоне читается
-   при любом основном цвете, потому что цвет текста считает Python
-   по яркости фона (core/theme.py, readable_on) */
-.damu-all-sections {
-    width: 100%;
-    background-color: rgba(255, 255, 255, 0.18);
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    color: var(--damu-on-accent, #ffffff);
-    font-size: 0.9rem;
-    padding: 0.25rem;
-}
-.damu-all-sections:hover,
-.damu-all-sections:focus {
-    background-color: rgba(255, 255, 255, 0.32);
-    border-color: var(--damu-on-accent, #ffffff);
-    color: var(--damu-on-accent, #ffffff);
-}
-.damu-tabs .nav-link {
-    color: var(--damu-on-accent, #ffffff);
-    opacity: 0.9;
-    white-space: nowrap;
-    padding: 0.3rem 0.9rem;
-}
-.damu-tabs .nav-link:hover {
-    opacity: 1;
-    background-color: rgba(0, 0, 0, 0.12);
-}
-/* Открытая сейчас вкладка — светлая плашка на цветной полосе */
-.damu-tabs .nav-link.active {
-    background-color: #ffffff !important;
-    color: #212529 !important;
-    opacity: 1;
+/* Уважаем настройку «поменьше движения» в системе: мигание — украшение,
+   а не смысл, и тем, кому оно мешает, оно не нужно */
+@media (prefers-reduced-motion: reduce) {
+    .damu-live-dot { animation: none; }
 }
 
 .damu-content {
-    padding: 0 1rem;
+    padding: 1.25rem 1.75rem 3rem;
 }
 
-/* ---------- Страница раздела: список слева, вкладки сверху ----------
-   Раскладка повторяет боевой портал: узкая колонка со всеми разделами
-   (внутри раздела удобно прыгать к соседнему) и два ряда вкладок-разрезов
-   над содержимым. */
+
+/* ================== ГЛАВНАЯ: КАРТОЧКИ ИНСТРУМЕНТОВ ==================
+
+   Четыре равные колонки. Цвет каждой карточки задаётся ОДНИМ классом
+   на самой карточке (.damu-c-1/2/3): он кладёт цвет в переменную --damu-c,
+   а всё внутри — заголовок, шкала, полоски, столбики — берёт её оттуда.
+   Иначе цвет пришлось бы вписывать в десяток мест каждой карточки. */
+
+.damu-inst-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+}
+@media (max-width: 1200px) {
+    .damu-inst-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px) {
+    .damu-inst-grid { grid-template-columns: 1fr; }
+}
+
+.damu-c-1 { --damu-c: var(--damu-accent, #1f7a4d); }
+.damu-c-2 { --damu-c: var(--damu-accent-2, #b08a2e); }
+.damu-c-3 { --damu-c: var(--damu-accent-2-dark, #664e18); }
+
+.damu-inst-card {
+    background-color: var(--damu-surface);
+    box-shadow: var(--damu-shadow-sm);
+    padding: 1.25rem 1.25rem 1rem;
+    display: flex;
+    flex-direction: column;
+}
+/* Первая карточка («Все инструменты») приподнята тенью — в макете она
+   выделена как главная */
+.damu-inst-card.damu-inst-lead {
+    box-shadow: var(--damu-shadow-md);
+}
+.damu-inst-head {
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--damu-c);
+    border-bottom: 2px solid var(--damu-c);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+/* Строка «подпись слева — значение справа» повторяется в карточке
+   много раз, поэтому вынесена в один класс */
+.damu-inst-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 0.85rem;
+    gap: 0.5rem;
+}
+.damu-inst-row .damu-muted { color: rgba(32, 30, 29, 0.6); }
+.damu-inst-status { font-weight: 700; font-size: 0.85rem; }
+.damu-inst-status.ok   { color: var(--damu-accent, #1f7a4d); }
+.damu-inst-status.late { color: var(--damu-accent-2-dark, #664e18); }
+
+.damu-inst-block {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--damu-hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* Полоска выполнения: подложка + заливка в цвет карточки */
+.damu-bar {
+    height: 6px;
+    background-color: var(--damu-track);
+}
+.damu-bar-fill {
+    height: 6px;
+    background-color: var(--damu-c, var(--damu-accent, #1f7a4d));
+}
+
+/* Мини-столбики «Динамика в отчетном году»: значение сверху, столбик,
+   подпись месяца снизу. align-items:flex-end выравнивает столбики
+   по общей нижней линии */
+.damu-mini {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.35rem;
+    padding: 0 2px;
+}
+.damu-mini-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+}
+.damu-mini-val { font-size: 0.75rem; font-weight: 700; }
+.damu-mini-bar { width: 100%; background-color: var(--damu-c); }
+.damu-mini-label { font-size: 0.75rem; color: rgba(32, 30, 29, 0.5); }
+.damu-mini-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-align: center;
+    color: rgba(32, 30, 29, 0.6);
+    margin-bottom: 0.75rem;
+}
+
+
+/* ================== ГЛАВНАЯ: РАЗБИВКА ПО ПРОГРАММАМ ==================
+
+   Четыре колонки, разделённые вертикальными линиями. В каждой строке —
+   название программы и две пары «полоска + число»: освоено и проекты. */
+
+.damu-prog-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    align-items: stretch;
+}
+@media (max-width: 1200px) {
+    .damu-prog-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px) {
+    .damu-prog-grid { grid-template-columns: 1fr; }
+}
+.damu-prog-col {
+    padding: 0 1.1rem;
+    border-right: 1px solid var(--damu-hairline);
+}
+.damu-prog-col:last-child { border-right: none; }
+.damu-prog-head {
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--damu-c);
+    border-bottom: 2px solid var(--damu-c);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+/* Сетка строки: название | полоска суммы | сумма | зазор | полоска
+   проектов | проекты. Ширины фиксированные, чтобы числа всех строк
+   стояли в одну колонку */
+.damu-prog-row {
+    display: grid;
+    grid-template-columns: minmax(4.5rem, 1fr) 3.2rem 2.2rem 0.5rem 2.6rem 1.8rem;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+.damu-prog-name { color: rgba(32, 30, 29, 0.8); }
+.damu-prog-value { font-weight: 700; text-align: right; }
+.damu-prog-legend {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.75rem;
+    color: var(--damu-muted);
+}
+.damu-prog-legend span { display: flex; align-items: center; gap: 0.35rem; }
+.damu-prog-legend i {
+    height: 6px;
+    background-color: #bab6b6;
+    display: inline-block;
+}
+
+/* Заголовок блока — как .card-title в дизайн-системе */
+.damu-block-title {
+    font-weight: 800;
+    font-size: 1rem;
+    letter-spacing: -0.015em;
+    margin: 0;
+}
+.damu-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+    flex-wrap: wrap;
+}
+
+/* Честная пометка «числа макетные» — мелкая, но всегда на виду.
+   Убрать её можно будет только вместе с макетными числами. */
+.damu-mock {
+    font-size: 0.75rem;
+    color: var(--damu-muted);
+    border-left: 3px solid var(--damu-accent-2, #b08a2e);
+    padding-left: 0.6rem;
+}
+
+
+/* ================== СТРАНИЦА РАЗДЕЛА ==================
+
+   Слева — список разделов (сворачивается кнопкой ☰), справа — заголовок,
+   липкий ряд вкладок и длинная лента секций. Вкладка не переключает
+   содержимое, а прокручивает ленту к нужной секции; при прокрутке мышью
+   подсвечивается та вкладка, до которой доскроллили (assets/dashboard.js). */
 
 .damu-sec-wrap {
     display: flex;
-    gap: 1rem;
+    gap: 1.25rem;
     align-items: flex-start;
-}
-.damu-side-list {
-    flex: 0 0 190px;
-    max-width: 190px;
-    padding: 0.5rem 0.4rem;
-    border-radius: 0.4rem;
-    background-color: var(--damu-accent, #0d6efd);
-}
-.damu-side-list .nav-link {
-    color: var(--damu-on-accent, #ffffff);
-    font-size: 0.85rem;
-    padding: 0.25rem 0.5rem;
-    opacity: 0.92;
-}
-.damu-side-list .nav-link:hover {
-    background-color: rgba(0, 0, 0, 0.12);
-    opacity: 1;
-}
-.damu-side-list .nav-link.active {
-    background-color: var(--damu-accent-dark, #0a58ca) !important;
-    opacity: 1;
+    position: relative;
 }
 
-/* min-width: 0 обязателен: без него длинная таблица внутри распирает
-   колонку, и список слева уезжает за край экрана */
+.damu-side-list {
+    flex: 0 0 210px;
+    max-width: 210px;
+    padding: 0.75rem 0;
+    border-right: 2px solid var(--damu-divider);
+    position: sticky;
+    top: 0;
+    overflow: hidden;
+    transition: flex-basis 0.2s ease, max-width 0.2s ease, padding 0.2s ease;
+}
+/* Свёрнутый сайдбар: ширина в ноль, содержимое обрезается overflow.
+   Именно ширина, а не display:none — иначе не было бы плавности */
+.damu-side-list.damu-collapsed {
+    flex-basis: 0;
+    max-width: 0;
+    padding: 0;
+    border-right: none;
+}
+.damu-side-list .nav-link {
+    color: var(--damu-ink);
+    font-size: 0.82rem;
+    padding: 0.3rem 1.1rem;
+    border-radius: 0;
+    white-space: nowrap;
+}
+.damu-side-list .nav-link:hover {
+    background-color: rgba(32, 30, 29, 0.06);
+}
+.damu-side-list .nav-link.active {
+    background-color: var(--damu-accent-soft, #e9f2ed) !important;
+    color: var(--damu-accent-dark, #185f3d) !important;
+    font-weight: 600;
+}
+
+/* Кнопка ☰ сидит на границе сайдбара и содержимого */
+.damu-side-toggle {
+    position: absolute;
+    top: 0.5rem;
+    left: 210px;
+    transform: translateX(-50%);
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background-color: #ffffff;
+    border: 1px solid rgba(32, 30, 29, 0.25);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    padding: 0;
+    color: var(--damu-ink);
+    transition: left 0.2s ease;
+}
+.damu-sec-wrap.damu-side-hidden .damu-side-toggle { left: 0; }
+
 .damu-sec-main {
+    /* min-width: 0 обязателен: без него длинная таблица внутри распирает
+       колонку, и список слева уезжает за край экрана */
     flex: 1;
     min-width: 0;
 }
 .damu-sec-title {
-    margin: 0.5rem 0 0.75rem;
-    color: var(--damu-accent-dark, #0a58ca);
+    margin: 0.25rem 0 0.6rem;
 }
 
-/* Ряд вкладок-разрезов: кнопки одной ширины, как на портале */
+/* Липкая полоса вкладок. Вкладки ПЕРЕНОСЯТСЯ на второй ряд (flex-wrap),
+   а не уезжают в горизонтальную прокрутку: прокрутку вбок на широком
+   экране не видно, и часть вкладок просто терялась бы. */
+.damu-sec-tabbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background-color: var(--damu-bg);
+    padding-top: 0.4rem;
+}
 .damu-sec-tabs {
     display: flex;
-    gap: 0.35rem;
-    margin-bottom: 0.4rem;
     flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.25rem;
+    border-bottom: 2px solid var(--damu-divider);
 }
 .damu-sec-tab {
-    flex: 1 1 0;
-    min-width: 9rem;
+    padding: 0.5rem 0.85rem 0.45rem;
     border: none;
-    border-radius: 0.25rem;
-    padding: 0.35rem 0.8rem;
-    font-size: 0.9rem;
-    background-color: var(--damu-accent, #0d6efd);
-    color: var(--damu-on-accent, #ffffff);
+    background: none;
+    border-bottom: 3px solid transparent;
+    color: var(--damu-ink);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    cursor: pointer;
 }
-.damu-sec-tab:hover {
-    background-color: var(--damu-accent-dark, #0a58ca);
-    color: var(--damu-on-accent, #ffffff);
-}
-/* Выбранная вкладка — темнее остальных, как активный пункт в меню */
+.damu-sec-tab:hover { color: var(--damu-accent, #1f7a4d); }
 .damu-sec-tab.active {
-    background-color: var(--damu-accent-dark, #0a58ca);
-    box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.35);
+    border-bottom-color: var(--damu-accent, #1f7a4d);
+    color: var(--damu-accent, #1f7a4d);
+    font-weight: 700;
+}
+
+/* Под-вкладки группы (ГФ1): круглые пилюли, появляются только когда
+   выбрана сама группа */
+.damu-sec-subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.6rem 0;
+}
+.damu-sec-subtab {
+    padding: 0.3rem 0.75rem;
+    border: none;
+    border-radius: 14px;
+    background-color: var(--damu-track);
+    color: var(--damu-ink);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.damu-sec-subtab:hover { background-color: #ddd9d9; }
+.damu-sec-subtab.active {
+    background-color: var(--damu-accent, #1f7a4d);
+    color: var(--damu-on-accent, #ffffff);
+    font-weight: 600;
+}
+
+/* Секция ленты. scroll-margin-top — отступ, на который браузер сам
+   недоскроллит, чтобы заголовок не уехал под липкие вкладки. Считает
+   это браузер, руками в JS ничего вычитать не надо */
+.damu-sec-block {
+    padding: 1.25rem 0 0.25rem;
+    scroll-margin-top: 7rem;
+}
+.damu-sec-block-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: rgba(32, 30, 29, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.75rem;
+}
+
+/* Плитка под диаграмму — белая с тонкой рамкой, как в макете */
+.damu-chart-card {
+    background-color: var(--damu-white);
+    border: 1px solid var(--damu-hairline);
+    padding: 0.85rem;
+    height: 100%;
+}
+.damu-chart-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+/* Заглушка вместо диаграммы: полосатый прямоугольник из макета.
+   Видно, что место занято намеренно, а не что-то отвалилось */
+.damu-chart-stub {
+    height: 130px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    color: rgba(32, 30, 29, 0.4);
+    background: repeating-linear-gradient(135deg,
+        rgba(32, 30, 29, 0.06), rgba(32, 30, 29, 0.06) 8px,
+        rgba(32, 30, 29, 0.02) 8px, rgba(32, 30, 29, 0.02) 16px);
 }
 
 /* Всплывающий список разделов: ссылки в три колонки */
 .damu-modal-link {
     padding: 0.35rem 0.5rem;
-    border-radius: 0.3rem;
 }
 .damu-modal-link:hover {
-    background-color: var(--damu-accent-soft, #e9ecef);
+    background-color: var(--damu-accent-soft, #e9f2ed);
 }
 /* Раздел без данных — приглушён, но виден: замысел понятен, пустота честная */
 .damu-empty {
@@ -246,44 +761,42 @@ a:hover {
 }
 
 
-/* --- Галки: у Bootstrap они почти не видны ---
+/* ================== ГАЛКИ ==================
 
-   По умолчанию галка 14x14 px с рамкой 0.8 px цвета #dee2e6 — на белом
-   фоне читается только подпись, а сам квадратик теряется, и непонятно,
-   что здесь вообще есть что нажать.
+   У Bootstrap они почти не видны: 14x14 px с рамкой 0.8 px цвета #dee2e6 —
+   на светлом фоне читается только подпись, а сам квадратик теряется.
 
-   Правило намеренно общее, а не для одной галки логарифма: на этапе 4
-   появятся форма ввода плана и настройки, и галки там должны выглядеть
-   одинаково. */
+   Правило намеренно общее: галки на форме ввода плана, в настройках
+   и в настройщике виджетов должны выглядеть одинаково. */
 .form-check-input {
     width: 1.15rem;
     height: 1.15rem;
-    border: 2px solid #6c757d;   /* серый Bootstrap: виден, но не кричит */
+    border: 2px solid #7d7979;
     cursor: pointer;
 }
 
 /* Отмеченная — заливка цветом темы, рамку подгоняем под неё,
    иначе вокруг залитого квадрата остаётся серый кант */
 .form-check-input:checked {
-    background-color: var(--damu-accent, #0d6efd);
-    border-color: var(--damu-accent, #0d6efd);
+    background-color: var(--damu-accent, #1f7a4d);
+    border-color: var(--damu-accent, #1f7a4d);
 }
 
 /* Наведение мышью: рамка темнеет — подсказка, что элемент живой */
 .form-check-input:not(:disabled):hover {
-    border-color: var(--damu-accent-dark, #0a58ca);
+    border-color: var(--damu-accent-dark, #185f3d);
 }
 
 /* Клавиатурный фокус: кольцо вокруг галки.
    Нужно тем, кто ходит по странице через Tab, а не мышью */
 .form-check-input:focus {
-    box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(13, 110, 253, 0.25));
+    box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(31, 122, 77, 0.25));
 }
 
 /* Недоступная галка (вид не умеет логарифм): бледная рамка и курсор
    «нельзя». Видно, что элемент есть, но сейчас не действует */
 .form-check-input:disabled {
-    border-color: #ced4da;
+    border-color: #d7d3d3;
     cursor: not-allowed;
 }
 
@@ -298,4 +811,31 @@ a:hover {
 .form-check-label {
     margin-left: 0.35rem;
     cursor: pointer;
+}
+
+
+/* ================== ВЫПАДАЮЩИЙ СПИСОК РЕГИОНОВ ==================
+
+   dcc.Dropdown — не Bootstrap, у него свои классы (.Select-*), и наши
+   переменные до него сами не доходят. Правила ниже приводят его к общему
+   виду: прямые углы, та же подложка, тот же цвет выбранного. */
+
+.Select-control,
+.Select--multi .Select-control {
+    background-color: var(--damu-surface);
+    border-color: var(--damu-divider);
+    border-radius: 0;
+}
+.Select--multi .Select-value {
+    background-color: var(--damu-accent-soft, #e9f2ed);
+    border-color: var(--damu-accent, #1f7a4d);
+    color: var(--damu-accent-dark, #185f3d);
+    border-radius: 0;
+}
+.Select-menu-outer {
+    border-radius: 0;
+    border-color: var(--damu-divider);
+}
+.VirtualizedSelectFocusedOption {
+    background-color: var(--damu-accent-soft, #e9f2ed);
 }

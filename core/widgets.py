@@ -76,12 +76,29 @@ def page_choices() -> list[dict]:
     ]
 
 
-def tab_choices() -> list[dict]:
-    """Вкладки-разрезы внутри раздела — второй выбор в настройщике."""
+def tabs_of(section: str) -> list[dict]:
+    """Вкладки-разрезы раздела: свой список, если описан, иначе общий.
+
+    У большинства разделов разрезы одинаковые, поэтому в `config.yaml`
+    лежит один общий список `section_tabs`. Но у отдельных разделов их
+    больше (у «Гар. выдача» — девять, часть из них в группе ГФ1), и такой
+    раздел описывает свои вкладки в `section_tabs_by_section`.
+
+    Ключ раздела может прийти вместе с вкладкой (`guarantee:regions`) —
+    отрежем, спрашивают всё равно про раздел целиком.
+    """
+    key, _ = split_page(section or "")
+    cfg = load_config()
+    own = (cfg.get("section_tabs_by_section") or {}).get(key)
+    return own or (cfg.get("section_tabs") or [])
+
+
+def tab_choices(section: str = "") -> list[dict]:
+    """Вкладки-разрезы для выпадающего списка в настройщике."""
     return [
         {"label": t["title"] + ("" if t.get("data") else " — ждёт данных"),
          "value": t["key"]}
-        for t in load_config().get("section_tabs") or []
+        for t in tabs_of(section)
     ]
 
 
@@ -177,16 +194,20 @@ def describe(widget: dict) -> str:
 
 # ------------------------------------------------------------------ чтение
 
-def _table_ready() -> bool:
-    """Есть ли таблица widgets — до первой правки её нет."""
+def _has_table(name: str) -> bool:
+    """Есть ли такая таблица в хранилище — до первой правки их нет."""
     try:
         df = _query_storage(
             "SELECT count(*) AS n FROM information_schema.tables "
-            "WHERE table_name = 'widgets'"
+            f"WHERE table_name = '{name}'"
         )
     except (FileNotFoundError, duckdb.Error):
         return False
     return bool(df.iloc[0]["n"])
+
+
+def _table_ready() -> bool:
+    return _has_table("widgets")
 
 
 def default_widgets(page: str = MAIN_PAGE) -> list[dict]:
@@ -210,10 +231,28 @@ def default_widgets(page: str = MAIN_PAGE) -> list[dict]:
 
 
 def is_customized(page: str = MAIN_PAGE) -> bool:
-    """Набор этой страницы уже настраивали руками (а не взят из config.yaml)?"""
-    if not _table_ready():
-        return False
-    df = _query_storage(f"SELECT count(*) AS n FROM widgets WHERE page = '{page}'")
+    """Набор этой страницы уже настраивали руками (а не взят из config.yaml)?
+
+    !! Отвечает **отметка** в `widget_pages`, а не наличие строк в `widgets`.
+    Раньше здесь считались строки, и от этого была ошибка: удаляешь последний
+    виджет — строк ноль — хранилище становится неотличимо от «здесь никогда
+    ничего не настраивали», и умолчания из `config.yaml` возвращались все
+    разом (поймано пользователем 29.07.2026). Хуже того, следующий добавленный
+    виджет заново притаскивал за собой весь набор по умолчанию.
+
+    Пустой набор — это законный выбор админа: «на этой странице виджетов нет».
+    Выразить его подсчётом строк невозможно в принципе, поэтому и появилась
+    отдельная отметка.
+    """
+    if not _has_table("widget_pages"):
+        # Хранилище ещё не доведено до новой схемы (migrate не отработал) —
+        # ведём себя как раньше, чтобы страница открылась, а не упала
+        return _table_ready() and bool(_query_storage(
+            f"SELECT count(*) AS n FROM widgets WHERE page = '{page}'"
+        ).iloc[0]["n"])
+    df = _query_storage(
+        f"SELECT count(*) AS n FROM widget_pages WHERE page = '{page}'"
+    )
     return bool(df.iloc[0]["n"])
 
 
@@ -282,6 +321,27 @@ def _ensure_table(con: duckdb.DuckDBPyConnection) -> None:
     con.execute("ALTER TABLE widgets ADD COLUMN IF NOT EXISTS page VARCHAR")
     con.execute("UPDATE widgets SET page = ? WHERE page IS NULL", [MAIN_PAGE])
 
+    # Отметка «эту страницу настраивают вручную». Отдельная таблица, а не
+    # колонка в `widgets`: набор может быть ПУСТЫМ (админ убрал все виджеты),
+    # и тогда в `widgets` про эту страницу нет ни одной строки, а сказать
+    # «набор настроен, и он пуст» всё равно надо.
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS widget_pages (
+               page       VARCHAR   NOT NULL,  -- 'main' или ключ раздела
+               author     VARCHAR   NOT NULL,
+               updated_at TIMESTAMP NOT NULL
+           )"""
+    )
+    # Хранилище из версии до этой отметки: страницы, у которых строки уже
+    # есть, настраивали руками — проставим им отметку задним числом, иначе
+    # после обновления их наборы разом заменились бы умолчаниями
+    con.execute(
+        "INSERT INTO widget_pages (page, author, updated_at) "
+        "SELECT page, 'миграция', now() FROM widgets "
+        "WHERE page IS NOT NULL AND page NOT IN (SELECT page FROM widget_pages) "
+        "GROUP BY page"
+    )
+
 
 def migrate() -> None:
     """Доводит таблицу до текущей схемы. Зовётся при старте сайта (app.py).
@@ -313,12 +373,29 @@ def _materialize(con: duckdb.DuckDBPyConnection, author: str, page: str) -> None
     Материализуется **только та страница, которую правят**: соседние
     разделы продолжают жить на умолчаниях, и правка одного не превращает
     остальные девятнадцать в копии файла.
+
+    !! Признак «уже материализована» — отметка в `widget_pages`, а не наличие
+    строк. По строкам не выходит: у страницы с пустым набором их ноль,
+    и добавление виджета к пустому набору заново притащило бы все умолчания.
     """
-    if con.execute("SELECT count(*) FROM widgets WHERE page = ?", [page]).fetchone()[0]:
-        return
     now = datetime.now()
-    # Номера сквозные по всей таблице, позиции — свои у каждой страницы
-    next_id = con.execute("SELECT coalesce(max(id), 0) + 1 FROM widgets").fetchone()[0]
+    if con.execute("SELECT count(*) FROM widget_pages WHERE page = ?",
+                   [page]).fetchone()[0]:
+        return
+    con.execute(
+        "INSERT INTO widget_pages (page, author, updated_at) VALUES (?, ?, ?)",
+        [page, author, now],
+    )
+    # !! Номера — СВОИ У КАЖДОЙ СТРАНИЦЫ, а не сквозные по всей таблице.
+    # Иначе ломается обещание из default_widgets(): у ненастроенного набора
+    # номера всегда 1..N, и материализация обязана положить строки ровно
+    # с такими же. При сквозной нумерации начало сдвигалось (в таблице уже
+    # лежат строки другой страницы), номера расходились — и первая же
+    # «Убрать» била мимо, молча ничего не удаляя. Поэтому и отбор во всех
+    # запросах ниже идёт по паре (id, page), а не по одному id.
+    next_id = con.execute(
+        "SELECT coalesce(max(id), 0) + 1 FROM widgets WHERE page = ?", [page]
+    ).fetchone()[0]
     for offset, item in enumerate(default_widgets(page)):
         con.execute(
             "INSERT INTO widgets (id, page, position, chart, indicator, size, author, updated_at)"
@@ -339,6 +416,9 @@ def _renumber(con: duckdb.DuckDBPyConnection, page: str) -> None:
         "SELECT id, row_number() OVER (ORDER BY position, id) AS pos "
         "FROM widgets WHERE page = ?", [page]
     )
+    # Во временной таблице лежат только строки этой страницы, а UPDATE
+    # ограничен той же страницей — номера одинаковые у разных страниц
+    # (они теперь свои у каждой) друг на друга не влияют
     con.execute(
         "UPDATE widgets SET position = (SELECT pos FROM ordered WHERE ordered.id = widgets.id) "
         "WHERE page = ?", [page]
@@ -357,7 +437,9 @@ def add(chart: str, indicator: str, size: str, author: str,
         _ensure_table(con)
         con.execute("BEGIN")
         _materialize(con, author, page)
-        new_id = con.execute("SELECT coalesce(max(id), 0) + 1 FROM widgets").fetchone()[0]
+        new_id = con.execute(
+            "SELECT coalesce(max(id), 0) + 1 FROM widgets WHERE page = ?", [page]
+        ).fetchone()[0]
         position = con.execute(
             "SELECT coalesce(max(position), 0) + 1 FROM widgets WHERE page = ?", [page]
         ).fetchone()[0]
@@ -386,7 +468,8 @@ def update(widget_id: int, field: str, value: str, author: str,
         con.execute("BEGIN")
         _materialize(con, author, page)
         row = con.execute(
-            "SELECT chart, indicator, size FROM widgets WHERE id = ?", [int(widget_id)]
+            "SELECT chart, indicator, size FROM widgets WHERE id = ? AND page = ?",
+            [int(widget_id), page],
         ).fetchone()
         if row is None:
             raise ValueError("Виджет уже удалён — обновите страницу.")
@@ -394,8 +477,9 @@ def update(widget_id: int, field: str, value: str, author: str,
         values[field] = value
         _validate(values["chart"], values["indicator"], values["size"])
         con.execute(
-            f"UPDATE widgets SET {field} = ?, author = ?, updated_at = ? WHERE id = ?",
-            [value, author, datetime.now(), int(widget_id)],
+            f"UPDATE widgets SET {field} = ?, author = ?, updated_at = ? "
+            "WHERE id = ? AND page = ?",
+            [value, author, datetime.now(), int(widget_id), page],
         )
         con.execute("COMMIT")
     except Exception:
@@ -413,7 +497,8 @@ def remove(widget_id: int, author: str, page: str = MAIN_PAGE) -> None:
         _ensure_table(con)
         con.execute("BEGIN")
         _materialize(con, author, page)
-        con.execute("DELETE FROM widgets WHERE id = ?", [int(widget_id)])
+        con.execute("DELETE FROM widgets WHERE id = ? AND page = ?",
+                    [int(widget_id), page])
         _renumber(con, page)
         con.execute("COMMIT")
     except Exception:
@@ -439,7 +524,8 @@ def move(widget_id: int, delta: int, author: str, page: str = MAIN_PAGE) -> None
         _materialize(con, author, page)
         _renumber(con, page)
         current = con.execute(
-            "SELECT position FROM widgets WHERE id = ?", [int(widget_id)]
+            "SELECT position FROM widgets WHERE id = ? AND page = ?",
+            [int(widget_id), page],
         ).fetchone()
         if current is not None:
             target = current[0] + (1 if delta > 0 else -1)
@@ -448,12 +534,12 @@ def move(widget_id: int, delta: int, author: str, page: str = MAIN_PAGE) -> None
             ).fetchone()
             if neighbour is not None:
                 con.execute(
-                    "UPDATE widgets SET position = ? WHERE id = ?",
-                    [current[0], neighbour[0]],
+                    "UPDATE widgets SET position = ? WHERE id = ? AND page = ?",
+                    [current[0], neighbour[0], page],
                 )
                 con.execute(
-                    "UPDATE widgets SET position = ? WHERE id = ?",
-                    [target, int(widget_id)],
+                    "UPDATE widgets SET position = ? WHERE id = ? AND page = ?",
+                    [target, int(widget_id), page],
                 )
         con.execute("COMMIT")
     except Exception:
@@ -464,24 +550,45 @@ def move(widget_id: int, delta: int, author: str, page: str = MAIN_PAGE) -> None
 
 
 def reset(page: str = MAIN_PAGE) -> None:
-    """Удаляет настроенный набор страницы — она снова берёт его из config.yaml."""
+    """Удаляет настроенный набор страницы — она снова берёт его из config.yaml.
+
+    Снимается и сама отметка «настраивают вручную»: именно она отличает
+    «вернули умолчания» от «админ убрал все виджеты». Без этого кнопка
+    «Вернуть набор по умолчанию» оставляла бы страницу пустой навсегда.
+    """
     _require_storage()
     con = _connect_write()
     try:
         _ensure_table(con)
+        con.execute("BEGIN")
         con.execute("DELETE FROM widgets WHERE page = ?", [page])
+        con.execute("DELETE FROM widget_pages WHERE page = ?", [page])
+        con.execute("COMMIT")
+    except Exception:
+        con.execute("ROLLBACK")
+        raise
     finally:
         con.close()
 
 
 def last_change(page: str = MAIN_PAGE) -> tuple[str, datetime] | None:
-    """Кто и когда правил набор этой страницы — для подписи в редакторе."""
+    """Кто и когда правил набор этой страницы — для подписи в редакторе.
+
+    Если набор пуст (админ убрал все виджеты), в `widgets` строк нет —
+    тогда отвечает отметка из `widget_pages`. Иначе подпись «кто менял»
+    исчезала бы ровно в тот момент, когда изменение самое заметное.
+    """
     if not _table_ready():
         return None
     df = _query_storage(
         "SELECT author, updated_at FROM widgets "
         f"WHERE page = '{page}' ORDER BY updated_at DESC LIMIT 1"
     )
+    if df.empty and _has_table("widget_pages"):
+        df = _query_storage(
+            "SELECT author, updated_at FROM widget_pages "
+            f"WHERE page = '{page}' ORDER BY updated_at DESC LIMIT 1"
+        )
     if df.empty:
         return None
     return str(df.iloc[0]["author"]), df.iloc[0]["updated_at"].to_pydatetime()

@@ -1,32 +1,43 @@
-"""Страница одного раздела — по образцу боевого портала.
+"""Страница одного раздела — по макету 5b (и по образцу боевого портала).
 
 Что на ней сверху вниз:
 
     ┌──────────┬──────────────────────────────────────────────┐
-    │ разделы  │  Субсидирование на 24.07.2026                │
-    │ списком  │  [Динамика по годам][Программы][ОКЭД/Регионы]│
-    │ слева    │  [План освоения][Лимиты][Пайп]               │
-    │          │  [План][Освоено][Остаток][Освоение %]        │
-    │          │  виджеты с диаграммами                       │
+    │ разделы  │  Гар. выдача на 28.07.2026                   │
+    │ списком  │ ┌ липкие вкладки ─────────────────────────┐  │
+    │ слева    │ │ Годы │ Программы │ Регионы │ БВУ │ ГФ1 │  │  │
+    │ (☰ —     │ └ ── под-вкладки группы: Лимиты · Пайп ──┘  │
+    │  свернуть│  карточки-показатели                         │
+    │  список) │  ── секция «Динамика по годам» ──            │
+    │          │  ── секция «Программы» ──                    │
+    │          │  ...                                         │
     └──────────┴──────────────────────────────────────────────┘
+
+**Главное отличие от прежней версии страницы: вкладка больше не переключает
+содержимое.** Раздел — одна длинная лента, все разрезы лежат на ней сразу,
+а вкладка прокручивает ленту к своей секции. Прокрутили мышью — вкладка
+подсветилась сама. Так устроен макет и так же ведёт себя боевой портал:
+человек видит, что ниже есть ещё, и не гадает, что спрятано под вкладками.
+
+Подсветка и прокрутка сделаны на стороне браузера (`assets/dashboard.js`),
+без коллбэков: коллбэк на каждое движение колеса мыши гонял бы запросы
+к серверу десятками в секунду.
+
+Вкладки **переносятся на второй ряд**, а не уезжают в горизонтальную
+прокрутку: прокрутку вбок на широком экране не видно, и часть вкладок
+просто терялась бы.
 
 Страница **одна на все разделы**: адрес `/section/guarantee` разбирается
 по шаблону, ключ приходит в `layout(key=...)`. Двадцати одинаковых файлов
 нет — разделы устроены одинаково, отличаются только данными.
 
-Список разделов слева — как на портале: внутри раздела удобно прыгать
-к соседнему, не возвращаясь на главную. На самой главной его нет, там
-разделы вынесены вкладками.
-
-Вкладки-разрезы и подрезы описаны в `config.yaml` (`section_tabs`,
-`section_subtabs`). Под каждым разрезом — **свой набор виджетов**: ключ
-набора склеивается из раздела и вкладки (`guarantee:regions`), поэтому
-«Динамика по годам» и «ОКЭД/Регионы» показывают разное, и настраиваются
-независимо.
+Набор вкладок берётся из `config.yaml` (`section_tabs`, а для отдельных
+разделов — `section_tabs_by_section`). Вкладки с общим полем `group`
+сворачиваются в одну вкладку верхнего уровня, раскрывающую ряд «пилюль».
 
 !! Разрезы, под которые данных ещё нет (Программы, БВУ, Бюджет), помечены
-в конфиге `data: false` и открываются честной заглушкой. Пустые рамки
-вместо этого выглядели бы поломкой.
+в конфиге `data: false` и показывают полосатые заглушки из макета плюс
+честную строку «ждёт источника». Пустые рамки выглядели бы поломкой.
 """
 
 import logging
@@ -46,6 +57,93 @@ dash.register_page(
     name="Раздел",
     title="Раздел — Дашборд Даму",
 )
+
+#: Сколько заглушек-диаграмм рисовать в секции без данных. Четыре —
+#: как в макете: видно, что место под разрез готово.
+STUB_COUNT = 4
+
+
+def block_id(tab_key: str) -> str:
+    """Идентификатор секции в ленте. По нему же вкладка её и находит."""
+    return f"sec-block-{tab_key}"
+
+
+def top_entries(tabs: list[dict]) -> list[dict]:
+    """Вкладки верхнего уровня: обычные поодиночке, группы — одной штукой.
+
+    Возвращает для каждой вкладки её состав (`members`) — ключи секций,
+    которые она собой закрывает. Браузеру это нужно, чтобы понять, какую
+    вкладку подсветить: доскроллили до «Пайп» — светится группа «ГФ1».
+    """
+    entries: list[dict] = []
+    by_group: dict[str, dict] = {}
+    for tab in tabs:
+        group = tab.get("group")
+        if not group:
+            entries.append({
+                "key": tab["key"], "title": tab["title"],
+                "members": [tab["key"]], "group": None,
+                "data": tab.get("data"),
+            })
+            continue
+        if group not in by_group:
+            by_group[group] = {
+                "key": f"group:{group}", "title": group,
+                "members": [], "group": group, "data": False,
+            }
+            entries.append(by_group[group])
+        by_group[group]["members"].append(tab["key"])
+        # У группы есть данные, если они есть хоть у одной её вкладки —
+        # иначе группа висела бы приглушённой при живом разрезе внутри
+        by_group[group]["data"] = by_group[group]["data"] or tab.get("data")
+    return entries
+
+
+def tab_bar(tabs: list[dict]):
+    """Липкий ряд вкладок и, под ним, ряды «пилюль» для каждой группы.
+
+    Разметку читает `assets/dashboard.js`, поэтому у элементов есть
+    data-атрибуты: `data-scroll-to` — куда прокрутить, `data-members` —
+    какие секции закрывает вкладка, `data-group-row` — к какой группе
+    относится ряд пилюль. Никакой логики в самих атрибутах нет, это
+    просто способ передать браузеру то, что и так знает конфиг.
+    """
+    entries = top_entries(tabs)
+    buttons = []
+    for i, entry in enumerate(entries):
+        buttons.append(html.Button(
+            entry["title"],
+            className="damu-sec-tab" + (" active" if i == 0 else "")
+                      + ("" if entry["data"] else " damu-empty"),
+            **{
+                "data-tab-key": entry["key"],
+                "data-members": ",".join(entry["members"]),
+                "data-scroll-to": block_id(entry["members"][0]),
+            },
+        ))
+
+    rows = [html.Div(buttons, className="damu-sec-tabs")]
+    for entry in entries:
+        if not entry["group"]:
+            continue
+        pills = [
+            html.Button(
+                tab["title"],
+                className="damu-sec-subtab" + (" damu-empty" if not tab.get("data") else ""),
+                **{"data-scroll-to": block_id(tab["key"]),
+                   "data-sub-key": tab["key"]},
+            )
+            for tab in tabs if tab.get("group") == entry["group"]
+        ]
+        rows.append(html.Div(
+            pills,
+            className="damu-sec-subtabs",
+            # Ряд появляется только когда выбрана его группа — прячет
+            # и показывает его тот же dashboard.js
+            style={"display": "none"},
+            **{"data-group-row": entry["key"]},
+        ))
+    return html.Div(rows, className="damu-sec-tabbar")
 
 
 def sections_menu(active_key: str):
@@ -67,22 +165,7 @@ def sections_menu(active_key: str):
     return html.Div(
         dbc.Nav(links, vertical=True, pills=True),
         className="damu-side-list",
-    )
-
-
-def tabs_row(items: list[dict], active: str, kind: str):
-    """Ряд вкладок. `kind` разводит верхний ряд и нижний по типу id."""
-    return html.Div(
-        [
-            dbc.Button(
-                item["title"],
-                id={"type": f"sec-{kind}", "index": item["key"]},
-                class_name="damu-sec-tab" + (" active" if item["key"] == active else "")
-                           + ("" if item.get("data") else " damu-empty"),
-            )
-            for item in items
-        ],
-        className="damu-sec-tabs",
+        id="section-sidebar",
     )
 
 
@@ -108,8 +191,30 @@ def kpi_card(row: pd.Series) -> dbc.Card:
     )
 
 
-def widget_grid(items: list[dict]):
-    """Места под диаграммы; фигуры подставит коллбэк."""
+def chart_stubs():
+    """Заглушки из макета — для разреза, под который данных ещё нет."""
+    return dbc.Row(
+        [
+            dbc.Col(
+                html.Div([
+                    html.Div(f"Диаграмма {i + 1}", className="damu-chart-title"),
+                    html.Div("chart placeholder", className="damu-chart-stub"),
+                ], className="damu-chart-card"),
+                md=6, className="mb-3",
+            )
+            for i in range(STUB_COUNT)
+        ],
+        className="g-3",
+    )
+
+
+def widget_grid(section_key: str, tab_key: str, items: list[dict]):
+    """Места под диаграммы одного разреза; фигуры подставит коллбэк.
+
+    !! В id виджета склеены вкладка и номер (`years|3`). Иначе коллбэк
+    не смог бы понять, из какого набора виджет: на ленте лежат разрезы
+    сразу все, а наборы у них разные.
+    """
     if not items:
         return dbc.Alert("Виджетов нет. Добавьте их на странице «Виджеты».",
                          color="light", className="border")
@@ -120,7 +225,8 @@ def widget_grid(items: list[dict]):
             dbc.Col(
                 dbc.Card(
                     dcc.Graph(
-                        id={"type": "section-widget", "index": item["id"]},
+                        id={"type": "section-widget",
+                            "index": f"{tab_key}|{item['id']}"},
                         style={"height": f"{preset['height']}px"},
                         config={"displayModeBar": False},
                     ),
@@ -132,36 +238,32 @@ def widget_grid(items: list[dict]):
     return dbc.Row(columns, className="g-3")
 
 
-def _tab_meta(key: str, block: str) -> dict:
-    for item in data.load_config().get(block) or []:
-        if item["key"] == key:
-            return item
-    return {}
-
-
-def content(section_key: str, tab: str, subtab: str):
-    """Содержимое под вкладками: карточки и виджеты — или заглушка."""
-    meta = _tab_meta(tab, "section_tabs")
-    sub_meta = _tab_meta(subtab, "section_subtabs")
-
-    if not meta.get("data") or not sub_meta.get("data"):
-        missing = meta["title"] if not meta.get("data") else sub_meta["title"]
-        return dbc.Alert(
-            [
-                html.B(f"«{missing}» ждёт источника данных. "),
-                html.Span(
-                    "Каркас готов: разрез появится сам, как только данные "
-                    "лягут в хранилище — колонки под них в таблице фактов "
-                    "уже есть."
-                ),
-            ],
-            color="secondary", className="mt-3",
+def section_block(section_key: str, tab: dict):
+    """Одна секция ленты: заголовок разреза и его содержимое."""
+    if tab.get("data"):
+        body = widget_grid(
+            section_key, tab["key"],
+            widgets.get_widgets(widgets.page_key(section_key, tab["key"])),
         )
+    else:
+        body = html.Div([
+            html.Div(
+                "Разрез ждёт источника данных — ниже макет того, что здесь "
+                "появится. Колонки под него в таблице фактов уже заведены.",
+                className="damu-mock mb-3",
+            ),
+            chart_stubs(),
+        ])
 
-    return html.Div([
-        dbc.Row(id="section-kpi", className="mb-3 g-3"),
-        widget_grid(widgets.get_widgets(widgets.page_key(section_key, tab))),
-    ])
+    return html.Div(
+        [
+            html.Div(tab["title"], className="damu-sec-block-title"),
+            body,
+        ],
+        id=block_id(tab["key"]),
+        className="damu-sec-block",
+        **{"data-key": tab["key"]},
+    )
 
 
 def layout(key: str | None = None, **kwargs):
@@ -171,11 +273,7 @@ def layout(key: str | None = None, **kwargs):
         return dbc.Alert("Такого раздела нет. Выберите его в списке слева.",
                          color="warning", className="m-4")
 
-    cfg = data.load_config()
-    tabs = cfg.get("section_tabs") or []
-    subtabs = cfg.get("section_subtabs") or []
-    first_tab = tabs[0]["key"] if tabs else ""
-    first_sub = subtabs[0]["key"] if subtabs else ""
+    tabs = widgets.tabs_of(key)
 
     try:
         updated = data.get_last_update()
@@ -185,61 +283,27 @@ def layout(key: str | None = None, **kwargs):
     return html.Div(
         [
             sections_menu(key),
+            # Кнопка сворачивания списка. Работает целиком в браузере:
+            # сворачивание — вопрос вида, а не данных, гонять его через
+            # сервер незачем
+            html.Button("☰", id="section-sidebar-toggle",
+                        className="damu-side-toggle",
+                        **{"data-toggle-sidebar": "1",
+                           "aria-label": "Свернуть список разделов"}),
             html.Div(
                 [
                     html.H2(f"{program} на {updated}", className="damu-sec-title"),
-                    # Выбранные вкладки держим на странице: коллбэк читает их
-                    # отсюда, а не разбирает адрес заново
+                    # Ключ раздела держим на странице: коллбэки читают его
+                    # отсюда, а не разбирают адрес заново
                     dcc.Store(id="section-key", data=key),
-                    dcc.Store(id="section-tab", data=first_tab),
-                    dcc.Store(id="section-subtab", data=first_sub),
-                    html.Div(tabs_row(tabs, first_tab, "tab"), id="section-tabs"),
-                    html.Div(tabs_row(subtabs, first_sub, "sub"), id="section-subtabs"),
-                    html.Div(content(key, first_tab, first_sub), id="section-body"),
+                    tab_bar(tabs),
+                    dbc.Row(id="section-kpi", className="my-3 g-3"),
+                    *[section_block(key, tab) for tab in tabs],
                 ],
                 className="damu-sec-main",
             ),
         ],
         className="damu-sec-wrap",
-    )
-
-
-@callback(
-    Output("section-tab", "data"),
-    Output("section-subtab", "data"),
-    Input({"type": "sec-tab", "index": ALL}, "n_clicks"),
-    Input({"type": "sec-sub", "index": ALL}, "n_clicks"),
-    State("section-tab", "data"),
-    State("section-subtab", "data"),
-    prevent_initial_call=True,
-)
-def switch_tab(_tabs, _subs, tab, subtab):
-    """Запоминает нажатую вкладку. Всё остальное перерисовывается от неё."""
-    trigger = dash.ctx.triggered_id
-    if not isinstance(trigger, dict) or not dash.ctx.triggered:
-        return tab, subtab
-    if not dash.ctx.triggered[0]["value"]:
-        return tab, subtab          # кнопки только что появились, никто не жал
-    if trigger["type"] == "sec-tab":
-        return trigger["index"], subtab
-    return tab, trigger["index"]
-
-
-@callback(
-    Output("section-tabs", "children"),
-    Output("section-subtabs", "children"),
-    Output("section-body", "children"),
-    Input("section-tab", "data"),
-    Input("section-subtab", "data"),
-    State("section-key", "data"),
-)
-def render_tabs(tab, subtab, key):
-    """Перерисовывает обе полосы вкладок и содержимое под ними."""
-    cfg = data.load_config()
-    return (
-        tabs_row(cfg.get("section_tabs") or [], tab, "tab"),
-        tabs_row(cfg.get("section_subtabs") or [], subtab, "sub"),
-        content(key, tab, subtab),
     )
 
 
@@ -271,17 +335,26 @@ def render_kpi(year, _version, key):
     Input("filter-regions", "value"),
     Input("data-version", "data"),
     Input("section-key", "data"),
-    Input("section-tab", "data"),
     State({"type": "section-widget", "index": ALL}, "id"),
 )
-def render_widgets(year, regions, _version, key, tab, ids):
-    """Рисует виджеты вкладки разом, считая всё только по своему разделу."""
+def render_widgets(year, regions, _version, key, ids):
+    """Рисует виджеты всех разрезов разом, считая всё только по своему разделу.
+
+    Наборы перечитываются по одному разу на разрез и запоминаются в словаре:
+    на ленте разрезов несколько, и ходить в хранилище за каждым виджетом
+    значило бы читать один и тот же набор по шесть раз.
+    """
     program = widgets.program_of(key)
-    by_id = {item["id"]: item
-             for item in widgets.get_widgets(widgets.page_key(key, tab))}
+    by_tab: dict[str, dict] = {}
     figures = []
     for graph_id in ids:
-        item = by_id.get(graph_id["index"])
+        tab_key, _, widget_id = str(graph_id["index"]).partition("|")
+        if tab_key not in by_tab:
+            by_tab[tab_key] = {
+                str(item["id"]): item
+                for item in widgets.get_widgets(widgets.page_key(key, tab_key))
+            }
+        item = by_tab[tab_key].get(widget_id)
         if item is None:
             figures.append(charts.message("Этот виджет удалили.<br>Обновите страницу (F5)."))
             continue

@@ -269,6 +269,68 @@ def message(text: str) -> go.Figure:
     return _message(text)
 
 
+def tone_color(tone: int = 1) -> str:
+    """Цвет по номеру оттенка: 1 — основной, 2 — второй, 3 — второй тёмный.
+
+    Витрина инструментов на главной красится не одним цветом, а тремя,
+    как в макете. Номер оттенка живёт в макете (core/mockup.py), а какой
+    это цвет сегодня — знает тема. Так перекраска сайта из настроек
+    доезжает и до карточек инструментов.
+    """
+    settings = theme.get_theme()
+    if tone == 2:
+        return settings["accent_2"]
+    if tone == 3:
+        return theme.mix(settings["accent_2"], "#000000", 0.4)
+    return settings["accent"]
+
+
+def pace_gauge(percent: float, expected: float, tone: int = 1,
+               height: int = 130) -> go.Figure:
+    """Полукруглая шкала «сколько освоено» с отметкой ожидаемого темпа.
+
+    Главная мысль макета: сама по себе цифра «48 %» ни о чём не говорит —
+    важно, сколько должно быть освоено к сегодняшнему дню. Поэтому поперёк
+    шкалы стоит засечка ожидаемого темпа: заливка не дотянула до неё —
+    отставание, перешла — идём с опережением.
+
+    !! Кольцо (а не залитый полукруг) получается связкой двух вещей:
+    у полосы задана `thickness`, и ровно такая же `thickness` задана
+    подложке-ступени. Без ступени `bgcolor` заливает весь полукруг целиком,
+    и вместо тонкой дуги выходит сплошной сектор (проверено в браузере).
+    """
+    color = tone_color(tone)
+    thickness = 0.32
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=percent,
+        number={"suffix": " %", "valueformat": ".1f",
+                "font": {"size": 30, "color": color}},
+        gauge={
+            "axis": {"range": [0, 100], "visible": False},
+            "bar": {"color": color, "thickness": thickness},
+            "bgcolor": "rgba(0,0,0,0)",
+            "borderwidth": 0,
+            # Подложка кольца — та самая ступень во всю шкалу
+            "steps": [{"range": [0, 100], "color": "#eae7e7",
+                       "thickness": thickness}],
+            "threshold": {
+                "value": expected,
+                "thickness": 1,
+                "line": {"color": "#201e1d", "width": 3},
+            },
+        },
+    ))
+    fig.update_layout(
+        height=height,
+        margin=dict(l=10, r=10, t=6, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        font=dict(family=theme.font_stack()),
+        separators=", ",
+    )
+    return fig
+
+
 def _message(text: str) -> go.Figure:
     """Пустая фигура с текстом — вместо падения, когда рисовать нечего."""
     fig = go.Figure()
@@ -748,6 +810,22 @@ def _years_total(ctx: Ctx) -> go.Figure:
 # ─────────────────────────── Карта ───────────────────────────
 
 
+def _map_scale() -> list[list]:
+    """Шкала цвета карты — из цвета темы, а не готовый набор «Blues».
+
+    Раньше здесь стояло имя plotly-шкалы, и карта оставалась синей при
+    любой перекраске сайта — единственное место, куда цвет темы не доезжал.
+    Два узла достаточно: plotly сам разложит между ними промежуточные
+    оттенки. Светлый край не белый, а чуть тонированный — на белом фоне
+    карточки иначе не видно, что область вообще закрашена.
+    """
+    accent = theme.get_theme()["accent"]
+    return [
+        [0.0, theme.mix(accent, "#ffffff", 0.88)],
+        [1.0, theme.mix(accent, "#000000", 0.15)],
+    ]
+
+
 @chart("map", "Карта Казахстана")
 def _map(ctx: Ctx) -> go.Figure:
     """Картограмма областей.
@@ -802,8 +880,9 @@ def _map(ctx: Ctx) -> go.Figure:
 
     low, high = float(df["shown"].min()), float(df["shown"].max())
     spread = high - low
+    scale = _map_scale()
     shades = sample_colorscale(
-        "Blues",
+        scale,
         [0.5 if spread == 0 else 0.15 + 0.85 * (v - low) / spread for v in df["shown"]],
     )
 
@@ -827,7 +906,7 @@ def _map(ctx: Ctx) -> go.Figure:
         go.Scatter(
             x=[None], y=[None], mode="markers", hoverinfo="skip", showlegend=False,
             marker=dict(
-                colorscale="Blues", cmin=low, cmax=high, color=[low], opacity=0,
+                colorscale=scale, cmin=low, cmax=high, color=[low], opacity=0,
                 colorbar=dict(title=ctx.unit),
             ),
         )

@@ -90,13 +90,14 @@ except Exception:
     log.exception("миграция хранилища на старте не прошла")
 
 
-def header():
-    """Верхняя полоса: логотип слева, общие фильтры справа.
+def navbar():
+    """Верхняя полоса навигации — как в макете.
 
-    Фильтры живут здесь, а не на страницах, и это главное решение каркаса:
-    компоненты каркаса Dash не пересобирает при переходе между страницами,
-    поэтому выбранные год и регионы **переживают переход**. Выбрали 2025-й
-    и три области — они действуют и на главной, и в любом разделе.
+    Слева название и логотип, справа ссылки, метка роли и меню админа.
+    Полосы вкладок с разделами здесь больше нет: разделов двадцать,
+    в ряд они не помещались, а в макете переход между ними живёт
+    в списке слева на самой странице раздела. Наверху осталась кнопка
+    «Разделы ▾», открывающая полный список поверх страницы.
     """
     settings = theme.get_theme()
 
@@ -109,82 +110,117 @@ def header():
         ))
     brand.append(html.Div(settings["brand"], className="damu-brand"))
 
+    items = [
+        html.Div(brand, className="damu-brand-box"),
+        dbc.NavLink("Главная", href="/", active="exact", class_name="nav-link"),
+        dbc.NavLink("Разбор", href="/explore", active="exact", class_name="nav-link"),
+        # Кнопка, а не ссылка: список разделов всплывает поверх страницы,
+        # никуда не уводя (см. sections_modal ниже)
+        html.Button("Разделы ▾", id="open-sections", className="damu-nav-link"),
+    ]
+
+    if auth.is_admin():
+        items.append(html.Span("Администратор", className="damu-tag"))
+        items.append(dbc.DropdownMenu(
+            label="Панель администратора",
+            align_end=True,
+            class_name="damu-admin-menu",
+            children=[
+                dbc.DropdownMenuItem("Ввод плана", href="/plan"),
+                dbc.DropdownMenuItem("Виджеты", href="/widgets"),
+                dbc.DropdownMenuItem("Оформление", href="/settings"),
+            ],
+        ))
+
+    # data-navbar читает CSS: на тёмной шапке подсветка ссылки идёт светлым,
+    # а не основным цветом — зелёный на почти чёрном не читается
+    return html.Div(items, className="damu-nav",
+                    **{"data-navbar": settings["navbar"]})
+
+
+def filters_bar():
+    """Ряд общих фильтров и блок свежести данных.
+
+    Фильтры живут в каркасе, а не на страницах, и это главное решение:
+    компоненты каркаса Dash не пересобирает при переходе между страницами,
+    поэтому выбранные год и регионы **переживают переход**. Выбрали 2025-й
+    и три области — они действуют и на главной, и в любом разделе.
+    """
     try:
         years = data.get_years()
         regions = data.get_region_choices()
         updated = data.get_last_update()
     except Exception:
         # Хранилища нет или оно занято — каркас обязан открыться,
-        # а страница внутри сама покажет понятную подсказку
-        return html.Div(html.Div(brand, className="damu-brand-box"),
-                        className="damu-header")
+        # а страница внутри сама покажет понятную подсказку.
+        # Пустые поля-невидимки нужны, чтобы коллбэки страниц не падали
+        # на отсутствующих полях ввода.
+        return html.Div(
+            [
+                html.Div("Хранилище недоступно — фильтры появятся после "
+                         "первого прогона ETL.", className="text-muted small"),
+                html.Div([
+                    dbc.Select(id="filter-year", options=[], value=None),
+                    dcc.Dropdown(id="filter-regions", options=[], multi=True),
+                    html.Span(id="data-updated"),
+                ], style={"display": "none"}),
+            ],
+            className="damu-filters",
+        )
 
-    filters = dbc.Row(
+    return html.Div(
         [
-            dbc.Col([
-                dbc.Label("Отчётный год", class_name="small mb-1"),
+            html.Div([
+                dbc.Label("Отчётный год", html_for="filter-year"),
                 dbc.Select(
                     id="filter-year",
                     options=[{"label": str(y), "value": y} for y in years],
                     value=years[0],
                     size="sm",
                 ),
-            ], xs=6, md=2),
-            dbc.Col([
-                dbc.Label("Регионы (пусто = все)", class_name="small mb-1"),
+            ], className="damu-filter-year"),
+            html.Div([
+                dbc.Label("Регионы (пусто — все)", html_for="filter-regions"),
                 dcc.Dropdown(
                     id="filter-regions",
                     options=regions,
                     multi=True,
                     placeholder="Все регионы",
                 ),
-            ], xs=12, md=6),
-            dbc.Col([
-                html.Div("данные обновлены", className="small text-muted"),
-                html.Div(updated, id="data-updated", className="fw-semibold"),
-            ], xs=6, md=4, class_name="text-md-end"),
+            ], className="damu-filter-regions"),
+            dbc.Button("Сбросить фильтры", id="reset-filters",
+                       color="link", class_name="damu-nav-link p-0"),
+            html.Div([
+                html.Div("Данные обновлены", className="damu-updated-label"),
+                html.Div([
+                    # Точка мигает — единственный «живой» знак на странице:
+                    # видно, что цифры сторожатся, а не застыли навсегда
+                    html.Span(className="damu-live-dot"),
+                    html.Span(updated, id="data-updated"),
+                ], className="damu-updated-value"),
+            ], className="damu-updated"),
         ],
-        class_name="g-2 align-items-end flex-grow-1",
-    )
-
-    return html.Div(
-        [html.Div(brand, className="damu-brand-box"), filters],
-        className="damu-header",
+        className="damu-filters",
     )
 
 
-def tabs_bar():
-    """Полоса вкладок под фильтрами: несколько разделов + «Все разделы».
+@callback(
+    Output("filter-year", "value"),
+    Output("filter-regions", "value"),
+    Input("reset-filters", "n_clicks"),
+    prevent_initial_call=True,
+)
+def reset_filters(_clicks):
+    """Возврат к виду «свежий год, все регионы».
 
-    Наверху висят только те разделы, куда ходят чаще всего (список
-    `main_tabs` в `config.yaml`) — их четыре, и полоса остаётся читаемой.
-    Двадцать вкладок в ряд не поместились бы и превратились бы в кашу.
-
-    Остальные разделы не спрятаны: кнопка справа открывает **поверх
-    страницы** полный список, из него и выбирают, куда перейти.
+    Год берётся первым из списка (он же самый свежий), регионы очищаются —
+    пустой список у нас всегда значит «все», отдельного пункта «Все» нет.
     """
-    cfg = data.load_config()
-    sections = {s["key"]: s for s in cfg.get("sections") or []}
-
-    items = [dbc.NavLink("Главная", href="/", active="exact")]
-    for key in cfg.get("main_tabs") or []:
-        section = sections.get(key)
-        if section:
-            items.append(dbc.NavLink(
-                section["title"], href=f"/section/{key}", active="exact",
-            ))
-
-    return html.Div(
-        [
-            dbc.Nav(items, pills=True, class_name="damu-tabs-nav"),
-            # Кнопка полного списка — отдельной строкой под вкладками
-            # и во всю их ширину: так её видно сразу, а не как мелкую
-            # кнопку с краю
-            dbc.Button("Все разделы ▾", id="open-sections",
-                       class_name="damu-all-sections"),
-        ],
-        className="damu-tabs",
-    )
+    try:
+        years = data.get_years()
+    except Exception:
+        return no_update, None
+    return (years[0] if years else no_update), None
 
 
 def sections_modal():
@@ -197,6 +233,10 @@ def sections_modal():
     Ссылки помечены общим типом id — по нажатию любой из них окно
     закрывается (см. коллбэк ниже). Иначе оно осталось бы висеть поверх
     только что открытого раздела.
+
+    Служебных страниц здесь больше нет: «Разбор» стоит ссылкой в шапке,
+    а страницы админа собраны в меню «Панель администратора». Дублировать
+    их ещё и здесь значило бы держать два списка одного и того же.
     """
     try:
         with_data = set(data.get_programs())
@@ -216,33 +256,10 @@ def sections_modal():
             xs=12, sm=6, md=4,
         ))
 
-    # !! Приставка «служ-» обязательна: ключи разделов и служебных страниц
-    # живут в одном пространстве имён, а у раздела «План освоения» ключ
-    # `plan` — ровно как у страницы ввода плана. Без приставки Dash падал
-    # с DuplicateIdError ещё до отрисовки (поймано запуском).
-    service = [
-        dbc.NavLink("Разбор — один график на выбор", href="/explore",
-                    id={"type": "section-link", "index": "служ-explore"}),
-    ]
-    if auth.is_admin():
-        service += [
-            dbc.NavLink("Ввод плана", href="/plan",
-                        id={"type": "section-link", "index": "служ-plan"}),
-            dbc.NavLink("Виджеты", href="/widgets",
-                        id={"type": "section-link", "index": "служ-widgets"}),
-            dbc.NavLink("Настройки", href="/settings",
-                        id={"type": "section-link", "index": "служ-settings"}),
-        ]
-
     return dbc.Modal(
         [
             dbc.ModalHeader(dbc.ModalTitle("Разделы")),
-            dbc.ModalBody([
-                dbc.Row(links, class_name="g-1"),
-                html.Hr(),
-                html.Div("Служебные страницы", className="text-muted small mb-1"),
-                dbc.Nav(service, vertical=True),
-            ]),
+            dbc.ModalBody(dbc.Row(links, class_name="g-1")),
         ],
         id="sections-modal", size="lg", scrollable=True, is_open=False,
     )
@@ -279,8 +296,8 @@ def serve_layout():
     return html.Div([
         dcc.Interval(id="data-poll", interval=30 * 1000),
         dcc.Store(id="data-version", data=_safe_version()),
-        header(),
-        tabs_bar(),
+        navbar(),
+        filters_bar(),
         sections_modal(),
         html.Div(
             [
