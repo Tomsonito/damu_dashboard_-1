@@ -1,17 +1,21 @@
-"""МАКЕТНЫЕ ЧИСЛА для витрины инструментов на главной.
+"""МАКЕТНЫЕ ЧИСЛА витрины инструментов.
 
-!! Здесь НЕТ настоящих данных. Все числа взяты из макета (Claude Design,
-страница «3a») и к показателям Фонда отношения не имеют. Файл существует
-ровно потому, что раскладку из макета собрали раньше, чем появились данные
-под неё: в боевой базе нет ни разреза по инструментам (Гарантирование /
-Кредитование / Субсидирование), ни разбивки по программам, ни счётчика
-уникальных проектов.
+!! Здесь НЕТ настоящих данных. Все числа взяты из макетов (Claude Design)
+и к показателям Фонда отношения не имеют. Файл существует ровно потому,
+что раскладку собрали раньше, чем появились данные под неё: в боевой базе
+нет ни разреза по инструментам (Гарантирование / Кредитование /
+Субсидирование), ни разбивки по программам, ни счётчика уникальных проектов.
+
+Числа читают трое: главная (`pages/main.py`), страницы-примеров
+(`pages/explore_example.py`) и карточки раздела. Набор один на всех
+намеренно: увидеть на главной 1 501, а в примере 1 421 и гадать, откуда
+разница, — худшее, что можно сделать с выдуманными числами.
 
 **Как это устроено и почему так.** Числа собраны в одном файле, а не
-разбросаны по разметке страницы, чтобы замена была механической: когда
-разрезы появятся в хранилище, `pages/main.py` начнёт звать `core/data.py`
+разбросаны по разметке страниц, чтобы замена была механической: когда
+разрезы появятся в хранилище, страницы начнут звать `core/data.py`
 вместо этого модуля, а файл удаляется целиком. Пока же на экране рядом
-с макетными блоками стоит честная пометка — см. `pages/main.py`.
+с макетными блоками стоит честная плашка «Макетные числа».
 
 Чем это отличается от демо-данных (`etl/make_samples.py`): те выдуманные
 строки лежат в хранилище, участвуют в фильтрах и считаются как настоящие;
@@ -32,6 +36,24 @@ TONE_MAIN, TONE_SECOND, TONE_THIRD = 1, 2, 3
 #: Месяцы, за которые в макете показана динамика (Фев–Июл).
 MONTHS = ("Фев", "Мар", "Апр", "Май", "Июн", "Июл")
 
+#: Месяцы для помесячных проектов — с января по июль, все закрытые месяцы
+#: 2026 года. Будущие месяцы в макете не показываются никогда.
+MONTHS7 = ("Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл")
+
+#: Все двенадцать — для прошлого года, который закончился целиком.
+MONTHS12 = ("Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+            "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
+
+#: Во сколько раз числа прошлого года больше нынешних. Одно число на всё:
+#: макет показывает, что переключатель годов меняет весь экран, а не
+#: изображает точную историю — настоящие годы придут из хранилища.
+LAST_YEAR_FACTOR = 1.28
+
+#: Сколько последних месяцев видно в свёрнутом графике. Тумблер «Графики
+#: за весь год» разворачивает до всех ПРОШЕДШИХ месяцев; будущие
+#: не показываются ни в одном состоянии.
+MONTHS_COLLAPSED = 6
+
 #: Инструменты: план и факт в млрд ₸, проекты и уникальные — в штуках.
 INSTRUMENTS = [
     {
@@ -41,6 +63,8 @@ INSTRUMENTS = [
         "plan": 1912, "fact": 1501,
         "projects_plan": 1400, "projects_fact": 1100, "unique": 800,
         "dynamics": (890, 1020, 1140, 1270, 1390, 1501),
+        "projects_by_month": (109, 47, 193, 114, 240, 159, 187),
+        "projects_by_month_full": (109, 47, 193, 114, 240, 159, 187, 201, 164, 228, 190, 142),
     },
     {
         "key": "guarantee",
@@ -49,6 +73,8 @@ INSTRUMENTS = [
         "plan": 620, "fact": 540,
         "projects_plan": 500, "projects_fact": 430, "unique": 340,
         "dynamics": (340, 380, 420, 460, 500, 540),
+        "projects_by_month": (42, 18, 74, 55, 96, 63, 82),
+        "projects_by_month_full": (42, 18, 74, 55, 96, 63, 82, 88, 71, 94, 80, 57),
     },
     {
         "key": "credit",
@@ -57,6 +83,8 @@ INSTRUMENTS = [
         "plan": 810, "fact": 650,
         "projects_plan": 550, "projects_fact": 470, "unique": 360,
         "dynamics": (400, 450, 500, 550, 600, 650),
+        "projects_by_month": (55, 24, 88, 41, 102, 76, 84),
+        "projects_by_month_full": (55, 24, 88, 41, 102, 76, 84, 91, 72, 101, 85, 61),
     },
     {
         "key": "subsidy",
@@ -65,6 +93,8 @@ INSTRUMENTS = [
         "plan": 482, "fact": 231,
         "projects_plan": 350, "projects_fact": 149, "unique": 75,
         "dynamics": (140, 160, 180, 200, 215, 231),
+        "projects_by_month": (12, 5, 31, 18, 42, 20, 21),
+        "projects_by_month_full": (12, 5, 31, 18, 42, 20, 21, 22, 18, 26, 21, 15),
     },
 ]
 
@@ -137,6 +167,69 @@ def expected_pace(today: date | None = None) -> tuple[float, int, int]:
     day_of_year = today.timetuple().tm_yday
     days_in_year = date(today.year, 12, 31).timetuple().tm_yday
     return day_of_year / days_in_year * 100, day_of_year, days_in_year
+
+
+def for_year(year: int | None = None, expanded: bool = False,
+             today: date | None = None) -> list[dict]:
+    """Инструменты, пересчитанные под выбранный год, со всем считаемым.
+
+    Что делает год. Текущий — числа как есть, ожидаемый темп считается
+    по сегодняшней дате, в графике только **закрытые** месяцы. Прошлый —
+    числа умножаются на `LAST_YEAR_FACTOR`, темп равен 100 % (год кончился),
+    в графике все двенадцать месяцев.
+
+    Будущие месяцы не показываются ни в одном состоянии — это требование
+    макета, и оно же здравый смысл: столбик за декабрь в июле означал бы
+    ноль, который читался бы как провал.
+    """
+    today = today or date.today()
+    pace, day, days = expected_pace(today)
+    current = year is None or int(year) >= today.year
+    if not current:
+        pace, day, days = 100.0, days, days
+
+    out = []
+    for item in INSTRUMENTS:
+        factor = 1.0 if current else LAST_YEAR_FACTOR
+        fact = round(item["fact"] * factor)
+        projects_fact = round(item["projects_fact"] * factor)
+        unique = round(item["unique"] * factor)
+
+        months = (item["projects_by_month"] if current
+                  else item["projects_by_month_full"])
+        labels = MONTHS7 if current else MONTHS12
+        months = [round(v * factor) for v in months]
+        if not expanded and len(months) > MONTHS_COLLAPSED:
+            months = months[-MONTHS_COLLAPSED:]
+            labels = labels[-MONTHS_COLLAPSED:]
+
+        percent = fact / item["plan"] * 100 if item["plan"] else 0.0
+        projects_percent = (projects_fact / item["projects_plan"] * 100
+                            if item["projects_plan"] else 0.0)
+        gap = percent - pace
+        out.append({
+            **item,
+            "fact": fact, "projects_fact": projects_fact, "unique": unique,
+            "repeat": projects_fact - unique,
+            "months": months, "month_labels": tuple(labels),
+            "percent": percent, "projects_percent": projects_percent,
+            "pace": pace, "pace_day": day, "pace_days": days,
+            "gap": gap, "on_track": gap >= 0,
+            # «Выполнено» отделено от «По графику» намеренно: перевыполненный
+            # план — это не «идём по графику», это уже другой разговор
+            "status": ("Выполнено" if percent >= 100
+                       else "По графику" if gap >= 0 else "Отставание"),
+        })
+    return out
+
+
+def can_expand(year: int | None = None, today: date | None = None) -> bool:
+    """Есть ли что разворачивать: прошло ли месяцев больше, чем видно сразу."""
+    today = today or date.today()
+    current = year is None or int(year) >= today.year
+    months = (INSTRUMENTS[0]["projects_by_month"] if current
+              else INSTRUMENTS[0]["projects_by_month_full"])
+    return len(months) > MONTHS_COLLAPSED
 
 
 def card_numbers(item: dict, today: date | None = None) -> dict:

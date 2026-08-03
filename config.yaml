@@ -290,7 +290,7 @@ section_tabs_by_section:
   guarantee:
     - {key: years,       title: "Динамика по годам",     data: true}
     - {key: programs,    title: "Программа/цели займа",  data: false}
-    - {key: plan,        title: "План/освоение",         data: false}
+    - {key: plan,        title: "План/освоение",         data: false, abbr: "ПО"}
     - {key: regions,     title: "ОКЭД/Регионы",          data: true}
     - {key: banks,       title: "БВУ/субъектность",      data: false}
     - {key: gf1_limits,  title: "Лимиты",        group: "ГФ1", data: false}
@@ -310,6 +310,8 @@ main_tabs: [subsidy, credit, guarantee, nonfin]
 # Разделы сайта. Порядок здесь = порядок во всплывающем списке.
 #
 #   key   — латиницей, попадает в адрес страницы (/section/plan)
+#   abbr  — 2–3 буквы для узкой полосы разделов слева: когда список
+#           свёрнут, видны только они, и по ним раздел узнают
 #   title — как называется в меню
 #   data  — есть ли под разделом данные. Раздел без данных показывает
 #           заглушку «ждёт источника», а в меню выглядит приглушённым:
@@ -318,26 +320,26 @@ main_tabs: [subsidy, credit, guarantee, nonfin]
 # Значение `title` должно совпадать с колонкой «программа» в данных —
 # по нему страница и отбирает свои строки.
 sections:
-  - {key: plan,          title: "План освоения",     data: true}
-  - {key: see,           title: "СЭЭ",               data: true}
-  - {key: guarantee,     title: "Гар. выдача",       data: true}
-  - {key: gf2,           title: "ГФ2",               data: true}
-  - {key: guarantee_debt, title: "Гар. — Осн. долг", data: true}
-  - {key: credit,        title: "Кредит. выдача",    data: true}
-  - {key: orleu,         title: "Өрлеу",             data: true}
-  - {key: subsidy,       title: "Суб. выдача",       data: true}
-  - {key: subsidy_debt,  title: "Суб. — Осн. долг",  data: true}
-  - {key: subsidy_pay,   title: "Суб. — Выплаты",    data: true}
-  - {key: finance,       title: "Фин. показатели",   data: true}
-  - {key: treasury,      title: "Казначейство",      data: true}
-  - {key: procurement,   title: "Закупки",           data: true}
-  - {key: risk,          title: "Риск-менеджмент",   data: true}
-  - {key: monitoring,    title: "Мониторинг",        data: true}
-  - {key: nonfin,        title: "Нефин. поддержка",  data: true}
-  - {key: marketing,     title: "Маркетинг",         data: true}
-  - {key: bad_assets,    title: "Пробл. активы",     data: true}
-  - {key: staff,         title: "Персонал",          data: true}
-  - {key: skpd,          title: "СКПД",              data: true}
+  - {key: plan,          title: "План освоения",     data: true, abbr: "ПО"}
+  - {key: see,           title: "СЭЭ",               data: true, abbr: "СЭ"}
+  - {key: guarantee,     title: "Гар. выдача",       data: true, abbr: "ГВ"}
+  - {key: gf2,           title: "ГФ2",               data: true, abbr: "ГФ2"}
+  - {key: guarantee_debt, title: "Гар. — Осн. долг", data: true, abbr: "ГОД"}
+  - {key: credit,        title: "Кредит. выдача",    data: true, abbr: "КВ"}
+  - {key: orleu,         title: "Өрлеу",             data: true, abbr: "ӨР"}
+  - {key: subsidy,       title: "Суб. выдача",       data: true, abbr: "СВ"}
+  - {key: subsidy_debt,  title: "Суб. — Осн. долг",  data: true, abbr: "СОД"}
+  - {key: subsidy_pay,   title: "Суб. — Выплаты",    data: true, abbr: "СВП"}
+  - {key: finance,       title: "Фин. показатели",   data: true, abbr: "ФП"}
+  - {key: treasury,      title: "Казначейство",      data: true, abbr: "КЗ"}
+  - {key: procurement,   title: "Закупки",           data: true, abbr: "ЗК"}
+  - {key: risk,          title: "Риск-менеджмент",   data: true, abbr: "РМ"}
+  - {key: monitoring,    title: "Мониторинг",        data: true, abbr: "МН"}
+  - {key: nonfin,        title: "Нефин. поддержка",  data: true, abbr: "НФ"}
+  - {key: marketing,     title: "Маркетинг",         data: true, abbr: "МК"}
+  - {key: bad_assets,    title: "Пробл. активы",     data: true, abbr: "ПА"}
+  - {key: staff,         title: "Персонал",          data: true, abbr: "ПС"}
+  - {key: skpd,          title: "СКПД",              data: true, abbr: "СК"}
 
 # Оформление сайта — значения ПО УМОЛЧАНИЮ.
 #
@@ -349,8 +351,10 @@ sections:
 #
 #   brand      — надпись в шапке
 #   accent     — основной цвет: кнопки, ссылки, галки, первый цвет диаграмм
-#   accent_2   — второй цвет: им помечены инструменты, отличные от главного
-#                (в макете зелёный — «Все инструменты», золотой — остальные)
+#   accent_2   — второй цвет: кредитование и проценты
+#   accent_3   — третий цвет: субсидирование. Понадобился, когда инструментов
+#                стало три: зелёный и золотой на два уже были заняты,
+#                а третий оттенок золота с ними сливался
 #   navbar     — шапка: dark (тёмная) | light (светлая) | accent (в цвет)
 #   font       — ключ набора из блока fonts ниже
 #   font_scale — ключ размера из блока font_scales ниже
@@ -362,6 +366,7 @@ theme:
   brand: "Аналитический дашборд"
   accent: "#1f7a4d"
   accent_2: "#b08a2e"
+  accent_3: "#008b8a"
   navbar: light
   font: golos
   font_scale: normal
@@ -436,6 +441,12 @@ widget_sizes:
     columns: 12
     height: 700
 
+# !! БЛОК ПОКА НЕ ДЕЙСТВУЕТ (с 29.07.2026): сетку виджетов с главной убрали,
+# там теперь витрина инструментов по макету. Блок оставлен на случай, если
+# сетка на главную вернётся — тогда вернуть строку «Главная (витрина)»
+# в core/widgets.py, page_choices(). Наборы разделов берутся из
+# `section_widgets` ниже, и они работают.
+#
 # Набор виджетов ПО УМОЛЧАНИЮ — что видит тот, кто ещё ничего не настраивал.
 # Как только админ правит набор на странице «Виджеты», список переезжает
 # в таблицу `widgets` хранилища и этот блок больше не действует. Кнопка

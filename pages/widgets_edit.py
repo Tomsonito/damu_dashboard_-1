@@ -31,7 +31,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback, ctx, html, no_update
 
-from core import auth, widgets
+from core import admin, auth, widgets
 
 log = logging.getLogger(__name__)
 
@@ -116,11 +116,12 @@ def layout(**kwargs):
 
     return dbc.Container(
         [
-            html.H2("Виджеты главного экрана", className="mt-4"),
+            admin.tabs("/widgets"),
+            html.H2("Виджеты разделов", className="mt-3"),
             html.P(
-                "Набор общий для всех: так главную увидят и остальные "
+                "Набор общий для всех: так раздел увидят и остальные "
                 "сотрудники. Правки применяются сразу — чтобы увидеть их, "
-                "откройте главную заново (F5).",
+                "откройте раздел заново (F5).",
                 className="text-muted small",
             ),
             dbc.Row(
@@ -129,17 +130,18 @@ def layout(**kwargs):
                     dbc.Select(
                         id="w-page",
                         options=widgets.page_choices(),
-                        value=widgets.MAIN_PAGE,
+                        value=widgets.first_page(),
                     ),
                     dbc.FormText(
-                        "У главной витрины и у каждого раздела свой набор. "
-                        "Правка одного раздела не трогает остальные."
+                        "У каждого раздела свой набор — правка одного "
+                        "не трогает остальные. Главной в списке нет: там "
+                        "витрина инструментов по макету, а не виджеты."
                     ),
                 ], md=6),
                 class_name="mb-3",
             ),
-            html.Div(status_line(widgets.MAIN_PAGE), id="w-status"),
-            html.Div(widgets_list(widgets.MAIN_PAGE), id="w-list", className="mb-4"),
+            html.Div(status_line(widgets.first_page()), id="w-status"),
+            html.Div(widgets_list(widgets.first_page()), id="w-list", className="mb-4"),
             html.H5("Добавить виджет"),
             dbc.Row(
                 [
@@ -194,7 +196,7 @@ def change_structure(_add, _reset, _up, _down, _del, page, indicator, chart, siz
     на странице (у них n_clicks = None).
     """
     trigger = ctx.triggered_id
-    page = page or widgets.MAIN_PAGE
+    page = page or widgets.first_page()
 
     # Сменили страницу в списке — просто показываем её набор, ничего не пишем
     if trigger == "w-page":
@@ -263,7 +265,7 @@ def change_field(_indicators, _charts, _sizes, page):
     if value in (None, ""):
         return no_update, no_update
 
-    page = page or widgets.MAIN_PAGE
+    page = page or widgets.first_page()
     field = {"w-indicator": "indicator", "w-chart": "chart", "w-size": "size"}[trigger["type"]]
     current = {item["id"]: item for item in widgets.get_widgets(page)}.get(trigger["index"])
     if current is None:

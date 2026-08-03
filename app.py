@@ -5,7 +5,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
 
-from core import auth, data, publish, theme, widgets
+from core import auth, data, examples, publish, theme, widgets
 from core.cache import cache
 
 # Без этой настройки log.info(...) со страниц молча пропадает: у Python
@@ -18,6 +18,31 @@ logging.basicConfig(
 )
 
 log = logging.getLogger(__name__)
+
+#: Крошечный скрипт, который ставит тёмную тему ДО первой отрисовки.
+#:
+#: !! Он обязан быть именно здесь, в <head>, и обязан быть синхронным.
+#: Выбор тёмной темы живёт в браузере (localStorage), сервер о нём не знает
+#: и отдаёт всем одинаковую страницу. Если ставить класс из dashboard.js,
+#: который грузится после стилей, человек с тёмной темой на долю секунды
+#: увидит светлый экран — то самое неприятное мигание при каждом переходе.
+#: Пять строк в <head> его убирают.
+#:
+#: try/catch нужен: в приватном режиме некоторых браузеров обращение
+#: к localStorage бросает исключение, и без перехвата сломалась бы вся
+#: страница ради необязательной настройки.
+THEME_BOOT = """
+<script>
+(function () {
+  try {
+    if (localStorage.getItem('damu-theme') === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  } catch (e) { /* localStorage недоступен — остаёмся в светлой теме */ }
+}());
+</script>
+"""
+
 
 class ThemedDash(dash.Dash):
     """Dash, который подмешивает настройки оформления в <head> страницы.
@@ -44,6 +69,7 @@ class ThemedDash(dash.Dash):
             # страница обязана открыться: в custom.css у каждой переменной
             # есть запасное значение, сайт будет в цветах по умолчанию
             log.exception("оформление не прочиталось — рисуем в умолчаниях")
+        kwargs["css"] = kwargs.get("css", "") + THEME_BOOT
         return super().interpolate_index(**kwargs)
 
 
@@ -90,6 +116,46 @@ except Exception:
     log.exception("миграция хранилища на старте не прошла")
 
 
+#: Иконки переключателя темы. Рисуются картинкой (data-URI), потому что
+#: SVG-компонентов в Dash нет, а сторонний пакет — чужой код, который однажды
+#: отстанет от новой версии Dash. Цвет вшит в каждую иконку: показывается
+#: всегда ровно одна из двух, и каждая знает, на каком фоне окажется.
+_SUN = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" '
+        'stroke="%23b08a2e" stroke-width="1.4" stroke-linecap="round">'
+        '<circle cx="8" cy="8" r="3.1"/><path d="M8 1.2v1.5M8 13.3v1.5M1.2 8h1.5'
+        'M13.3 8h1.5M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M12.8 3.2l-1.1 1.1'
+        'M4.3 11.7l-1.1 1.1"/></svg>')
+_MOON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" '
+         'stroke="%23e2c274" stroke-width="1.4" stroke-linecap="round" '
+         'stroke-linejoin="round"><path d="M13.2 10.1A5.6 5.6 0 0 1 5.9 2.8'
+         'a5.6 5.6 0 1 0 7.3 7.3Z"/></svg>')
+
+
+def theme_toggle():
+    """Кнопка «солнце / луна» — личный выбор светлой или тёмной темы.
+
+    Выбор **у каждого свой** и живёт в браузере (localStorage), а не в общих
+    настройках сайта: оформление на странице «Настройки» задаёт админ сразу
+    всем семидесяти, а тёмная тема — дело вкуса и освещения на рабочем месте.
+
+    Обе иконки лежат в разметке всегда, нужную показывает CSS по атрибуту
+    `data-theme`. Так переключение не ждёт сервер: класс меняется в браузере,
+    и вместе с ним меняется иконка.
+    """
+    return html.Button(
+        [
+            html.Img(src="data:image/svg+xml;charset=utf-8," + _SUN,
+                     className="damu-theme-sun", alt=""),
+            html.Img(src="data:image/svg+xml;charset=utf-8," + _MOON,
+                     className="damu-theme-moon", alt=""),
+        ],
+        id="damu-theme-toggle",
+        className="damu-theme-toggle",
+        title="Переключить светлую и тёмную тему",
+        **{"aria-label": "Переключить тему", "data-theme-toggle": "1"},
+    )
+
+
 def navbar():
     """Верхняя полоса навигации — как в макете.
 
@@ -113,24 +179,51 @@ def navbar():
     items = [
         html.Div(brand, className="damu-brand-box"),
         dbc.NavLink("Главная", href="/", active="exact", class_name="nav-link"),
-        dbc.NavLink("Разбор", href="/explore", active="exact", class_name="nav-link"),
+        # «Разбор» — меню, а не одна ссылка: пока на нём выбирают раскладку
+        # из шести примеров, и прыгать между ними через список каждый раз
+        # неудобно. Первый пункт ведёт на сам список.
+        dbc.DropdownMenu(
+            label="Разбор",
+            nav=True,
+            class_name="damu-nav-menu",
+            children=[
+                dbc.DropdownMenuItem("Все примеры", href="/explore"),
+                dbc.DropdownMenuItem(divider=True),
+                *[dbc.DropdownMenuItem(f"{e['title']} — {e['note']}",
+                                       href=f"/explore/{e['key']}")
+                  for e in examples.EXAMPLES],
+            ],
+        ),
         # Кнопка, а не ссылка: список разделов всплывает поверх страницы,
         # никуда не уводя (см. sections_modal ниже)
         html.Button("Разделы ▾", id="open-sections", className="damu-nav-link"),
+        theme_toggle(),
     ]
 
     if auth.is_admin():
         items.append(html.Span("Администратор", className="damu-tag"))
-        items.append(dbc.DropdownMenu(
-            label="Панель администратора",
-            align_end=True,
-            class_name="damu-admin-menu",
-            children=[
-                dbc.DropdownMenuItem("Ввод плана", href="/plan"),
-                dbc.DropdownMenuItem("Виджеты", href="/widgets"),
-                dbc.DropdownMenuItem("Оформление", href="/settings"),
-            ],
-        ))
+        # Один пункт вместо выпадающего меню из трёх: ввод плана, виджеты
+        # и оформление — это одно место, и человек должен видеть его одним.
+        # Внутри они разложены по вкладкам (core/admin.py).
+        items.append(dbc.NavLink("Настройки", href="/settings",
+                                 class_name="nav-link"))
+
+    try:
+        updated_date, updated_time = data.get_last_update_parts()
+    except Exception:
+        updated_date, updated_time = "", ""
+
+    items.append(
+        html.Div([
+            html.Div("Данные обновлены", className="damu-updated-label"),
+            html.Div([
+                html.Span(className="damu-live-dot"),
+                html.Span(updated_date, id="data-updated"),
+            ], className="damu-updated-value"),
+            html.Div(updated_time, id="data-updated-time",
+                     className="damu-updated-time"),
+        ], className="damu-updated")
+    )
 
     # data-navbar читает CSS: на тёмной шапке подсветка ссылки идёт светлым,
     # а не основным цветом — зелёный на почти чёрном не читается
@@ -149,59 +242,27 @@ def filters_bar():
     try:
         years = data.get_years()
         regions = data.get_region_choices()
-        updated = data.get_last_update()
     except Exception:
-        # Хранилища нет или оно занято — каркас обязан открыться,
-        # а страница внутри сама покажет понятную подсказку.
-        # Пустые поля-невидимки нужны, чтобы коллбэки страниц не падали
-        # на отсутствующих полях ввода.
-        return html.Div(
-            [
-                html.Div("Хранилище недоступно — фильтры появятся после "
-                         "первого прогона ETL.", className="text-muted small"),
-                html.Div([
-                    dbc.Select(id="filter-year", options=[], value=None),
-                    dcc.Dropdown(id="filter-regions", options=[], multi=True),
-                    html.Span(id="data-updated"),
-                ], style={"display": "none"}),
-            ],
-            className="damu-filters",
-        )
+        years = [2026]
+        regions = []
 
     return html.Div(
         [
-            html.Div([
-                dbc.Label("Отчётный год", html_for="filter-year"),
-                dbc.Select(
-                    id="filter-year",
-                    options=[{"label": str(y), "value": y} for y in years],
-                    value=years[0],
-                    size="sm",
-                ),
-            ], className="damu-filter-year"),
-            html.Div([
-                dbc.Label("Регионы (пусто — все)", html_for="filter-regions"),
-                dcc.Dropdown(
-                    id="filter-regions",
-                    options=regions,
-                    multi=True,
-                    placeholder="Все регионы",
-                ),
-            ], className="damu-filter-regions"),
-            dbc.Button("Сбросить фильтры", id="reset-filters",
-                       color="link", class_name="damu-nav-link p-0"),
-            html.Div([
-                html.Div("Данные обновлены", className="damu-updated-label"),
-                html.Div([
-                    # Точка мигает — единственный «живой» знак на странице:
-                    # видно, что цифры сторожатся, а не застыли навсегда
-                    html.Span(className="damu-live-dot"),
-                    html.Span(updated, id="data-updated"),
-                ], className="damu-updated-value"),
-            ], className="damu-updated"),
+            dbc.Select(
+                id="filter-year",
+                options=[{"label": str(y), "value": y} for y in years],
+                value=years[0] if years else None,
+            ),
+            dcc.Dropdown(
+                id="filter-regions",
+                options=regions,
+                multi=True,
+            ),
+            html.Button("Сбросить", id="reset-filters"),
         ],
-        className="damu-filters",
+        style={"display": "none"},
     )
+
 
 
 @callback(
@@ -221,6 +282,42 @@ def reset_filters(_clicks):
     except Exception:
         return no_update, None
     return (years[0] if years else no_update), None
+
+
+@callback(
+    Output("filter-year", "value", allow_duplicate=True),
+    Input({"type": "year-btn", "year": ALL}, "n_clicks"),
+    prevent_initial_call=True,
+)
+def update_year_from_buttons(n_clicks_list):
+    """При клике по кнопке 2026 или 2025 переключает глобальный фильтр года."""
+    if not ctx.triggered_id or not isinstance(ctx.triggered_id, dict):
+        return no_update
+    clicked_year = ctx.triggered_id.get("year")
+    if clicked_year:
+        return clicked_year
+    return no_update
+
+
+@callback(
+    Output({"type": "year-btn", "year": ALL}, "className"),
+    Input("filter-year", "value"),
+    State({"type": "year-btn", "year": ALL}, "id"),
+    prevent_initial_call=False,
+)
+def sync_year_button_styles(selected_year, id_list):
+    """Подсвечивает активную кнопку года (2026 / 2025) при выборе года."""
+    if not id_list:
+        return []
+    class_names = []
+    for btn_id in id_list:
+        year = btn_id.get("year")
+        base_class = f"damu-year-btn damu-year-btn-{year}"
+        if selected_year is not None and str(year) == str(selected_year):
+            class_names.append(f"{base_class} active")
+        else:
+            class_names.append(f"{base_class} inactive")
+    return class_names
 
 
 def sections_modal():
@@ -297,7 +394,7 @@ def serve_layout():
         dcc.Interval(id="data-poll", interval=30 * 1000),
         dcc.Store(id="data-version", data=_safe_version()),
         navbar(),
-        filters_bar(),
+        html.Div(filters_bar(), id="filters-wrap"),
         sections_modal(),
         html.Div(
             [
@@ -320,6 +417,7 @@ def _safe_version() -> str:
 @callback(
     Output("data-version", "data"),
     Output("data-updated", "children"),
+    Output("data-updated-time", "children"),
     Output("publish-banner", "children"),
     Input("data-poll", "n_intervals"),
     State("data-version", "data"),
@@ -346,10 +444,11 @@ def poll_version(_, known_version):
         fresh = data.get_display_version()
         banner = publish_banner()
         if known_version is not None and str(known_version) == fresh:
-            return no_update, no_update, banner
-        return fresh, data.get_last_update(), banner
+            return no_update, no_update, no_update, banner
+        updated_date, updated_time = data.get_last_update_parts()
+        return fresh, updated_date, updated_time, banner
     except Exception:
-        return no_update, no_update, None
+        return no_update, no_update, no_update, None
 
 
 def publish_banner():

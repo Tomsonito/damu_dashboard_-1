@@ -44,7 +44,8 @@ ASSETS_DIR = Path("assets")
 # поле в базе, но и элемент управления, проверка ввода и место, где она
 # применяется. «Полная свобода» кончается тем, что кто-нибудь ставит
 # 8 пикселей на белом — поэтому свободы ровно столько, сколько нужно.
-KEYS = ("brand", "accent", "accent_2", "navbar", "font", "font_scale", "logo")
+KEYS = ("brand", "accent", "accent_2", "accent_3", "navbar", "font",
+        "font_scale", "logo")
 
 # Варианты шапки: тёмная, светлая, в цвет акцента
 NAVBARS = {
@@ -79,6 +80,7 @@ def defaults() -> dict:
         "brand": cfg.get("brand", "Дашборд Даму"),
         "accent": cfg.get("accent", "#1f7a4d"),
         "accent_2": cfg.get("accent_2", "#b08a2e"),
+        "accent_3": cfg.get("accent_3", "#008b8a"),
         "navbar": cfg.get("navbar", "light"),
         "font": cfg.get("font", "system"),
         "font_scale": cfg.get("font_scale", "normal"),
@@ -130,6 +132,8 @@ def get_theme() -> dict:
         theme["accent"] = defaults()["accent"]
     if not COLOR_RE.match(str(theme["accent_2"])):
         theme["accent_2"] = defaults()["accent_2"]
+    if not COLOR_RE.match(str(theme["accent_3"])):
+        theme["accent_3"] = defaults()["accent_3"]
     if theme["logo"] and not (ASSETS_DIR / theme["logo"]).exists():
         theme["logo"] = ""  # картинку удалили из assets/ — покажем одно название
     return theme
@@ -252,6 +256,7 @@ def css_variables(theme: dict | None = None) -> str:
     theme = theme or get_theme()
     accent = theme["accent"]
     accent_2 = theme["accent_2"]
+    accent_3 = theme["accent_3"]
     nav_bg = NAVBAR_BG.get(theme["navbar"], accent)
     return "\n".join([
         ":root {",
@@ -265,6 +270,9 @@ def css_variables(theme: dict | None = None) -> str:
         f"  --damu-accent-2-dark: {mix(accent_2, '#000000', 0.4)};",
         f"  --damu-accent-2-soft: {mix(accent_2, '#ffffff', 0.85)};",
         f"  --damu-on-accent-2: {readable_on(accent_2)};",
+        f"  --damu-accent-3: {accent_3};",
+        f"  --damu-accent-3-dark: {mix(accent_3, '#000000', 0.25)};",
+        f"  --damu-on-accent-3: {readable_on(accent_3)};",
         f"  --damu-nav-bg: {nav_bg};",
         f"  --damu-nav-fg: {NAVBAR_FG.get(theme['navbar'], readable_on(nav_bg))};",
         "}",
@@ -342,6 +350,11 @@ def validate(values: dict) -> dict:
     if not COLOR_RE.match(accent_2):
         raise ValueError("Второй цвет должен быть в виде #rrggbb, например #b08a2e.")
     clean["accent_2"] = accent_2.lower()
+
+    accent_3 = str(values.get("accent_3", "") or "").strip()
+    if not COLOR_RE.match(accent_3):
+        raise ValueError("Третий цвет должен быть в виде #rrggbb, например #008b8a.")
+    clean["accent_3"] = accent_3.lower()
 
     navbar = str(values.get("navbar", ""))
     if navbar not in NAVBARS:

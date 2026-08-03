@@ -18,7 +18,7 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
 
-from core import auth, data, publish
+from core import admin, auth, data, publish
 
 log = logging.getLogger(__name__)
 
@@ -166,7 +166,8 @@ def layout(**kwargs):
     indicators = plan_indicators()
     return dbc.Container(
         [
-            html.H2("Ввод плана", className="mt-4"),
+            admin.tabs("/plan"),
+            html.H2("Ввод плана", className="mt-3"),
             html.P(
                 "Правки не попадают на сайт сразу: черновик публикуется "
                 "в ближайшие 9:00, до этого его можно отменить. "

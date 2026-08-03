@@ -1,384 +1,381 @@
-"""Главный экран: витрина инструментов из макета + настоящие данные под ней.
+"""Главный экран — витрина освоения плана по макету.
 
-Страница собрана из двух этажей, и это осознанно.
+Собран по листу «Даму — Главная» из Claude Design (вариант 1b, светлая тема).
+Сверху вниз: строка заголовка с переключателем года, полоса-итог
+«Все инструменты», три карточки инструментов, разбивка по программам,
+карта областей.
 
-**Верхний этаж — витрина по макету** (Claude Design, страница «3a»):
-четыре карточки инструментов со шкалой освоения, отметкой ожидаемого темпа
-и мини-динамикой, под ними разбивка по программам, под ней карта.
-Числа в карточках и разбивке — **макетные**, они лежат в `core/mockup.py`:
-в боевой базе нет ни разреза по инструментам, ни программ, ни счётчика
-уникальных проектов. На экране про это написано прямо, а не мелким шрифтом
-в документации. Карта при этом **настоящая** — она рисуется по данным.
+**Главная мысль раскладки — иерархия.** Раньше все четыре инструмента
+стояли в одном ряду, и сводный терялся среди трёх частных. Теперь сводный
+вынесен в тёмную полосу во всю ширину и подан крупно: сначала «сколько
+всего», потом разбивка. Цвет при этом перестал красить заголовки и стал
+чертой сверху карточки — он метка категории, а не выделение важности.
 
-**Нижний этаж — то, что уже есть на самом деле:** карточки-показатели
-и сетка виджетов, состав которой задаёт админ на странице «Виджеты»
-(core/widgets.py). Этот этаж живой: он слушает фильтры года и регионов.
+**Числа макетные** (`core/mockup.py`): разрезов по инструментам, программам
+и уникальным проектам в боевой базе нет. На экране про это написано прямо —
+плашка «Макетные числа» стоит рядом с заголовком, а не мелочью внизу.
+Карта — настоящая, она рисуется по данным и слушает фильтры.
 
-@@ **Вернуться к вопросу:** пользователь выбрал «карточки сверху, виджеты
-ниже» (29.07.2026), но отметил, что в макете главная сделана целиком и,
-возможно, сетку виджетов с главной стоит убрать совсем. Решение отложено.
+**Что на витрине живое.** Два переключателя, и оба меняют только макетные
+числа: год (текущий / прошлый) и тумблер «Графики за весь год». Год влияет
+на все числа сразу, тумблер разворачивает графики месяцев с шести последних
+до всех прошедших. Будущие месяцы не показываются ни в одном состоянии —
+столбик за декабрь в августе означал бы ноль и читался бы как провал.
 
-Как рисуется сетка виджетов. Виджет знает свой пресет размера, пресет знает
-ширину в колонках Bootstrap (4, 6 или 12) и высоту в пикселях. Строк как
-таковых нет: колонки переносятся сами, когда 12 набралось, — поэтому
-«два средних в ряд» получается само собой.
-
-Один коллбэк рисует все виджеты разом (pattern-matching по id). Отдельный
-коллбэк на каждый пришлось бы объявлять заранее и на фиксированное число,
-а число виджетов заранее неизвестно — их набор меняет админ.
+Фильтры года и регионов из шапки на макетные числа НЕ влияют: подделывать
+реакцию выдуманных чисел на настоящий фильтр — обман. Карта под ними живая
+и слушает и то и другое.
 """
 
 import logging
 
 import dash
 import dash_bootstrap_components as dbc
-import pandas as pd
-from dash import ALL, Input, Output, State, callback, dcc, html
+from dash import ALL, Input, Output, State, callback, ctx, dcc, html
 
-from core import auth, charts, data, mockup, widgets
+from core import charts, data, mockup
 
 log = logging.getLogger(__name__)
 
 dash.register_page(__name__, path="/", name="Главная", title="Дашборд Даму")
 
-#: Показатель, по которому раскрашивается карта на главной.
-#: Настоящий, из боевых данных — в отличие от карточек над ней.
+#: Показатель, по которому раскрашивается карта. Настоящий, из боевых данных.
 MAP_INDICATOR = "budget_spent"
 
-#: Высоты мини-столбиков «Динамика в отчетном году», в пикселях.
-#: Столбики НЕ от нуля: разброс между февралём и июлем маленький, и от нуля
-#: все шесть выглядели бы одинаковыми. Поэтому самый низкий — 30, самый
-#: высокий — 50, остальные между ними. Так же сделано в макете.
-MINI_MIN_H, MINI_MAX_H = 30, 50
+#: Годы витрины: текущий и прошлый. Настоящие годы придут из хранилища
+#: вместе с разрезами — тогда список станет динамическим.
+YEAR_NOW = 2026
+YEAR_PREV = 2025
+
+#: Высота области столбиков в полосе-итоге и в карточке, в пикселях.
+BAND_CHART_H, CARD_CHART_H = 44, 52
 
 
 def num(value: float, decimals: int = 0) -> str:
     """Число по-русски: разряды неразрывным пробелом, запятая для дробей."""
-    text = f"{value:,.{decimals}f}".replace(",", " ")
+    text = f"{value:,.{decimals}f}".replace(",", " ")
     return text.replace(".", ",") if decimals else text
 
 
-# ─────────────────────── витрина инструментов (макет) ───────────────────────
+def _months(item: dict, height: int, css: str, tight: bool, show_values: bool):
+    """Столбики «проектов за месяц»: значение сверху, месяц снизу.
 
-def mini_dynamics(item: dict) -> html.Div:
-    """Шесть мини-столбиков: как копился факт с февраля по июль."""
-    values = item["dynamics"]
-    low, high = min(values), max(values)
-    spread = high - low
-
-    columns = []
-    for label, value in zip(mockup.MONTHS, values):
-        share = 0.5 if spread == 0 else (value - low) / spread
-        height = MINI_MIN_H + (MINI_MAX_H - MINI_MIN_H) * share
-        columns.append(html.Div(
-            [
-                html.Span(num(value), className="damu-mini-val"),
-                html.Div(className="damu-mini-bar",
-                         style={"height": f"{height:.0f}px"}),
-                html.Span(label, className="damu-mini-label"),
-            ],
-            className="damu-mini-col",
-        ))
-    return html.Div(columns, className="damu-mini")
-
-
-def instrument_card(item: dict, lead: bool = False) -> html.Div:
-    """Одна карточка инструмента — шкала, статус, проекты, динамика.
-
-    Цвет карточке задаёт ОДИН класс `damu-c-N` на самой карточке: он кладёт
-    цвет в переменную CSS, а заголовок, полоски и столбики внутри берут её
-    оттуда. Иначе цвет пришлось бы вписывать в десяток мест каждой карточки.
+    В развёрнутом виде числа над столбиками прячутся, а зазор сжимается:
+    двенадцать подписей с числами в узкой колонке не читаются — проверено
+    в макете, оттуда же и решение.
     """
-    n = mockup.card_numbers(item)
-    status_ok = n["on_track"]
+    values = item["months"]
+    top = max(values) or 1
+    columns = []
+    for label, value in zip(item["month_labels"], values):
+        column = []
+        if show_values:
+            column.append(html.Span(num(value), className=f"{css}-value"))
+        column.append(html.I(style={
+            "height": f"{max(3, round(value / top * height))}px",
+            # Самый высокий столбик в полную силу, остальные приглушены —
+            # пик месяца видно, не читая чисел
+            "opacity": 1 if value == top else 0.5,
+        }))
+        if css == "damu-inst2-month":
+            column.append(html.Span(label, className=f"{css}-label"))
+        columns.append(html.Div(column, className=css))
+
+    block = [html.Div(columns, className=(f"{css}s damu-tight" if tight
+                                          else f"{css}s"))]
+    if css == "damu-band-month":
+        block.append(html.Div([html.Span(m) for m in item["month_labels"]],
+                              className="damu-band-labels"))
+    return block
+
+
+def band(item: dict, expanded: bool) -> html.Div:
+    """Полоса-итог «Все инструменты» — пять колонок во всю ширину."""
+    return html.Div(
+        [
+            html.Div([
+                html.Div("Все инструменты", className="damu-band-title"),
+                html.Div([
+                    html.Span(num(item["percent"], 1), className="damu-band-percent"),
+                    html.Span("%", style={"fontSize": "1.375rem", "fontWeight": 600,
+                                          "color": "rgba(255,255,255,.6)"}),
+                ], className="d-flex align-items-baseline gap-2 mt-1"),
+                html.Div("от годового плана", className="damu-band-note mt-1"),
+            ]),
+
+            html.Div([
+                html.Div(["Факт ",
+                          html.B(num(item["fact"]), style={"color": "#fff",
+                                                           "fontSize": "1.06rem"}),
+                          f" из {num(item['plan'])} млрд ₸"],
+                         style={"fontSize": "0.8rem",
+                                "color": "rgba(255,255,255,.66)",
+                                "marginBottom": "0.625rem"}),
+                html.Div([
+                    html.Div(className="damu-band-fill",
+                             style={"width": f"{min(item['percent'], 100):.1f}%"}),
+                    # Засечка ожидаемого темпа. Подписи к ней нет намеренно:
+                    # в макете её убрали как лишний текст
+                    html.Div(className="damu-band-tick",
+                             style={"left": f"{min(item['pace'], 100):.1f}%"}),
+                ], className="damu-band-track"),
+            ]),
+
+            html.Div([
+                html.Div("Проекты факт / план", className="damu-band-kicker"),
+                html.Div(f"{num(item['projects_fact'])} / {num(item['projects_plan'])}",
+                         className="damu-band-value"),
+                html.Div(html.Div(style={
+                    "width": f"{min(item['projects_percent'], 100):.1f}%"}),
+                    className="damu-band-bar mt-2"),
+            ]),
+
+            html.Div([
+                html.Div("Состав проектов", className="damu-band-kicker"),
+                html.Div([
+                    html.Span(num(item["unique"]), className="damu-band-value"),
+                    html.Span("уникальных", className="damu-band-note"),
+                ], className="d-flex align-items-baseline gap-2 text-nowrap"),
+                html.Div([
+                    html.Div(className="damu-band-split-unique", style={
+                        "width": f"{item['unique'] / max(item['projects_fact'], 1) * 100:.1f}%"}),
+                    html.Div(className="damu-band-split-repeat"),
+                ], className="damu-band-split mt-2"),
+                html.Div(f"{num(item['repeat'])} повторных",
+                         className="damu-band-note mt-1 text-end text-nowrap"),
+            ]),
+
+            html.Div([
+                html.Div([
+                    html.Span("Проектов за месяц, шт"),
+                    html.Span(f"за год {num(sum(item['months']))}",
+                              style={"color": "rgba(255,255,255,.75)"}),
+                ], className="damu-band-kicker d-flex justify-content-between mb-1"),
+                *_months(item, BAND_CHART_H, "damu-band-month",
+                         tight=expanded, show_values=not expanded),
+            ]),
+        ],
+        className="damu-band",
+    )
+
+
+def instrument_card(item: dict, expanded: bool) -> html.Div:
+    """Карточка одного инструмента: процент, полоса, проекты, месяцы."""
+    tone = {"guarantee": 1, "credit": 2, "subsidy": 3}[item["key"]]
+    ok = item["status"] != "Отставание"
+    status_color = ("var(--damu-accent, #1f7a4d)" if ok
+                    else "var(--damu-accent-2-dark, #6a531c)")
 
     return html.Div(
         [
-            html.Div(item["title"], className="damu-inst-head"),
-            dcc.Graph(
-                figure=charts.pace_gauge(n["percent"], n["pace"], item["tone"]),
-                # Шкала — картинка, а не инструмент: панель plotly и подсказки
-                # при наведении здесь только мешают
-                config={"displayModeBar": False, "staticPlot": True},
-                style={"height": "130px"},
-            ),
-            html.Div(f"план {num(item['plan'])} млрд ₸",
-                     className="damu-mini-label text-end"),
-            html.Div(
-                [
-                    html.Div(f"Факт {num(item['fact'])} млрд ₸", className="damu-muted"),
-                    html.Div(
-                        "В графике" if status_ok else "Отставание",
-                        className="damu-inst-status " + ("ok" if status_ok else "late"),
-                    ),
-                ],
-                className="damu-inst-row mt-2",
-            ),
-            html.Div(
-                [
-                    html.Div(f"Ожидаемо {num(n['pace'], 1)} %", className="damu-muted"),
-                    html.Div(
-                        f"опережение +{num(n['gap'], 1)} п.п." if status_ok
-                        else f"−{num(abs(n['gap']), 1)} п.п. от ожидаемого темпа",
-                        className="damu-muted",
-                    ),
-                ],
-                className="damu-inst-row",
-            ),
-            html.Div(
-                [
-                    html.Div([
-                        html.Span("Проекты — план / факт", className="damu-muted"),
-                        html.Span(
-                            f"{num(item['projects_plan'])} / {num(item['projects_fact'])}",
-                            className="fw-bold",
-                        ),
-                    ], className="damu-inst-row"),
-                    html.Div([
-                        html.Span("Из них уникальных", className="damu-muted"),
-                        html.Span(num(item["unique"]), className="fw-bold"),
-                    ], className="damu-inst-row"),
+            html.Div([
+                html.Span(item["title"], className="damu-inst2-title"),
+                html.Span([html.I(style={"background": status_color}),
+                           item["status"]],
+                          className="damu-inst2-status",
+                          style={"color": status_color}),
+            ], className="damu-inst2-head"),
+
+            html.Div([
+                html.Div([
                     html.Div([
                         html.Div([
-                            html.Span("Выполнение проектов", className="damu-muted"),
-                            html.Span(f"{num(n['projects_percent'], 1)} %",
-                                      className="fw-bold"),
-                        ], className="damu-inst-row"),
-                        html.Div(
-                            html.Div(
-                                className="damu-bar-fill",
-                                style={"width": f"{n['projects_percent']:.1f}%"},
-                            ),
-                            className="damu-bar mt-1",
-                        ),
+                            html.Span(num(item["percent"], 1),
+                                      className="damu-inst2-percent"),
+                            html.Span("%", style={"fontSize": "1.06rem",
+                                                  "fontWeight": 600,
+                                                  "color": "var(--damu-c)",
+                                                  "opacity": .65}),
+                        ], className="d-flex align-items-baseline gap-1"),
+                        html.Div("от плана", className="small text-muted mt-1"),
                     ]),
-                ],
-                className="damu-inst-block",
-            ),
-            html.Div(
-                [
-                    html.Div("Динамика в отчётном году", className="damu-mini-title"),
-                    mini_dynamics(item),
-                ],
-                className="damu-inst-block",
-            ),
+                    html.Div([
+                        html.Div(num(item["fact"]), className="damu-inst2-fact"),
+                        html.Div(f"из {num(item['plan'])} млрд ₸",
+                                 className="small text-muted"),
+                    ], className="ms-auto text-end"),
+                ], className="d-flex align-items-end gap-3"),
+
+                html.Div([
+                    html.Div(className="fill",
+                             style={"width": f"{min(item['percent'], 100):.1f}%"}),
+                    html.Div(className="tick",
+                             style={"left": f"{min(item['pace'], 100):.1f}%"}),
+                ], className="damu-inst2-track"),
+
+                html.Div([
+                    html.Div([
+                        html.Div("Проекты факт / план", className="damu-band-kicker",
+                                 style={"color": "var(--damu-muted)"}),
+                        html.Div(f"{num(item['projects_fact'])} / "
+                                 f"{num(item['projects_plan'])}",
+                                 className="damu-inst2-num"),
+                        html.Div(html.Div(className="damu-bar-fill", style={
+                            "width": f"{min(item['projects_percent'], 100):.1f}%"}),
+                            className="damu-bar mt-1"),
+                    ]),
+                    html.Div([
+                        html.Div("Уникальных", className="damu-band-kicker",
+                                 style={"color": "var(--damu-muted)"}),
+                        html.Div(num(item["unique"]), className="damu-inst2-num"),
+                        html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
+                                 className="small text-muted mt-1"),
+                    ]),
+                ], className="damu-inst2-block damu-inst2-pair"),
+
+                html.Div([
+                    html.Div([
+                        html.Span("Проектов за месяц, шт"),
+                        html.Span(f"за год {num(sum(item['months']))}",
+                                  style={"color": "rgba(32,30,29,.75)"}),
+                    ], className="damu-band-kicker d-flex justify-content-between mb-2",
+                        style={"color": "var(--damu-muted)"}),
+                    *_months(item, CARD_CHART_H, "damu-inst2-month",
+                             tight=expanded, show_values=not expanded),
+                ], className="damu-inst2-block"),
+            ], className="damu-inst2-body"),
         ],
-        className=(f"damu-inst-card damu-c-{item['tone']}"
-                   + (" damu-inst-lead" if lead else "")),
+        className=f"damu-inst2 damu-c-{tone}",
     )
-
-
-def instruments_block() -> html.Div:
-    """Заголовок с ожидаемым темпом и ряд из четырёх карточек."""
-    pace, day, total = mockup.expected_pace()
-    return html.Div([
-        html.Div(
-            [
-                html.Div("Освоение плана — по инструментам",
-                         className="damu-block-title"),
-                html.Div(
-                    [
-                        html.Span(
-                            f"Ожидаемый темп: прошло {day} из {total} дней года "
-                            "· отметка на шкале",
-                            className="damu-muted small",
-                        ),
-                        html.Span(f"{num(pace, 1)} %", className="fw-bold ms-2"),
-                    ],
-                ),
-            ],
-            className="damu-block-head",
-        ),
-        html.Div(
-            [instrument_card(item, lead=(i == 0))
-             for i, item in enumerate(mockup.INSTRUMENTS)],
-            className="damu-inst-grid",
-        ),
-    ])
 
 
 def programs_block() -> dbc.Card:
-    """Разбивка по программам: четыре колонки со строками-полосками.
+    """Разбивка по программам — три колонки по инструментам.
 
-    Ширина полоски — доля от самой большой программы В СВОЕЙ колонке,
-    а не от общей суммы: колонки про разное (три инструмента против
-    восьми программ кредитования), и общий масштаб превратил бы правые
-    колонки в еле заметные чёрточки.
+    Колонки «Все инструменты» здесь нет: сводные числа уже стоят в полосе
+    наверху, и повторять их значило бы показать одно и то же дважды.
+    Ширина полоски — доля от самой большой программы В СВОЕЙ колонке.
     """
+    tones = {"Гарантирование": 1, "Кредитование": 2, "Субсидирование": 3}
     columns = []
-    for column in mockup.PROGRAMS:
+    for column in mockup.PROGRAMS[1:]:
+        short = column["title"].split(" — ")[0]
         top_amount = max(row[1] for row in column["rows"])
         top_count = max(row[2] for row in column["rows"])
-        rows = []
-        for name, amount, count in column["rows"]:
-            rows.append(html.Div(
-                [
-                    html.Span(name, className="damu-prog-name"),
-                    html.Div(html.Div(className="damu-bar-fill",
-                                      style={"width": f"{amount / top_amount * 100:.0f}%"}),
-                             className="damu-bar"),
-                    html.Span(num(amount), className="damu-prog-value"),
-                    html.Span(),  # зазор между парами «полоска + число»
-                    html.Div(html.Div(className="damu-bar-fill",
-                                      style={"width": f"{count / top_count * 100:.0f}%"}),
-                             className="damu-bar"),
-                    html.Span(num(count), className="damu-prog-value"),
-                ],
-                className="damu-prog-row",
-            ))
-        columns.append(html.Div(
-            [html.Div(column["title"], className="damu-prog-head"), *rows],
-            className=f"damu-prog-col damu-c-{column['tone']}",
-        ))
+        rows = [
+            html.Div([
+                html.Span(name, className="damu-prog-name text-truncate"),
+                html.Div(html.Div(className="damu-bar-fill", style={
+                    "width": f"{amount / top_amount * 100:.0f}%", "height": "7px"}),
+                    className="damu-bar", style={"height": "7px"}),
+                html.Span(num(amount), className="damu-prog-value"),
+                html.Div(html.Div(className="damu-bar-fill", style={
+                    "width": f"{count / top_count * 100:.0f}%", "height": "7px",
+                    "opacity": .45}),
+                    className="damu-bar", style={"height": "7px"}),
+                html.Span(num(count), className="damu-prog-value",
+                          style={"fontWeight": 400, "color": "rgba(32,30,29,.6)"}),
+            ], className="damu-prog-row",
+                style={"gridTemplateColumns": "minmax(0,1fr) 90px 42px 60px 32px",
+                       "height": "23px", "fontSize": "0.78rem", "marginBottom": 0})
+            for name, amount, count in column["rows"]
+        ]
+        columns.append(html.Div([
+            html.Div([
+                html.Span(short, className="damu-prog-head flex-grow-1",
+                          style={"border": "none", "padding": 0, "margin": 0}),
+                html.Span(num(sum(r[1] for r in column["rows"])), style={
+                    "marginLeft": "auto", "fontSize": "0.81rem", "fontWeight": 800,
+                    "color": "var(--damu-c)"}),
+            ], className="d-flex align-items-baseline gap-2 pb-2 mb-2",
+                style={"borderBottom": "2px solid var(--damu-c)"}),
+            *rows,
+        ], className=f"damu-prog-col damu-c-{tones[short]}"))
 
     return dbc.Card(
         dbc.CardBody([
-            html.Div(
-                [
-                    html.Div("Разбивка по программам — факт по инструментам",
-                             className="damu-block-title"),
-                    html.Div(
-                        [
-                            html.Span([html.I(style={"width": "20px"}),
-                                       "Освоено, млрд ₸"]),
-                            html.Span([html.I(style={"width": "14px"}),
-                                       "Проектов, шт"]),
-                        ],
-                        className="damu-prog-legend",
-                    ),
-                ],
-                className="damu-block-head",
-            ),
-            html.Div(columns, className="damu-prog-grid"),
+            html.Div([
+                html.Div("Разбивка по программам", className="damu-block-title"),
+                html.Span("факт по инструментам", className="small text-muted"),
+                html.Div([
+                    html.Span([html.I(style={"width": "22px"}), "Освоено, млрд ₸"]),
+                    html.Span([html.I(style={"width": "12px"}), "Проектов, шт"]),
+                ], className="damu-prog-legend"),
+            ], className="damu-block-head"),
+            html.Div(columns, className="damu-prog-grid",
+                     style={"gridTemplateColumns": "repeat(3, minmax(0,1fr))"}),
         ]),
-        class_name="shadow-sm mb-3",
+        class_name="shadow-sm",
     )
 
 
-def map_block() -> dbc.Card:
-    """Карта областей. В макете здесь было фото — у нас настоящая карта."""
-    return dbc.Card(
-        dbc.CardBody([
-            html.Div("Освоение по регионам — карта Казахстана",
-                     className="damu-block-title mb-2"),
-            dcc.Graph(id="main-map", config={"displayModeBar": False},
-                      style={"height": "440px"}),
-        ]),
-        class_name="shadow-sm mb-3",
+def title_row(year: int, expanded: bool) -> html.Div:
+    """Заголовок витрины: год, плашка макетных чисел, тумблер графиков."""
+    def year_button(value: int):
+        return html.Button(
+            str(value),
+            id={"type": "main-year", "year": value},
+            className="active" if value == year else "",
+            n_clicks=0,
+        )
+
+    switch = html.Button(
+        [
+            html.Span("Графики за весь год"),
+            html.Span(html.Span(className="damu-switch-knob"),
+                      className="damu-switch-track"),
+        ],
+        id="main-expand",
+        className="damu-switch" + (" active" if expanded else ""),
+        title="Показать все прошедшие месяцы во всех графиках",
+        n_clicks=0,
     )
 
-
-# ─────────────────────────── настоящие данные ───────────────────────────
-
-def kpi_card(row: pd.Series) -> dbc.Card:
-    """Карточка одного показателя: значение и изменение к прошлому году."""
-    change = row["change_pct"]
-    if change is None or pd.isna(change):
-        footer = html.Span("нет данных за прошлый год", className="small text-muted")
-    else:
-        grew = change >= 0
-        # У обычных карточек изменение в процентах, у карточки-доли
-        # («Согласно плану») — в процентных пунктах
-        unit = "п.п." if row.get("change_kind") == "pp" else "%"
-        footer = html.Span(
-            f"{'▲' if grew else '▼'} {abs(change):.1f} {unit} к прошлому году",
-            className=f"small {'text-success' if grew else 'text-danger'}",
-        )
-
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.Div(row["short"], className="text-muted small"),
-                html.H3(row["text"], className="my-2"),
-                footer,
-            ]
-        ),
-        className="h-100 shadow-sm",
-    )
+    children = [
+        html.H1("Освоение плана", className="h4 mb-0"),
+        html.Div([year_button(YEAR_NOW), year_button(YEAR_PREV)],
+                 className="damu-year"),
+        html.Span("Макетные числа", className="damu-mock-badge",
+                  title="Разрезов по инструментам в хранилище пока нет — "
+                        "числа из эскиза"),
+    ]
+    if mockup.can_expand(year):
+        children.append(switch)
+    return html.Div(children, className="d-flex align-items-center gap-3")
 
 
-def widget_grid(items: list[dict]):
-    """Сетка виджетов: каждый — своей ширины, с высотой из пресета.
-
-    Сами фигуры сюда не кладутся: их подставит коллбэк. Здесь только места
-    под них — иначе при открытии страницы пришлось бы строить все диаграммы
-    дважды, сначала в разметке, потом в коллбэке.
-    """
-    if not items:
-        return dbc.Alert(
-            "Виджетов нет. Добавьте их на странице «Виджеты».",
-            color="light", className="border",
-        )
-
-    columns = []
-    for item in items:
-        preset = widgets.size_meta(item["size"])
-        columns.append(
-            dbc.Col(
-                dbc.Card(
-                    dcc.Graph(
-                        id={"type": "widget-graph", "index": item["id"]},
-                        style={"height": f"{preset['height']}px"},
-                        # Панель инструментов plotly (лупа, лассо, «камера»)
-                        # на витрине убрана: она всплывает при наведении,
-                        # мешает читать и ведёт на plotly.com — чужой сайт,
-                        # который во внутренней сети всё равно не откроется.
-                        # Кому нужно покопаться в графике — страница «Разбор»,
-                        # там панель оставлена.
-                        config={"displayModeBar": False},
-                    ),
-                    className="shadow-sm p-2 h-100",
-                ),
-                xs=12,               # на узком экране виджеты встают в столбик
-                lg=preset["columns"],  # на широком — по пресету
-                className="mb-3",
-            )
-        )
-    return dbc.Row(columns, className="g-3")
+def showcase(year: int, expanded: bool):
+    """Вся макетная витрина целиком — её перерисовывает один коллбэк."""
+    items = mockup.for_year(year, expanded)
+    return [
+        title_row(year, expanded),
+        band(items[0], expanded),
+        html.Div([instrument_card(it, expanded) for it in items[1:]],
+                 className="damu-inst-grid"),
+        programs_block(),
+    ]
 
 
 def layout(**kwargs):
-    """Собирается на каждое открытие страницы — значит и фильтры, и набор свежие."""
+    """Собирается на каждое открытие страницы."""
     try:
         data.get_years()          # хранилище на месте? иначе покажем подсказку
     except FileNotFoundError as e:
         return dbc.Alert(str(e), color="warning", className="m-4")
 
-    items = widgets.get_widgets(widgets.MAIN_PAGE)
-
-    hint = None
-    if auth.is_admin():
-        hint = html.P(
-            [
-                "Набор виджетов " +
-                ("настроен вручную. " if widgets.is_customized(widgets.MAIN_PAGE)
-                 else "взят из config.yaml (по умолчанию). "),
-                dcc.Link("Изменить — на странице «Виджеты»", href="/widgets"),
-            ],
-            className="text-muted small",
-        )
-
     return dbc.Container(
         [
-            instruments_block(),
-            # Пометка стоит между макетными блоками и настоящими — ровно
-            # на границе, чтобы было видно, к чему она относится
-            html.Div(
-                "Числа в карточках инструментов и в разбивке по программам — "
-                "макетные, из эскиза: разрезов по инструментам и программам "
-                "в хранилище пока нет. Фильтры года и регионов на них не "
-                "влияют. Всё ниже карты — настоящие данные.",
-                className="damu-mock my-3",
+            # Состояние витрины держим на странице: коллбэк читает его отсюда,
+            # а не восстанавливает по подсветке кнопок
+            dcc.Store(id="main-view", data={"year": YEAR_NOW, "expanded": False}),
+            html.Div(showcase(YEAR_NOW, False), id="main-showcase",
+                     className="d-flex flex-column gap-3"),
+            dbc.Card(
+                dbc.CardBody([
+                    html.Div([
+                        html.Div("Освоение по регионам", className="damu-block-title"),
+                        html.Span("картограмма по показателю «Освоено бюджета»",
+                                  className="small text-muted"),
+                        html.Span("Настоящие данные", className="damu-mock-badge",
+                                  style={"color": "var(--damu-accent-dark)",
+                                         "borderColor": "var(--damu-accent)",
+                                         "marginLeft": "auto"}),
+                    ], className="damu-block-head"),
+                    dcc.Graph(id="main-map", config={"displayModeBar": False},
+                              style={"height": "440px"}),
+                ]),
+                class_name="shadow-sm mt-3",
             ),
-            programs_block(),
-            map_block(),
-            html.H2("Показатели МСП по регионам", className="mt-4"),
-            html.P("Сводка по всем разделам сразу. Разрез по разделам — "
-                   "в списке «Разделы» наверху.",
-                   className="text-muted small"),
-            dbc.Row(id="kpi-row", className="mb-4 g-3"),
-            widget_grid(items),
-            hint,
         ],
         fluid=True,
         className="pb-5",
@@ -386,15 +383,40 @@ def layout(**kwargs):
 
 
 @callback(
-    Output("kpi-row", "children"),
-    Input("filter-year", "value"),
-    Input("data-version", "data"),
+    Output("main-view", "data"),
+    Input({"type": "main-year", "year": ALL}, "n_clicks"),
+    Input("main-expand", "n_clicks"),
+    State("main-view", "data"),
+    prevent_initial_call=True,
 )
-def render_kpi(year, _version):
-    kpi = data.get_kpi(int(year))
-    # md=True — поделить ряд поровну между карточками, сколько бы их ни было;
-    # xs=12 — на узких экранах карточки встают в столбик
-    return [dbc.Col(kpi_card(row), xs=12, md=True) for _, row in kpi.iterrows()]
+def switch_view(_years, _expand, view):
+    """Запоминает выбор года и состояние тумблера.
+
+    Проверка значения отсеивает «пустые» срабатывания в момент, когда кнопки
+    только появились на странице: коллбэк перерисовывает витрину вместе
+    с кнопками, и без этой проверки перерисовка звала бы сама себя.
+    """
+    trigger = ctx.triggered_id
+    if not ctx.triggered or not ctx.triggered[0]["value"]:
+        return dash.no_update
+    if trigger == "main-expand":
+        return {**view, "expanded": not view.get("expanded", False)}
+    if isinstance(trigger, dict) and trigger.get("type") == "main-year":
+        year = int(trigger["year"])
+        # Смена года сбрасывает разворот: у прошлого года месяцев двенадцать,
+        # и развёрнутый график из шести превратился бы в кашу молча
+        return {"year": year, "expanded": False}
+    return dash.no_update
+
+
+@callback(
+    Output("main-showcase", "children"),
+    Input("main-view", "data"),
+    prevent_initial_call=True,
+)
+def render_showcase(view):
+    return showcase(int(view.get("year", YEAR_NOW)),
+                    bool(view.get("expanded", False)))
 
 
 @callback(
@@ -404,39 +426,5 @@ def render_kpi(year, _version):
     Input("data-version", "data"),
 )
 def render_map(year, regions, _version):
-    """Карта живёт своей жизнью: она единственная в верхнем этаже настоящая."""
+    """Карта — единственное на этой странице, что живёт по настоящим данным."""
     return charts.build("map", MAP_INDICATOR, year, regions, height=440)
-
-
-@callback(
-    Output({"type": "widget-graph", "index": ALL}, "figure"),
-    Input("filter-year", "value"),
-    Input("filter-regions", "value"),
-    Input("data-version", "data"),
-    State({"type": "widget-graph", "index": ALL}, "id"),
-)
-def render_widgets(year, regions, _version, ids):
-    """Рисует все виджеты разом — по одному вызову на смену фильтра.
-
-    Набор перечитывается здесь, а не берётся из разметки: между открытием
-    страницы и этим вызовом админ мог его поменять. Если виджет за это
-    время исчез, на его месте появляется надпись, а не пустота и не ошибка —
-    остальные виджеты при этом рисуются как ни в чём не бывало.
-    """
-    by_id = {item["id"]: item for item in widgets.get_widgets(widgets.MAIN_PAGE)}
-    figures = []
-    for graph_id in ids:
-        item = by_id.get(graph_id["index"])
-        if item is None:
-            figures.append(charts.message(
-                "Этот виджет удалили.<br>Обновите страницу (F5)."
-            ))
-            continue
-        preset = widgets.size_meta(item["size"])
-        figures.append(
-            charts.build(
-                item["chart"], item["indicator"], year, regions,
-                log=False, height=preset["height"],
-            )
-        )
-    return figures

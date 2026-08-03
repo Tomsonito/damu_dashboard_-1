@@ -1,0 +1,164 @@
+"""Кирпичики для страниц-примеров раскладки («Разбор» → Пример 1…4).
+
+!! Это **временный модуль под выбор дизайна**, а не часть сайта. Когда
+раскладку выберут, лишние примеры удалят, а выбранный переедет в обычную
+страницу — вместе с ним отсюда переедут только те функции, что ему нужны.
+Удаляется файл целиком, ничего в `core/` от него не зависит.
+
+Здесь три вещи, которые в макете делает JS, а у нас должен делать Python:
+
+- `num()` — русский формат числа (неразрывный пробел, запятая);
+- `spark()` — спарклайн: точки ломаной и площадь под ней;
+- `arc()` — дуга полукруглой шкалы.
+
+**Почему SVG кладётся картинкой (data-URI), а не тегами.** В Dash нет
+SVG-компонентов: `dash.html` знает только обычные теги HTML. Готовые
+решения — сторонние пакеты, то есть чужой код, который однажды отстанет
+от новой версии Dash. Картинка-ссылка `data:image/svg+xml` работает
+на голом Dash и переживёт любое обновление.
+
+!! У способа есть цена, о ней важно знать: внутрь такой картинки **не
+доходят стили страницы**, в том числе наш шрифт. Поэтому текста внутри
+SVG здесь нет вообще — все подписи рисуются рядом обычным HTML.
+"""
+
+import urllib.parse
+
+#: Реестр примеров: номер, откуда взят в макете, про что вариант.
+#: Примеры 5 и 6 (виды графика и кандидаты третьего цвета) удалены
+#: пользователем — сравнивать их в браузере не понадобилось.
+#:
+#: !! Живёт здесь, а не в `pages/explore_example.py`, хотя строит примеры
+#: именно он. Причина техническая: список нужен трём местам — странице
+#: со списком, самим примерам и меню в шапке. Если бы одна страница Dash
+#: импортировала другую, модуль страницы выполнился бы дважды (Dash сам
+#: обходит папку `pages/` и загружает каждый файл), а вместе с ним дважды
+#: зарегистрировались бы её коллбэки. Общий модуль в `core/` этого избегает.
+EXAMPLES = [
+    {"key": "1", "source": "1a", "title": "Пример 1",
+     "note": "Ровная сетка — четыре инструмента строками таблицы"},
+    {"key": "2", "source": "1b", "title": "Пример 2",
+     "note": "Иерархия — «Все инструменты» полосой-итогом, три плитки"},
+    {"key": "3", "source": "1c", "title": "Пример 3",
+     "note": "Два столбца — инструменты слева, все программы справа"},
+    {"key": "4", "source": "1d", "title": "Пример 4",
+     "note": "Компактные шкалы-полукруги и настоящая карта областей"},
+]
+
+
+def by_key(key: str) -> dict | None:
+    """Описание примера по номеру из адреса. Нет такого — None."""
+    return next((e for e in EXAMPLES if e["key"] == str(key)), None)
+
+#: Цвета примеров взяты из самого макета и НЕ берутся из темы сайта.
+#: Так и задумано: примеры показывают, как выглядит предложенная гамма,
+#: в том числе третий цвет (оливковый), которого в теме сейчас нет.
+#: Когда раскладку выберут, цвета переедут в `core/theme.py`.
+GREEN = "#1f7a4d"   # гарантирование
+GOLD = "#b08a2e"    # кредитование
+OLIVE = "#7d6a24"   # субсидирование — третий цвет гаммы
+TOTAL = "#17452e"   # «Все инструменты» — тёмная зелень полосы-итога
+LATE = "#96701f"    # «Отставание»: тревога тёплым золотом, а не третьим цветом
+
+#: Цвет инструмента по его ключу в `core/mockup.py`.
+COLORS = {"all": TOTAL, "guarantee": GREEN, "credit": GOLD, "subsidy": OLIVE}
+
+#: Постоянные величины дизайн-системы, которые в примерах встречаются
+#: десятки раз. Держим их именами, чтобы правка была в одном месте.
+INK = "#201e1d"
+MUTED = "rgba(32,30,29,.5)"
+PALE = "rgba(32,30,29,.45)"
+HAIRLINE = "rgba(32,30,29,.12)"
+DIVIDER = "rgba(32,30,29,.28)"
+SURFACE = "#eae9e9"
+TRACK = "#e2e0df"
+SHADOW = "0 1px 2px rgba(45,43,43,.14)"
+
+
+def num(value: float, decimals: int = 0) -> str:
+    """Число по-русски: разряды неразрывным пробелом, запятая для дробей."""
+    text = f"{value:,.{decimals}f}".replace(",", " ")
+    return text.replace(".", ",") if decimals else text
+
+
+def _points(values, width: float, height: float) -> list[tuple[float, float]]:
+    """Точки ломаной внутри бокса: первая слева, последняя справа.
+
+    Масштаб от минимума к максимуму, а не от нуля: у месячных чисел разброс
+    небольшой, и от нуля ломаная выродилась бы в прямую под потолком.
+    """
+    pad = 1.5
+    usable_w = width - 2 * pad
+    usable_h = height - 2 * pad - 1
+    low, high = min(values), max(values)
+    spread = (high - low) or 1
+    step = usable_w / (len(values) - 1) if len(values) > 1 else 0
+    return [
+        (pad + i * step, pad + usable_h - (v - low) / spread * usable_h)
+        for i, v in enumerate(values)
+    ]
+
+
+def spark(values, color: str, width: float = 232, height: float = 34,
+          fill_opacity: float = 0.16, stroke: float = 1.75) -> str:
+    """Спарклайн картинкой: ломаная плюс заливка под ней.
+
+    `preserveAspectRatio="none"` — картинка тянется по ширине родителя,
+    как в макете: спарклайн там занимает всю колонку, какой бы та ни была.
+    """
+    pts = _points(values, width, height)
+    line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    area = (f"M{line.replace(' ', ' L')}"
+            f" L{pts[-1][0]:.1f},{height} L{pts[0][0]:.1f},{height} Z")
+    return _svg(
+        f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="{area}" fill="{color}" opacity="{fill_opacity}"/>'
+        f'<polyline points="{line}" fill="none" stroke="{color}" '
+        f'stroke-width="{stroke}" stroke-linejoin="round"/></svg>'
+    )
+
+
+def gauge(percent: float, pace: float, color: str,
+          width: float = 120, height: float = 68) -> str:
+    """Полукруглая шкала картинкой: дорожка, заливка и засечка темпа.
+
+    Это тот же спидометр, что рисовал Plotly, но втрое ниже (68 px против
+    130) и без его полей. Затем и предложен в макете: у Plotly-фигуры
+    минимальные поля больше самой шкалы.
+    """
+    cx, cy, radius = width / 2, height - 16, 46
+    track = _arc(100, cx, cy, radius)
+    fill = _arc(percent, cx, cy, radius)
+    # Засечка ожидаемого темпа — короткий штрих поперёк дуги
+    x1, y1 = _polar(pace, cx, cy, radius - 6.5)
+    x2, y2 = _polar(pace, cx, cy, radius + 6.5)
+    return _svg(
+        f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="{track}" fill="none" stroke="{TRACK}" stroke-width="13"/>'
+        f'<path d="{fill}" fill="none" stroke="{color}" stroke-width="13"/>'
+        f'<line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" '
+        f'stroke="{INK}" stroke-width="2.5"/></svg>'
+    )
+
+
+def _polar(percent: float, cx: float, cy: float, radius: float) -> tuple[float, float]:
+    """Точка на полукруге: 0 % — слева, 100 % — справа."""
+    import math
+    angle = math.radians(180 - 1.8 * min(max(percent, 0), 100))
+    return cx + radius * math.cos(angle), cy - radius * math.sin(angle)
+
+
+def _arc(percent: float, cx: float, cy: float, radius: float) -> str:
+    """Путь дуги от левого края до отметки в процентах."""
+    x, y = _polar(percent, cx, cy, radius)
+    return f"M{cx - radius},{cy} A{radius},{radius} 0 0 1 {x:.2f},{y:.2f}"
+
+
+def _svg(markup: str) -> str:
+    """Готовая ссылка на картинку из разметки SVG.
+
+    Кодируем через `quote`, а не через base64: так внутри ссылки остаётся
+    читаемый SVG — его видно в инспекторе браузера и можно отладить глазами.
+    """
+    return "data:image/svg+xml;charset=utf-8," + urllib.parse.quote(markup)

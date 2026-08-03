@@ -91,6 +91,18 @@ def supports_log(chart_type: str) -> bool:
     return bool(entry and entry["log_ok"])
 
 
+#: Цвета, одинаково читаемые и на светлом, и на тёмном фоне.
+#:
+#: !! Диаграммы собираются на СЕРВЕРЕ, а тему человек выбирает в браузере
+#: (localStorage) — сервер о ней не знает. Значит фигура должна выглядеть
+#: прилично при обеих. Отсюда полупрозрачный серый вместо чёрного текста
+#: и вместо светлой сетки: контраст чуть ниже предельного, зато не бывает
+#: чёрного по чёрному. Захотим полный контраст — придётся протащить тему
+#: в каждый коллбэк, который строит диаграмму.
+NEUTRAL_INK = "rgba(128,124,122,1)"
+NEUTRAL_GRID = "rgba(128,124,122,0.25)"
+
+
 def build(chart_type: str, indicator: str, year, regions, log: bool = False,
           height: int | None = None, program: str | None = None) -> go.Figure:
     """Собирает выбранную диаграмму и навешивает общее оформление.
@@ -124,16 +136,27 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
 
     fig = entry["builder"](ctx)
     fig.update_layout(
-        font=dict(family=theme.font_stack(settings)),
+        font=dict(family=theme.font_stack(settings), color=NEUTRAL_INK),
         # Для видов, собранных не через express, а руками на go.Figure:
         # у них цвет ряда не задан, и они берут его отсюда
         colorway=palette,
         margin=dict(l=10, r=120, t=60, b=40),
-        plot_bgcolor="white",
+        # !! Фон прозрачный, а не белый, и это про тёмную тему. Тему человек
+        # выбирает в браузере (localStorage), сервер о ней не знает и одну
+        # и ту же фигуру отдаёт обоим. Белая подложка на тёмной странице
+        # была бы светлой заплатой; прозрачная принимает цвет карточки.
+        plot_bgcolor="rgba(0,0,0,0)",
+        paper_bgcolor="rgba(0,0,0,0)",
         # Русская типографика чисел: запятая для дробей, неразрывный пробел
         # для разрядов. Иначе plotly пишет по-английски: 454,416.0
         separators=", ",
     )
+    # Сетка и оси — полупрозрачным серым по той же причине: он читается
+    # и на светлом, и на тёмном, а фиксированный цвет пришлось бы менять
+    # вместе с темой, то есть протаскивать её в каждый коллбэк
+    fig.update_xaxes(gridcolor=NEUTRAL_GRID, zerolinecolor=NEUTRAL_GRID)
+    fig.update_yaxes(gridcolor=NEUTRAL_GRID, zerolinecolor=NEUTRAL_GRID)
+
     if height:
         # Пресет виджета сильнее собственной высоты вида: на экране из
         # нескольких виджетов сетку задаёт раскладка, а не диаграмма

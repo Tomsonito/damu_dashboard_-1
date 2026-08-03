@@ -47,7 +47,7 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 from dash import ALL, Input, Output, State, callback, dcc, html
 
-from core import charts, data, widgets
+from core import charts, data, mockup, widgets
 
 log = logging.getLogger(__name__)
 
@@ -58,9 +58,15 @@ dash.register_page(
     title="Раздел — Дашборд Даму",
 )
 
-#: Сколько заглушек-диаграмм рисовать в секции без данных. Четыре —
-#: как в макете: видно, что место под разрез готово.
-STUB_COUNT = 4
+#: МАКЕТНЫЕ отрасли ОКЭД — разреза по ним в боевой базе нет вовсе.
+#: Числа из макета; когда придёт источник, список удаляется целиком,
+#: а `oked_card()` начинает звать `core/data.py`.
+OKED = [
+    ("Обрабатывающая пром.", 148), ("Торговля", 121),
+    ("Сельское хозяйство", 96), ("Транспорт и склад", 64),
+    ("Строительство", 52), ("Услуги", 38),
+    ("Здравоохранение", 12), ("Прочее", 9),
+]
 
 
 def block_id(tab_key: str) -> str:
@@ -119,6 +125,12 @@ def tab_bar(tabs: list[dict]):
                 "data-tab-key": entry["key"],
                 "data-members": ",".join(entry["members"]),
                 "data-scroll-to": block_id(entry["members"][0]),
+                # Ключ секции-цели: по нему браузер подсвечивает цель ещё
+                # до прокрутки, чтобы ряд «пилюль» появился заранее
+                # и полоса вкладок не подросла на ходу
+                "data-target-key": entry["members"][0],
+                "title": ("" if entry["data"]
+                          else "Данных под этот разрез пока нет"),
             },
         ))
 
@@ -131,7 +143,10 @@ def tab_bar(tabs: list[dict]):
                 tab["title"],
                 className="damu-sec-subtab" + (" damu-empty" if not tab.get("data") else ""),
                 **{"data-scroll-to": block_id(tab["key"]),
-                   "data-sub-key": tab["key"]},
+                   "data-sub-key": tab["key"],
+                   "data-target-key": tab["key"],
+                   "title": ("" if tab.get("data")
+                             else "Данных под этот разрез пока нет")},
             )
             for tab in tabs if tab.get("group") == entry["group"]
         ]
@@ -147,7 +162,13 @@ def tab_bar(tabs: list[dict]):
 
 
 def sections_menu(active_key: str):
-    """Список всех разделов слева — как на боевом портале."""
+    """Полоса разделов слева: аббревиатура и название.
+
+    Свёрнутая полоса показывает одни аббревиатуры (46 px), развёрнутая —
+    и названия (212 px). Обе колонки лежат в разметке всегда, прячет
+    названия сама полоса своей шириной: так при сворачивании ничего
+    не перестраивается и аббревиатуры не дёргаются.
+    """
     try:
         with_data = set(data.get_programs())
     except Exception:
@@ -157,55 +178,113 @@ def sections_menu(active_key: str):
     for section in data.load_config().get("sections") or []:
         empty = section["title"] not in with_data
         links.append(dbc.NavLink(
-            section["title"],
+            [
+                html.Span(section.get("abbr", "?"), className="damu-side-abbr"),
+                html.Span(section["title"], className="damu-side-name"),
+            ],
             href=f"/section/{section['key']}",
             active=section["key"] == active_key,
             class_name="damu-empty" if empty else "",
         ))
+
     return html.Div(
-        dbc.Nav(links, vertical=True, pills=True),
+        [
+            # Пустая ячейка под кнопку ☰ — она лежит отдельным элементом
+            # снаружи полосы, чтобы оставаться видимой и при сворачивании
+            html.Div([html.Span(className="damu-side-abbr"),
+                      html.Span("Все разделы")], className="damu-side-head"),
+            dbc.Nav(links, vertical=True, pills=True),
+        ],
         className="damu-side-list",
         id="section-sidebar",
     )
 
 
-def kpi_card(row: pd.Series) -> dbc.Card:
-    """Карточка показателя: подпись, крупное число, изменение к прошлому году."""
-    change = row["change_pct"]
-    if change is None or pd.isna(change):
-        footer = html.Span("нет данных за прошлый год", className="small text-muted")
-    else:
-        grew = change >= 0
-        unit = "п.п." if row.get("change_kind") == "pp" else "%"
-        footer = html.Span(
-            f"{'▲' if grew else '▼'} {abs(change):.1f} {unit} к прошлому году",
-            className=f"small {'text-success' if grew else 'text-danger'}",
-        )
-    return dbc.Card(
-        dbc.CardBody([
-            html.Div(row["short"], className="text-muted small"),
-            html.H3(row["text"], className="my-2"),
-            footer,
-        ]),
-        className="h-100 shadow-sm",
-    )
+def kpi_card(row: pd.Series, pace: float | None = None) -> html.Div:
+    """Карточка показателя: метка, крупное число, единица.
+
+    !! Подписи «▲ 4,2 % к прошлому году» здесь больше нет — её убрали
+    по просьбе заказчика вместе с прочими пояснительными строчками.
+
+    У карточки «Освоение» вместо неё тихая строка про ожидаемый темп,
+    а у «Факта» — полоса с засечкой этого темпа: то же сравнение, но
+    графикой, которая читается быстрее фразы.
+    """
+    # Значение и единица приезжают одной строкой («1 307,9 млрд ₸»), а набрать
+    # их надо разным кеглем. Единицу берём из реестра показателей, а не режем
+    # строку по последнему пробелу: у «млрд ₸» пробел внутри, и от такого
+    # разреза оставалось бы «1 307,9 млрд» и «₸»
+    text = str(row["text"])
+    unit = (data.get_indicator_meta(row["indicator"]) or {}).get("display_unit") or ""
+    value = text[:-len(unit)].strip() if unit and text.endswith(unit) else text
+
+    body = [
+        html.Div(row["short"], className="damu-kpi2-label"),
+        html.Div([
+            html.Span(value, className="damu-kpi2-value"),
+            html.Span(unit, className="damu-kpi2-unit"),
+        ], className="d-flex align-items-baseline gap-2 mt-2"),
+    ]
+
+    percent = row.get("share_pct")
+    if percent is not None and not pd.isna(percent) and pace is not None:
+        body.append(html.Div([
+            html.Div(className="fill", style={"width": f"{min(percent, 100):.1f}%"}),
+            html.Div(className="tick", style={"left": f"{min(pace, 100):.1f}%"}),
+        ], className="damu-kpi2-track"))
+    elif row.get("note"):
+        body.append(html.Div(row["note"], className="small text-muted mt-2"))
+
+    return html.Div(body, className="damu-kpi2 h-100")
 
 
 def chart_stubs():
-    """Заглушки из макета — для разреза, под который данных ещё нет."""
-    return dbc.Row(
-        [
-            dbc.Col(
-                html.Div([
-                    html.Div(f"Диаграмма {i + 1}", className="damu-chart-title"),
-                    html.Div("chart placeholder", className="damu-chart-stub"),
-                ], className="damu-chart-card"),
-                md=6, className="mb-3",
-            )
-            for i in range(STUB_COUNT)
-        ],
-        className="g-3",
-    )
+    """Заглушка разреза без данных: честная строка и два поля со штриховкой.
+
+    Ровно как в макете. Пустые рамки без пояснения читались бы как поломка,
+    а надпись «нет данных» без места под них не показывала бы, что разрез
+    уже спроектирован и ждёт только источника.
+    """
+    return html.Div([
+        html.Div("Колонки под этот разрез в таблице фактов заведены, "
+                 "данных пока нет.",
+                 style={"fontSize": "0.75rem", "color": "rgba(32,30,29,.55)"}),
+        html.Div([html.Div(className="damu-stub-field") for _ in range(2)],
+                 className="damu-stub-fields"),
+    ], className="damu-kpi2")
+
+
+def oked_card():
+    """«ОКЭД — отрасли»: карточка из макета на макетных числах.
+
+    Разреза по ОКЭД в боевой базе нет вообще — есть только годы и регионы.
+    Карточку всё же показываем: так видно, каким разрез будет, когда данные
+    придут. Чтобы числа не приняли за настоящие, рядом стоит та же плашка
+    «Макетные числа», что и на главной.
+    """
+    top = max(v for _, v in OKED)
+    rows = [
+        html.Div([
+            html.Span(name, className="name"),
+            html.Div(html.Div(className="damu-bar-fill",
+                              style={"width": f"{value / top * 100:.1f}%",
+                                     "height": "7px"}),
+                     className="damu-bar", style={"height": "7px"}),
+            html.Span(str(value), className="value"),
+        ], className="damu-rowbar",
+            style={"gridTemplateColumns": "minmax(0,1fr) 70px 40px"})
+        for name, value in OKED
+    ]
+    return html.Div([
+        html.Div([
+            html.Span("ОКЭД — отрасли", style={"fontSize": "0.78rem",
+                                               "fontWeight": 700}),
+            html.Span("млрд ₸", className="small text-muted"),
+            html.Span("Макетные числа", className="damu-mock-badge ms-auto",
+                      title="Разреза по ОКЭД в хранилище нет — числа из эскиза"),
+        ], className="d-flex align-items-baseline gap-2 mb-3"),
+        *rows,
+    ], className="damu-kpi2 h-100")
 
 
 def widget_grid(section_key: str, tab_key: str, items: list[dict]):
@@ -241,24 +320,27 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
 def section_block(section_key: str, tab: dict):
     """Одна секция ленты: заголовок разреза и его содержимое."""
     if tab.get("data"):
-        body = widget_grid(
+        body = [widget_grid(
             section_key, tab["key"],
             widgets.get_widgets(widgets.page_key(section_key, tab["key"])),
-        )
+        )]
+        # У разреза «ОКЭД/Регионы» половина смысла — отрасли, а их в базе
+        # нет. Показываем макетную карточку рядом с настоящими виджетами,
+        # честно помеченную; регионы под ней — уже по-настоящему
+        if tab["key"] == "regions":
+            body.insert(0, dbc.Row(dbc.Col(oked_card(), lg=6),
+                                   className="g-3 mb-3"))
     else:
-        body = html.Div([
-            html.Div(
-                "Разрез ждёт источника данных — ниже макет того, что здесь "
-                "появится. Колонки под него в таблице фактов уже заведены.",
-                className="damu-mock mb-3",
-            ),
-            chart_stubs(),
-        ])
+        body = [chart_stubs()]
+
+    title = [html.Span(tab["title"])]
+    if not tab.get("data"):
+        title.append(html.Span("ждёт источника", className="damu-stub-badge ms-2"))
 
     return html.Div(
         [
-            html.Div(tab["title"], className="damu-sec-block-title"),
-            body,
+            html.Div(title, className="damu-sec-block-title"),
+            *body,
         ],
         id=block_id(tab["key"]),
         className="damu-sec-block",
@@ -326,7 +408,39 @@ def render_kpi(year, _version, key):
     if kpi.empty:
         return dbc.Alert("По этому разделу нет показателей за выбранный год.",
                          color="light", className="border")
-    return [dbc.Col(kpi_card(row), xs=12, md=True) for _, row in kpi.iterrows()]
+
+    # Ожидаемый темп — доля прошедшего года. Он же засечка на полосе факта
+    # и он же тихая строка под процентом освоения: одно число, два способа
+    # показать, отстаём мы или идём ровно
+    pace, _, _ = mockup.expected_pace()
+    cards = []
+    for _, row in kpi.iterrows():
+        row = row.copy()
+        # «Факт» получает полосу с засечкой, «Освоение» — строку про темп
+        if row["indicator"] == "demo_fact":
+            row["share_pct"] = _fact_share(kpi)
+        elif row["indicator"] == "demo_execution":
+            faster = "быстрее" if _execution_value(row) >= pace else "медленнее"
+            row["note"] = f"{faster} плана — прошло {pace:.1f} % года".replace(".", ",")
+        cards.append(dbc.Col(kpi_card(row, pace), xs=12, md=True))
+    return cards
+
+
+def _fact_share(kpi: pd.DataFrame) -> float | None:
+    """Доля факта от плана — для полосы на карточке «Факт»."""
+    values = dict(zip(kpi["indicator"], kpi["value"]))
+    plan, fact = values.get("demo_plan"), values.get("demo_fact")
+    if not plan or fact is None or pd.isna(plan) or pd.isna(fact):
+        return None
+    return fact / plan * 100
+
+
+def _execution_value(row: pd.Series) -> float:
+    """Число из карточки освоения — она и так в процентах."""
+    try:
+        return float(row["value"])
+    except (TypeError, ValueError):
+        return 0.0
 
 
 @callback(

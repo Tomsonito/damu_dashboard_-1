@@ -25,7 +25,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, ctx, dcc, html, no_update
 
-from core import auth, theme
+from core import admin, auth, theme
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,8 @@ def layout(**kwargs):
             # попали в <head>. refresh=True означает полную перезагрузку,
             # а не переход средствами Dash
             dcc.Location(id="settings-reload", refresh=True),
-            html.H2("Настройки оформления", className="mt-4"),
+            admin.tabs("/settings"),
+            html.H2("Оформление", className="mt-3"),
             html.P(
                 "Настройки общие для всех: сайт увидят так же и остальные "
                 "сотрудники. В отличие от плана и данных, оформление "
@@ -103,6 +104,13 @@ def layout(**kwargs):
                         dbc.Input(id="set-accent-2", value=current["accent_2"],
                                   type="color", className="form-control-color"),
                         "им помечены остальные инструменты на витрине",
+                        width=2,
+                    ),
+                    _field(
+                        "Третий цвет",
+                        dbc.Input(id="set-accent-3", value=current["accent_3"],
+                                  type="color", className="form-control-color"),
+                        "субсидирование на витрине",
                         width=2,
                     ),
                     _field(
@@ -166,10 +174,11 @@ def layout(**kwargs):
     Input("set-brand", "value"),
     Input("set-accent", "value"),
     Input("set-accent-2", "value"),
+    Input("set-accent-3", "value"),
     Input("set-font", "value"),
     Input("set-scale", "value"),
 )
-def preview(brand, accent, accent_2, font, scale):
+def preview(brand, accent, accent_2, accent_3, font, scale):
     """Образец текста выбранным шрифтом, размером и цветом — без сохранения.
 
     Собирается из тех же справочников config.yaml, что и настоящая тема,
@@ -181,6 +190,8 @@ def preview(brand, accent, accent_2, font, scale):
     accent = accent if theme.COLOR_RE.match(str(accent or "")) else theme.defaults()["accent"]
     accent_2 = (accent_2 if theme.COLOR_RE.match(str(accent_2 or ""))
                 else theme.defaults()["accent_2"])
+    accent_3 = (accent_3 if theme.COLOR_RE.match(str(accent_3 or ""))
+                else theme.defaults()["accent_3"])
 
     return html.Div(
         [
@@ -202,8 +213,8 @@ def preview(brand, accent, accent_2, font, scale):
                               style={"backgroundColor": accent_2,
                                      "color": theme.readable_on(accent_2)}),
                     html.Span("Субсидирование", className="ms-2 px-2 py-1",
-                              style={"backgroundColor": theme.mix(accent_2, "#000000", 0.4),
-                                     "color": "#ffffff"}),
+                              style={"backgroundColor": accent_3,
+                                     "color": theme.readable_on(accent_3)}),
                 ],
                 className="mt-3 d-flex align-items-center flex-wrap gap-1",
             ),
@@ -220,13 +231,15 @@ def preview(brand, accent, accent_2, font, scale):
     State("set-brand", "value"),
     State("set-accent", "value"),
     State("set-accent-2", "value"),
+    State("set-accent-3", "value"),
     State("set-navbar", "value"),
     State("set-font", "value"),
     State("set-scale", "value"),
     State("set-logo", "value"),
     prevent_initial_call=True,
 )
-def apply_settings(_save, _reset, brand, accent, accent_2, navbar, font, scale, logo):
+def apply_settings(_save, _reset, brand, accent, accent_2, accent_3, navbar,
+                   font, scale, logo):
     """Сохранение и сброс. Успех — перезагрузка страницы, ошибка — плашка.
 
     Ошибку показываем без перезагрузки: иначе введённое пропало бы вместе
@@ -244,6 +257,7 @@ def apply_settings(_save, _reset, brand, accent, accent_2, navbar, font, scale, 
                 "brand": brand,
                 "accent": accent,
                 "accent_2": accent_2,
+                "accent_3": accent_3,
                 "navbar": navbar,
                 "font": font,
                 "font_scale": scale,

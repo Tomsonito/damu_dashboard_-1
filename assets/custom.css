@@ -94,7 +94,146 @@
     /* Тени взяты из дизайн-системы: мягкие, «чернильные», без синевы */
     --damu-shadow-sm: 0 1px 2px rgba(45, 43, 43, 0.14);
     --damu-shadow-md: 0 3px 10px rgba(45, 43, 43, 0.16);
+
+    /* Тёмная зелень полосы-итога «Все инструменты» на главной. Не выводится
+       из основного цвета: она должна оставаться тёмной и читаемой под белым
+       текстом при любом выборе админа, а затемнение произвольного цвета
+       такого не обещает. */
+    --damu-band: #17452e;
+    --damu-band-fill: #5aab78;   /* заполнение полосы на тёмном фоне */
+    --damu-band-gold: #dcb862;   /* столбики и полоски на тёмном фоне */
+
+    /* Высота липкой шапки. Значение здесь — запасное, на случай без JS:
+       настоящее ставит assets/dashboard.js замером (syncNavHeight), потому
+       что высота шапки зависит от выбранного размера текста и логотипа.
+       От этой величины отсчитываются все остальные липкие элементы —
+       полоса вкладок раздела, вкладки настроек, список разделов, кнопка ☰. */
+    --damu-nav-h: 3.9rem;
 }
+
+
+/* ================== ТЁМНАЯ ТЕМА ==================
+
+   Тёмная получена ПОДНЯТИЕМ СВЕТЛОТЫ, а не заменой цветов: гамма та же
+   зелёно-золотая, просто на тёмном фоне тот же зелёный не читается и берётся
+   светлее. Поэтому здесь переопределены только переменные — ни одного
+   правила вёрстки дублировать не пришлось.
+
+   Выбор личный и живёт в браузере (localStorage), а не в общих настройках
+   сайта: оформление на «Настройках» админ задаёт сразу всем, а светлая или
+   тёмная — дело вкуса и освещения на рабочем месте. Атрибут ставит скрипт
+   в <head> (app.py, THEME_BOOT) ещё до отрисовки, иначе при каждом переходе
+   мелькал бы светлый экран.
+
+   !! Значения --damu-accent и прочих настраиваемых подставляет Python
+   в <head> ПОСЛЕ этого файла, поэтому здесь они перекрываются только
+   внутри `[data-theme="dark"]` — селектор с атрибутом весит больше,
+   чем голый :root из подстановки. */
+
+:root[data-theme="dark"] {
+    --damu-bg: #131211;
+    --damu-surface: #1c1a19;
+    --damu-white: #1c1a19;       /* «белая» плитка под диаграммой темнеет тоже */
+    --damu-ink: #ecebe9;
+    --damu-divider: rgba(236, 235, 233, 0.16);
+    --damu-hairline: rgba(236, 235, 233, 0.1);
+    --damu-muted: rgba(236, 235, 233, 0.5);
+    --damu-track: rgba(236, 235, 233, 0.13);
+
+    --damu-band: #1a5237;
+    --damu-band-fill: #dcb862;
+    --damu-band-gold: #e2c274;
+
+    /* Тени на тёмном не работают — глубину даёт тонкая светлая рамка */
+    --damu-shadow-sm: none;
+    --damu-shadow-md: none;
+}
+
+/* Цвета акцентов светлее ровно настолько, чтобы читаться на тёмном.
+   Перекрывают подстановку Python: у селектора с атрибутом вес выше */
+:root[data-theme="dark"] {
+    --damu-accent: #4fb37f;
+    --damu-accent-dark: #6cc796;   /* «тёмный» на тёмном фоне = светлее */
+    --damu-accent-soft: rgba(79, 179, 127, 0.15);
+    --damu-on-accent: #131211;
+    --damu-accent-2: #e2c274;
+    --damu-accent-2-dark: #d1a94a;
+    --damu-accent-3: #21a3a2;
+    --damu-nav-bg: #131211;
+    --damu-nav-fg: #ecebe9;
+}
+
+/* Карточкам вместо тени — рамка: на тёмном фоне тень не видна вовсе,
+   и без рамки поверхность сливается со страницей */
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .damu-kpi2,
+:root[data-theme="dark"] .damu-chart-card {
+    border: 1px solid var(--damu-hairline);
+}
+/* !! У карточки инструмента сверху СВОЯ цветная черта — метка инструмента.
+   Поэтому здесь перечислены три стороны, а не сокращённое `border`:
+   сокращённое сбрасывает и border-top, и черта становилась серой
+   (поймано на проверке). */
+:root[data-theme="dark"] .damu-inst2 {
+    border-right: 1px solid var(--damu-hairline);
+    border-bottom: 1px solid var(--damu-hairline);
+    border-left: 1px solid var(--damu-hairline);
+}
+:root[data-theme="dark"] .damu-side-list { background-color: #191817; }
+
+/* Штриховка заглушек и «повторных проектов» рисовалась тёмным по светлому —
+   на тёмном фоне её не видно, переворачиваем */
+:root[data-theme="dark"] .damu-stub-field {
+    background: repeating-linear-gradient(135deg,
+        rgba(236, 235, 233, 0.07), rgba(236, 235, 233, 0.07) 8px,
+        rgba(236, 235, 233, 0.02) 8px, rgba(236, 235, 233, 0.02) 16px);
+}
+:root[data-theme="dark"] .damu-chart-stub {
+    background: repeating-linear-gradient(135deg,
+        rgba(236, 235, 233, 0.06), rgba(236, 235, 233, 0.06) 8px,
+        rgba(236, 235, 233, 0.02) 8px, rgba(236, 235, 233, 0.02) 16px);
+    color: var(--damu-muted);
+}
+
+/* Мелочи, у которых цвет вписан числом в правилах выше */
+:root[data-theme="dark"] .damu-inst-row .damu-muted,
+:root[data-theme="dark"] .damu-prog-name,
+:root[data-theme="dark"] .damu-mini-val,
+:root[data-theme="dark"] .damu-inst2-month-value { color: var(--damu-ink); }
+:root[data-theme="dark"] .damu-mini-label,
+:root[data-theme="dark"] .damu-reset-filters { color: var(--damu-muted); }
+:root[data-theme="dark"] .damu-side-toggle {
+    background-color: var(--damu-surface);
+    border-color: var(--damu-divider);
+    color: var(--damu-ink);
+}
+:root[data-theme="dark"] .damu-sec-subtab { background-color: var(--damu-track); }
+:root[data-theme="dark"] .damu-year > button { color: var(--damu-muted); }
+:root[data-theme="dark"] .damu-year,
+:root[data-theme="dark"] .damu-year > button + button,
+:root[data-theme="dark"] .damu-theme-toggle { border-color: var(--damu-divider); }
+
+/* Переключатель темы: квадрат 30×30 с золотой иконкой. Показывается
+   всегда ровно одна иконка — та, что означает ТЕКУЩЕЕ состояние */
+.damu-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    margin-left: 0.4rem;
+    padding: 0;
+    background: none;
+    border: 1px solid rgba(32, 30, 29, 0.4);
+    cursor: pointer;
+}
+.damu-theme-toggle img { width: 15px; height: 15px; display: block; }
+.damu-theme-toggle:hover { background-color: rgba(32, 30, 29, 0.06); }
+:root[data-theme="dark"] .damu-theme-toggle:hover {
+    background-color: rgba(236, 235, 233, 0.08);
+}
+:root[data-theme="dark"] .damu-theme-sun { display: none; }
+:root:not([data-theme="dark"]) .damu-theme-moon { display: none; }
 
 
 /* ================== БАЗА И ПЕРЕНАСТРОЙКА BOOTSTRAP ==================
@@ -224,6 +363,14 @@ a:hover {
     background-color: var(--damu-nav-bg, #f3f2f2);
     color: var(--damu-nav-fg, #201e1d);
     border-bottom: 2px solid var(--damu-divider);
+    /* Шапка едет вместе с человеком: перейти в другой раздел или в настройки
+       хочется с любого места страницы, а страницы у нас длинные.
+       z-index выше остальных липких полос — они прилипают ПОД шапкой
+       и на пару пикселей заезжают под неё, чтобы между ними не мелькала
+       полоска прокручивающегося содержимого. */
+    position: sticky;
+    top: 0;
+    z-index: 20;
 }
 
 /* Название и логотип — одним блоком; margin-right:auto отжимает
@@ -270,6 +417,45 @@ a:hover {
 .damu-nav[data-navbar="dark"] .damu-nav-link:hover {
     color: var(--damu-nav-fg, #f3f2f2);
     box-shadow: inset 0 -2px 0 currentColor;
+}
+
+/* Полоса вкладок на страницах настроек. Классы вкладок те же, что
+   в разделах (.damu-sec-tab), — одинаковые на вид элементы должны быть
+   одинаковыми и в стилях. Здесь только отступ сверху: в разделах полоса
+   липкая и отступ ей мешал бы. */
+.damu-admin-tabs {
+    /* Липкая, как в разделах: страница настроек длинная, и переключаться
+       хочется с любого места, не отматывая наверх. Прилипает под шапкой */
+    position: sticky;
+    top: var(--damu-nav-h, 3.9rem);
+    z-index: 5;
+    background-color: var(--damu-bg);
+    padding-top: 0.5rem;
+}
+.damu-admin-tabs .damu-sec-tab {
+    text-decoration: none;
+}
+
+/* Меню «Разбор ▾» в шапке. dbc.DropdownMenu с nav=True рисует ссылку
+   классами Bootstrap — приводим её к виду остальных пунктов шапки. */
+.damu-nav-menu .nav-link {
+    color: inherit;
+    font-size: 0.9rem;
+    padding: 0.2rem 0.35rem;
+}
+.damu-nav-menu .nav-link:hover,
+.damu-nav-menu.show .nav-link {
+    color: var(--damu-accent, #1f7a4d);
+}
+.damu-nav-menu .dropdown-menu {
+    border-radius: 0;
+    border-color: var(--damu-divider);
+    box-shadow: var(--damu-shadow-md);
+    max-width: 32rem;
+}
+.damu-nav-menu .dropdown-item {
+    white-space: normal;   /* пояснения примеров длинные, пусть переносятся */
+    font-size: 0.85rem;
 }
 
 /* Метка роли — рамка в основной цвет, без заливки */
@@ -328,6 +514,26 @@ a:hover {
 .damu-filter-year { width: 8rem; }
 .damu-filter-regions { min-width: 20rem; flex: 0 1 26rem; }
 
+/* «Сбросить фильтры» — прозрачная и приглушённая.
+   Была кнопкой-ссылкой Bootstrap: синяя и подчёркнутая, единственное
+   яркое пятно на спокойной странице. Цвет берёт только под мышкой —
+   этого достаточно, чтобы понять, что на неё можно нажать. */
+.damu-reset-filters {
+    background: none;
+    border: none;
+    padding: 0.3rem 0.4rem;
+    margin-bottom: 0.15rem;
+    font-size: 0.8rem;
+    font-family: inherit;
+    color: var(--damu-muted);
+    cursor: pointer;
+}
+.damu-reset-filters:hover,
+.damu-reset-filters:focus-visible {
+    color: var(--damu-accent, #1f7a4d);
+    background-color: rgba(32, 30, 29, 0.06);
+}
+
 /* Свежесть данных: прижата к правому краю, с пульсирующей точкой —
    она и есть весь «живой» акцент страницы */
 .damu-updated {
@@ -348,6 +554,12 @@ a:hover {
     gap: 0.4rem;
     font-weight: 600;
     font-size: 1.05rem;
+}
+/* Время — строкой ниже даты, мельче и приглушённое: точный час нужен
+   редко, а тёмным и в один размер с датой он оттягивал внимание */
+.damu-updated-time {
+    font-size: 0.75rem;
+    color: var(--damu-muted);
 }
 .damu-live-dot {
     width: 7px;
@@ -373,6 +585,208 @@ a:hover {
 }
 
 
+/* ================== ГЛАВНАЯ: ПОЛОСА-ИТОГ «ВСЕ ИНСТРУМЕНТЫ» ==================
+
+   Тёмная полоса во всю ширину: один инструмент из четырёх — сводный —
+   вынесен из общего ряда и подан крупно. Так в макете сделана иерархия:
+   сначала «сколько всего», потом разбивка.
+
+   Колонки заданы точными ширинами, как в макете, но средняя — резиновая
+   (minmax): полоса «план → факт» должна тянуться, остальное нет. На узком
+   экране колонки сначала встают по две, потом в столбик. */
+
+.damu-band {
+    background-color: var(--damu-band);
+    color: #ffffff;
+    display: grid;
+    grid-template-columns: 250px minmax(180px, 1fr) 190px 132px 260px;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.25rem 1.5rem;
+}
+@media (max-width: 1400px) {
+    .damu-band { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 800px) {
+    .damu-band { grid-template-columns: 1fr; }
+}
+
+.damu-band-kicker {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+}
+.damu-band-title {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--damu-band-gold);
+}
+.damu-band-percent {
+    font-size: 2.9rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+}
+.damu-band-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-top: 0.25rem;
+}
+.damu-band-note { font-size: 0.7rem; color: rgba(255, 255, 255, 0.55); }
+
+/* Полоса «план → факт» с засечкой ожидаемого темпа: три числа в одной
+   графике — сколько плана, сколько факта и где факт должен быть сегодня */
+.damu-band-track {
+    position: relative;
+    height: 22px;
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.damu-band-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background-color: var(--damu-band-fill);
+}
+.damu-band-tick {
+    position: absolute;
+    top: -4px;
+    bottom: -4px;
+    width: 2px;
+    background-color: #ffffff;
+}
+.damu-band-bar { height: 5px; background-color: rgba(255, 255, 255, 0.16); }
+.damu-band-bar > div { height: 5px; background-color: var(--damu-band-gold); }
+
+/* Состав проектов: сплошной кусок — уникальные, штриховка — повторные.
+   Штриховкой, а не вторым цветом: повторные не отдельная категория,
+   а «остальное», и цвет придавал бы им лишний вес. */
+.damu-band-split { display: flex; height: 5px; gap: 2px; }
+.damu-band-split-unique { background-color: #ffffff; }
+.damu-band-split-repeat {
+    flex: 1;
+    background: repeating-linear-gradient(135deg,
+        rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5) 2px,
+        transparent 2px, transparent 4px);
+}
+
+/* Столбики «проектов за месяц» внутри полосы-итога */
+.damu-band-months {
+    display: flex;
+    align-items: flex-end;
+    gap: 5px;
+    height: 64px;
+}
+.damu-band-months.damu-tight { gap: 3px; }
+.damu-band-month {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+.damu-band-month > i {
+    width: 100%;
+    background-color: var(--damu-band-gold);
+    display: block;
+}
+.damu-band-month-value {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.8);
+}
+.damu-band-labels {
+    display: flex;
+    margin-top: 0.25rem;
+    font-size: 0.62rem;
+    color: rgba(255, 255, 255, 0.62);
+}
+.damu-band-labels > span { flex: 1; min-width: 0; text-align: center; }
+
+
+/* ================== ГЛАВНАЯ: ПЕРЕКЛЮЧАТЕЛИ НАД ВИТРИНОЙ ==================
+
+   Год и тумблер «Графики за весь год» — единственные живые органы
+   управления макетной витрины. Оба нарочно плоские и без скруглений. */
+
+.damu-year {
+    display: flex;
+    border: 1px solid rgba(32, 30, 29, 0.4);
+}
+.damu-year > button {
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 0.3rem 1rem;
+    border: none;
+    background: transparent;
+    color: rgba(32, 30, 29, 0.7);
+    cursor: pointer;
+}
+.damu-year > button + button { border-left: 1px solid rgba(32, 30, 29, 0.4); }
+.damu-year > button.active {
+    background-color: var(--damu-accent, #1f7a4d);
+    color: var(--damu-on-accent, #ffffff);
+    font-weight: 700;
+}
+
+.damu-switch {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: inherit;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+    background: none;
+    border: none;
+    padding: 0.35rem 0;
+    cursor: pointer;
+    user-select: none;
+}
+.damu-switch-track {
+    position: relative;
+    display: block;
+    width: 30px;
+    height: 16px;
+    background-color: rgba(32, 30, 29, 0.25);
+    transition: background-color 0.12s;
+}
+.damu-switch.active .damu-switch-track {
+    background-color: var(--damu-accent, #1f7a4d);
+}
+.damu-switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background-color: #ffffff;
+    transition: left 0.12s;
+}
+.damu-switch.active .damu-switch-knob { left: 16px; }
+
+/* Плашка «Макетные числа» — золотой рамкой, без заливки: заметно,
+   но не кричит. Стоит рядом с заголовком блока, а не мелочью внизу */
+.damu-mock-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--damu-accent-2-dark, #6a531c);
+    border: 1px solid var(--damu-accent-2, #b08a2e);
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+}
+
+
 /* ================== ГЛАВНАЯ: КАРТОЧКИ ИНСТРУМЕНТОВ ==================
 
    Четыре равные колонки. Цвет каждой карточки задаётся ОДНИМ классом
@@ -380,21 +794,135 @@ a:hover {
    а всё внутри — заголовок, шкала, полоски, столбики — берёт её оттуда.
    Иначе цвет пришлось бы вписывать в десяток мест каждой карточки. */
 
+/* Три карточки в ряд: сводный инструмент ушёл наверх в полосу-итог */
 .damu-inst-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.875rem;
 }
 @media (max-width: 1200px) {
-    .damu-inst-grid { grid-template-columns: repeat(2, 1fr); }
+    .damu-inst-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
     .damu-inst-grid { grid-template-columns: 1fr; }
 }
 
+/* Карточка инструмента по макету: цветная черта сверху вместо цветного
+   заголовка. Цвет стал меткой категории, а не выделением важности —
+   иначе три карточки кричали бы наперебой. */
+.damu-inst2 {
+    background-color: var(--damu-surface);
+    box-shadow: var(--damu-shadow-sm);
+    border-top: 3px solid var(--damu-c);
+}
+.damu-inst2-head {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 1.125rem 0.625rem;
+    border-bottom: 1px solid rgba(32, 30, 29, 0.14);
+}
+.damu-inst2-title {
+    font-size: 0.875rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+.damu-inst2-status {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.damu-inst2-status > i { width: 7px; height: 7px; display: block; }
+.damu-inst2-body { padding: 0.875rem 1.125rem 1rem; }
+.damu-inst2-percent {
+    font-size: 2.375rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: var(--damu-c);
+}
+.damu-inst2-fact {
+    font-size: 1.375rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+/* Полоса освоения карточки — та же графика, что в полосе-итоге,
+   но на светлом фоне: дорожка серая, засечка цвета текста */
+.damu-inst2-track {
+    position: relative;
+    height: 12px;
+    background-color: var(--damu-track);
+    margin-top: 0.75rem;
+}
+.damu-inst2-track > .fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background-color: var(--damu-c);
+}
+.damu-inst2-track > .tick {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background-color: var(--damu-ink);
+}
+.damu-inst2-block {
+    margin-top: 0.875rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--damu-hairline);
+}
+.damu-inst2-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+.damu-inst2-num {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-top: 0.2rem;
+}
+.damu-inst2-months {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.375rem;
+    height: 82px;
+}
+.damu-inst2-months.damu-tight { gap: 0.2rem; }
+.damu-inst2-month {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+}
+.damu-inst2-month > i {
+    width: 100%;
+    display: block;
+    background-color: var(--damu-c);
+}
+.damu-inst2-month-value {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: rgba(32, 30, 29, 0.75);
+}
+.damu-inst2-month-label { font-size: 0.62rem; color: var(--damu-muted); }
+
+/* Числа во всей витрине — моноширинные по цифрам: в столбик выстраиваются
+   ровно, и при смене года не прыгает вся строка */
+.damu-band, .damu-inst2 { font-variant-numeric: tabular-nums; }
+
 .damu-c-1 { --damu-c: var(--damu-accent, #1f7a4d); }
 .damu-c-2 { --damu-c: var(--damu-accent-2, #b08a2e); }
-.damu-c-3 { --damu-c: var(--damu-accent-2-dark, #664e18); }
+.damu-c-3 { --damu-c: var(--damu-accent-3, #008b8a); }
 
 .damu-inst-card {
     background-color: var(--damu-surface);
@@ -479,7 +1007,68 @@ a:hover {
 }
 
 
+/* ================== РАЗБОР: БЛОК ПЛАН / ФАКТ ==================
+
+   Заменяет спидометр на странице «Разбор». Два крупных числа рядом
+   (факт и план), под ними — полоска прогресса и процент выполнения.
+   Занимает ту же высоту, но информации больше: числа видны без
+   расшифровки шкалы. */
+
+.damu-pf-block {
+    padding: 0.5rem 0 0.25rem;
+}
+.damu-pf-pair {
+    display: flex;
+    justify-content: space-around;
+    gap: 1rem;
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+.damu-pf-cell {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+.damu-pf-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(32, 30, 29, 0.5);
+    margin-bottom: 0.15rem;
+}
+.damu-pf-big {
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.15;
+    color: var(--damu-c);
+}
+.damu-pf-big.damu-pf-plan {
+    color: rgba(32, 30, 29, 0.4);
+}
+.damu-pf-unit {
+    font-size: 0.7rem;
+    color: rgba(32, 30, 29, 0.45);
+}
+.damu-pf-percent {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--damu-c);
+}
+/* Полоска прогресса побольше, чем обычная .damu-bar */
+.damu-pf-block .damu-bar {
+    height: 10px !important;
+    border-radius: 5px;
+}
+.damu-pf-block .damu-bar-fill {
+    height: 10px !important;
+    border-radius: 5px;
+}
+
+
 /* ================== ГЛАВНАЯ: РАЗБИВКА ПО ПРОГРАММАМ ==================
+
 
    Четыре колонки, разделённые вертикальными линиями. В каждой строке —
    название программы и две пары «полоска + число»: освоено и проекты. */
@@ -519,7 +1108,10 @@ a:hover {
     align-items: center;
     gap: 0.35rem;
     font-size: 0.75rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+.damu-prog-row:last-child {
+    margin-bottom: 0;
 }
 .damu-prog-name { color: rgba(32, 30, 29, 0.8); }
 .damu-prog-value { font-weight: 700; text-align: right; }
@@ -544,6 +1136,60 @@ a:hover {
     letter-spacing: -0.015em;
     margin: 0;
 }
+
+/* Переключатель года "Освоение плана — 2026 / 2025" */
+.damu-year-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    vertical-align: middle;
+}
+
+.damu-year-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 1.1rem;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #ffffff !important;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    line-height: 1.2;
+    text-decoration: none !important;
+    user-select: none;
+    transition: all 0.2s ease-in-out;
+}
+
+.damu-year-btn-2026 {
+    background-color: #b89759;
+}
+
+.damu-year-btn-2025 {
+    background-color: #008444;
+}
+
+.damu-year-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.damu-year-btn.inactive {
+    opacity: 0.45;
+    filter: grayscale(25%);
+    box-shadow: none;
+}
+
+.damu-year-btn.active {
+    opacity: 1;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    outline: 2px solid rgba(255, 255, 255, 0.5);
+    outline-offset: -2px;
+}
+
 .damu-block-head {
     display: flex;
     align-items: center;
@@ -577,28 +1223,48 @@ a:hover {
     position: relative;
 }
 
+/* Полоса разделов. Свёрнутая — 46 px с одними аббревиатурами: раздел
+   по ним узнаётся, а места занимает втрое меньше. Развёрнутая — 212 px
+   с полными названиями.
+
+   !! Свёрнутая полоса НЕ прячется совсем, как было раньше. Пустой отступ
+   слева ничего не сообщал, а колонка из «ГВ · КВ · СВ» продолжает
+   отвечать на вопрос «где я и куда можно уйти». */
 .damu-side-list {
-    flex: 0 0 210px;
-    max-width: 210px;
-    padding: 0.75rem 0;
-    border-right: 2px solid var(--damu-divider);
-    position: sticky;
-    top: 0;
-    overflow: hidden;
-    transition: flex-basis 0.2s ease, max-width 0.2s ease, padding 0.2s ease;
-}
-/* Свёрнутый сайдбар: ширина в ноль, содержимое обрезается overflow.
-   Именно ширина, а не display:none — иначе не было бы плавности */
-.damu-side-list.damu-collapsed {
-    flex-basis: 0;
-    max-width: 0;
+    flex: 0 0 212px;
+    max-width: 212px;
     padding: 0;
-    border-right: none;
+    border-right: 1px solid var(--damu-hairline);
+    background-color: var(--damu-surface);
+    position: sticky;
+    top: var(--damu-nav-h, 3.9rem);
+    overflow: hidden;
+    transition: flex-basis 0.14s ease, max-width 0.14s ease;
+}
+.damu-side-list.damu-collapsed {
+    flex-basis: 46px;
+    max-width: 46px;
+}
+/* Шапка полосы: ячейка под кнопку ☰ и подпись, которая уезжает
+   при сворачивании вместе с названиями */
+.damu-side-head {
+    display: flex;
+    align-items: center;
+    height: 36px;
+    border-bottom: 1px solid var(--damu-hairline);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+    white-space: nowrap;
 }
 .damu-side-list .nav-link {
+    display: flex;
+    align-items: center;
+    height: 25px;
+    padding: 0;
     color: var(--damu-ink);
-    font-size: 0.82rem;
-    padding: 0.3rem 1.1rem;
     border-radius: 0;
     white-space: nowrap;
 }
@@ -606,17 +1272,129 @@ a:hover {
     background-color: rgba(32, 30, 29, 0.06);
 }
 .damu-side-list .nav-link.active {
-    background-color: var(--damu-accent-soft, #e9f2ed) !important;
-    color: var(--damu-accent-dark, #185f3d) !important;
-    font-weight: 600;
+    background-color: var(--damu-accent-soft, #e0ece5) !important;
+    color: var(--damu-accent, #1f7a4d) !important;
+    font-weight: 700;
+}
+/* Аббревиатура в своей 46-пиксельной ячейке — ровно под кнопкой ☰,
+   поэтому при сворачивании ничего не дёргается */
+.damu-side-abbr {
+    flex: 0 0 46px;
+    text-align: center;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+.damu-side-name { font-size: 0.75rem; }
+
+/* Карточка показателя раздела по макету: метка-капслок, крупное число,
+   единица тихим шрифтом. Подписи «▲ % к прошлому году» здесь больше нет —
+   заказчик просил убрать такие пометки. */
+.damu-kpi2 {
+    background-color: var(--damu-surface);
+    box-shadow: var(--damu-shadow-sm);
+    padding: 0.8rem 0.95rem 0.95rem;
+    font-variant-numeric: tabular-nums;
+}
+.damu-kpi2-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+}
+.damu-kpi2-value {
+    font-size: 1.7rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+}
+.damu-kpi2-unit { font-size: 0.75rem; color: var(--damu-muted); }
+.damu-kpi2-track {
+    position: relative;
+    height: 7px;
+    background-color: #dcdad9;
+    margin-top: 0.75rem;
+}
+.damu-kpi2-track > .fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background-color: var(--damu-accent-2, #b08a2e);
+}
+.damu-kpi2-track > .tick {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background-color: var(--damu-ink);
 }
 
-/* Кнопка ☰ сидит на границе сайдбара и содержимого */
+/* Разрез без данных: честная строка и два поля со штриховкой.
+   Пустые рамки без пояснения читались бы как поломка. */
+.damu-stub-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--damu-accent-2-dark, #6a531c);
+}
+.damu-stub-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.8rem;
+}
+.damu-stub-field {
+    height: 96px;
+    background: repeating-linear-gradient(135deg,
+        rgba(32, 30, 29, 0.07), rgba(32, 30, 29, 0.07) 8px,
+        rgba(32, 30, 29, 0.02) 8px, rgba(32, 30, 29, 0.02) 16px);
+}
+
+/* Строка «название — полоска — число»: ею собраны ОКЭД и области */
+.damu-rowbar {
+    display: grid;
+    align-items: center;
+    gap: 0.6rem;
+    height: 25px;
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+.damu-rowbar > .name {
+    color: rgba(32, 30, 29, 0.8);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.damu-rowbar > .value { text-align: right; font-weight: 700; }
+/* Области — двумя колонками, заполняемыми СВЕРХУ ВНИЗ, а не змейкой:
+   так первая десятка идёт подряд в левом столбце, как в списке */
+.damu-region-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(10, auto);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 1.5rem;
+}
+
+/* Кнопка ☰ сидит на границе сайдбара и содержимого.
+
+   Кнопка **едет вместе с человеком всегда** (sticky), открыт список или
+   свёрнут: и свернуть, и вернуть его хочется как раз тогда, когда
+   прокрутил вниз. Сначала при свёрнутом списке она оставалась наверху,
+   но пользователь попросил одинаковое поведение — так и правда меньше
+   думать, где её искать.
+
+   Отрицательные боковые отступы при ширине 26 px дают нулевую ширину:
+   кнопка визуально садится на границу, но места в раскладке не занимает
+   и потому не сдвигает содержимое. */
 .damu-side-toggle {
-    position: absolute;
-    top: 0.5rem;
-    left: 210px;
-    transform: translateX(-50%);
+    position: sticky;
+    top: calc(var(--damu-nav-h, 3.9rem) + 0.5rem);
+    align-self: flex-start;   /* иначе flex растянет кнопку по всей высоте */
+    flex: 0 0 auto;
+    margin: 0 -13px 0 -36px;  /* садится в 46-пиксельную ячейку полосы */
     width: 26px;
     height: 26px;
     border-radius: 50%;
@@ -631,9 +1409,12 @@ a:hover {
     font-size: 0.75rem;
     padding: 0;
     color: var(--damu-ink);
-    transition: left 0.2s ease;
 }
-.damu-sec-wrap.damu-side-hidden .damu-side-toggle { left: 0; }
+/* Список свёрнут — кнопка так же едет, только без нависания над списком:
+   слева от неё теперь сразу содержимое */
+.damu-sec-wrap.damu-side-hidden .damu-side-toggle {
+    margin-left: 0;
+}
 
 .damu-sec-main {
     /* min-width: 0 обязателен: без него длинная таблица внутри распирает
@@ -650,7 +1431,7 @@ a:hover {
    экране не видно, и часть вкладок просто терялась бы. */
 .damu-sec-tabbar {
     position: sticky;
-    top: 0;
+    top: var(--damu-nav-h, 3.9rem);
     z-index: 5;
     background-color: var(--damu-bg);
     padding-top: 0.4rem;
@@ -760,6 +1541,27 @@ a:hover {
     font-style: italic;
 }
 
+/* А вот на вкладках курсив и полупрозрачность выглядели поломкой: часть
+   вкладок «серая и косая», часть чёрная, и разница читалась как ошибка,
+   а не как замысел (замечено пользователем 30.07.2026). Оставляем разницу —
+   она честная, — но делаем её ровной: тот же шрифт, просто тише цветом.
+   Что именно значит серый, написано в подсказке при наведении (title
+   задаётся в pages/section.py). */
+.damu-sec-tab.damu-empty,
+.damu-sec-subtab.damu-empty {
+    opacity: 1;
+    font-style: normal;
+    color: var(--damu-muted);
+}
+.damu-sec-tab.damu-empty:hover {
+    color: var(--damu-accent, #1f7a4d);
+}
+/* Выбранная вкладка выглядит выбранной, даже если данных под ней нет:
+   иначе непонятно, куда ты вообще попал */
+.damu-sec-tab.damu-empty.active {
+    color: var(--damu-accent, #1f7a4d);
+}
+
 
 /* ================== ГАЛКИ ==================
 
@@ -838,4 +1640,65 @@ a:hover {
 }
 .VirtualizedSelectFocusedOption {
     background-color: var(--damu-accent-soft, #e9f2ed);
+}
+
+
+/* ================== РАЗБОР: СВОДНАЯ ТАБЛИЦА ==================
+
+   Компактная таблица по инструментам: всё на одном экране. */
+
+.damu-summary-table {
+    font-size: 0.82rem;
+}
+.damu-summary-table th {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(32, 30, 29, 0.5);
+    border-bottom: 2px solid var(--damu-divider);
+    white-space: nowrap;
+    padding: 0.3rem 0.6rem;
+}
+.damu-summary-table td {
+    padding: 0.2rem 0.6rem;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+.damu-summary-table tbody tr {
+    border-bottom: 1px solid var(--damu-hairline);
+}
+.damu-summary-table tbody tr:hover {
+    background-color: var(--damu-accent-soft, #e9f2ed);
+}
+
+/* Inline мини-столбики динамики внутри таблицы */
+.damu-tbl-mini {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 3px;
+}
+.damu-tbl-mini-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    width: 28px;
+}
+.damu-tbl-mini-val {
+    font-size: 0.6rem;
+    color: rgba(32, 30, 29, 0.5);
+    line-height: 1;
+}
+.damu-tbl-mini-bar {
+    width: 16px;
+    border-radius: 2px 2px 0 0;
+    background-color: var(--damu-c, var(--damu-accent));
+    opacity: 0.7;
+}
+.damu-tbl-mini-label {
+    font-size: 0.55rem;
+    color: rgba(32, 30, 29, 0.4);
+    line-height: 1;
 }

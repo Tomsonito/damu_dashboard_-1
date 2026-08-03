@@ -69,11 +69,24 @@ def split_page(page: str) -> tuple[str, str]:
 
 
 def page_choices() -> list[dict]:
-    """Разделы для настройщика: главная витрина и все разделы."""
+    """Страницы для настройщика — только разделы.
+
+    Главной в списке нет с 29.07.2026: сетку виджетов с неё убрали, там
+    теперь витрина инструментов по макету. Оставить её в списке значило бы
+    дать админу настраивать экран, которого никто не увидит.
+
+    Если сетка на главную вернётся, вернуть сюда строку
+    `{"label": "Главная (витрина)", "value": MAIN_PAGE}` — умолчания для неё
+    (`default_widgets` в config.yaml) на месте.
+    """
     sections = load_config().get("sections") or []
-    return [{"label": "Главная (витрина)", "value": MAIN_PAGE}] + [
-        {"label": s["title"], "value": s["key"]} for s in sections
-    ]
+    return [{"label": s["title"], "value": s["key"]} for s in sections]
+
+
+def first_page() -> str:
+    """Что открыть в настройщике по умолчанию — первый раздел из конфига."""
+    choices = page_choices()
+    return choices[0]["value"] if choices else MAIN_PAGE
 
 
 def tabs_of(section: str) -> list[dict]:

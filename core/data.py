@@ -295,7 +295,11 @@ def format_value(value: float, indicator: str) -> str:
     meta = get_indicator_meta(indicator)
     scaled = value / meta["divisor"]
     # Неразрывный пробел как разделитель разрядов — так принято в русской типографике
-    text = f"{scaled:,.{meta['decimals']}f}".replace(",", " ")
+    # Запятая отделяет дробную часть: Питон по умолчанию делает наоборот
+    # («1,307.9»). Порядок замен важен — сначала разряды на пробел, потом
+    # точку на запятую, иначе запятая-разделитель успела бы стать дробной.
+    text = (f"{scaled:,.{meta['decimals']}f}"
+            .replace(",", " ").replace(".", ","))
     return f"{text} {meta['display_unit']}".strip()
 
 
@@ -722,6 +726,42 @@ def get_table(year: int, regions: list[str] | None = None,
     return wide[["region"] + columns]
 
 
+#: Месяцы в родительном падеже — «28 июля», а не «28 июль».
+#: Своя таблица, а не locale: имя русской локали в Windows и в Linux
+#: пишется по-разному, и на сервере подпись молча стала бы английской.
+MONTHS_OF = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
+
+
+def get_last_update_parts() -> tuple[str, str]:
+    """Момент последней публикации двумя строками: «28 июля» и «09:58».
+
+    Разделено потому, что в шапке дата и время стоят друг под другом
+    и по-разному: дата крупная, время мелкое и приглушённое. Собирать
+    из одной строки обратно значило бы разбирать её же по пробелу.
+
+    Дата показывается всегда, даже сегодняшняя: две строки не создают
+    той путаницы, из-за которой get_last_update() её прячет.
+    """
+    ts = _last_publish_time()
+    if ts is None:
+        return "—", ""
+    return f"{ts.day} {MONTHS_OF[ts.month - 1]}", ts.strftime("%H:%M")
+
+
+def _last_publish_time():
+    """Отметка времени последней публикации или None. Общая для двух подписей."""
+    df = _query_storage(
+        "SELECT coalesce(published_at, run_at) AS t FROM versions "
+        "WHERE status = 'published' ORDER BY version DESC LIMIT 1"
+    )
+    if df.empty or pd.isna(df.iloc[0]["t"]):
+        return None
+    return pd.to_datetime(df.iloc[0]["t"])
+
+
 def get_last_update() -> str:
     """Когда цифры на сайте менялись в последний раз — для подписи.
 
@@ -733,13 +773,9 @@ def get_last_update() -> str:
     До 9:00 сайт показывает вчерашнюю публикацию — тогда к времени
     добавляется дата, иначе «обновлены в 09:00» читалось бы как сегодня.
     """
-    df = _query_storage(
-        "SELECT coalesce(published_at, run_at) AS t FROM versions "
-        "WHERE status = 'published' ORDER BY version DESC LIMIT 1"
-    )
-    if df.empty or pd.isna(df.iloc[0]["t"]):
+    ts = _last_publish_time()
+    if ts is None:
         return "—"
-    ts = pd.to_datetime(df.iloc[0]["t"])
     if ts.date() == datetime.now().date():
         return ts.strftime("%H:%M")
     return ts.strftime("%d.%m %H:%M")
