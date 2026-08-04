@@ -1,8 +1,18 @@
 """Ввод плана и управление публикацией. Доступ — только админ.
 
-Три раздела:
-- форма: показатель + год + значение -> черновик с автором и временем;
+!! **Формы ввода на странице сейчас НЕТ** (убрана 04.08.2026). Пользователь
+переосмысливает, как план вообще должен вводиться, и до решения страница
+работает только на показ и на управление публикацией. Практическое
+следствие, о котором важно помнить: **таблица `plan` ничем не наполняется**,
+поэтому «Согласно плану %» всегда считается от фактов, а ветка «есть ручной
+план» в `data.get_kpi` сейчас недостижима и ничем не проверяется.
+
+`publish.save_draft()` при этом жива и рабочая — просто её никто не зовёт.
+Когда форма вернётся, писать заново её не придётся.
+
+Что на странице осталось:
 - «Черновик»: что ждёт ближайших 9:00 и ещё может быть отменено;
+- опубликованный план: что уже действует;
 - версии данных из БД: какие снимки ждут публикации, вето и его снятие.
 
 Сама механика сроков и статусов живёт в core/publish.py — страница только
@@ -163,7 +173,6 @@ def layout(**kwargs):
         return dbc.Alert("Страница доступна только администраторам.",
                          color="warning", className="m-4")
 
-    indicators = plan_indicators()
     return dbc.Container(
         [
             admin.tabs("/plan"),
@@ -173,45 +182,6 @@ def layout(**kwargs):
                 "в ближайшие 9:00, до этого его можно отменить. "
                 "Публикация идёт каждый день, включая выходные.",
                 className="text-muted small",
-            ),
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            dbc.Label("Показатель"),
-                            dbc.Select(
-                                id="plan-indicator",
-                                options=indicators,
-                                value=indicators[0]["value"] if indicators else None,
-                            ),
-                        ],
-                        md=4,
-                    ),
-                    dbc.Col(
-                        [
-                            dbc.Label("Год"),
-                            dbc.Input(id="plan-year", type="number",
-                                      value=datetime.now().year,
-                                      min=2000, max=2100, step=1),
-                        ],
-                        md=2,
-                    ),
-                    dbc.Col(
-                        [
-                            dbc.Label("Значение годового плана"),
-                            dbc.Input(id="plan-value", type="number", min=0,
-                                      placeholder="число ≥ 0"),
-                            dbc.FormText(id="plan-unit"),
-                        ],
-                        md=3,
-                    ),
-                    dbc.Col(
-                        dbc.Button("Сохранить черновик", id="plan-save",
-                                   color="primary", className="w-100"),
-                        md=3, className="align-self-end",
-                    ),
-                ],
-                className="g-3 mb-2",
             ),
             html.Div(id="plan-feedback", className="mb-4"),
             html.H4("Черновик — ещё можно отменить"),
@@ -234,71 +204,29 @@ def layout(**kwargs):
     )
 
 
-def _save(indicator, year, value):
-    """Проверка и сохранение черновика; возвращает плашку-ответ для формы."""
-    if not indicator:
-        return dbc.Alert("Выберите показатель.", color="danger", className="py-2")
-    if year is None or not 2000 <= int(year) <= 2100:
-        return dbc.Alert("Год выглядит странно — проверьте.", color="danger",
-                         className="py-2")
-    if value is None:
-        return dbc.Alert("Введите значение плана.", color="danger", className="py-2")
-    if float(value) < 0:
-        return dbc.Alert("План не может быть отрицательным.", color="danger",
-                         className="py-2")
-
-    when = publish.save_draft(indicator, int(year), float(value), auth.current_user())
-    return dbc.Alert(
-        f"Черновик сохранён — опубликуется "
-        f"{publish.describe_publish_time(when)}. До этого его можно отменить ниже.",
-        color="success", className="py-2",
-    )
-
-
-@callback(
-    Output("plan-unit", "children"),
-    Input("plan-indicator", "value"),
-)
-def show_unit(indicator):
-    """Единица измерения под полем значения — из реестра, не из головы."""
-    if not indicator:
-        return ""
-    meta = data.get_indicator_meta(indicator)
-    return f"в единицах источника: {meta['unit']}"
-
-
 @callback(
     Output("plan-feedback", "children"),
     Output("plan-drafts", "children"),
     Output("plan-published", "children"),
     Output("version-list", "children"),
-    Input("plan-save", "n_clicks"),
     Input({"type": "plan-cancel", "index": ALL}, "n_clicks"),
     Input({"type": "ver-reject", "index": ALL}, "n_clicks"),
     Input({"type": "ver-restore", "index": ALL}, "n_clicks"),
     Input("plan-poll", "n_intervals"),
-    State("plan-indicator", "value"),
-    State("plan-year", "value"),
-    State("plan-value", "value"),
 )
-def handle_actions(_save_clicks, _cancel, _reject, _restore, _tick,
-                   indicator, year, value):
+def handle_actions(_cancel, _reject, _restore, _tick):
     """Один коллбэк на все действия страницы — и на её периодическое обновление.
 
-    Кто бы ни сработал — кнопка формы, «Отменить» у черновика, вето,
-    таймер — в конце всё равно перерисовываются все три списка, поэтому
-    разбирать источник нажатия нужно только действиям. `ctx.triggered_id`
-    говорит, что нажали; проверка значения отсеивает «пустые» срабатывания
-    при первой отрисовке кнопок.
+    Кто бы ни сработал — «Отменить» у черновика, вето, таймер — в конце
+    всё равно перерисовываются все три списка. `ctx.triggered_id` говорит,
+    что нажали.
     """
     trigger = ctx.triggered_id
     clicked = bool(ctx.triggered) and ctx.triggered[0]["value"]
     feedback = no_update
 
     try:
-        if trigger == "plan-save" and clicked:
-            feedback = _save(indicator, year, value)
-        elif isinstance(trigger, dict) and clicked:
+        if isinstance(trigger, dict) and clicked:
             if trigger["type"] == "plan-cancel":
                 draft_indicator, draft_year = trigger["index"].split("|")
                 publish.delete_draft(draft_indicator, int(draft_year))

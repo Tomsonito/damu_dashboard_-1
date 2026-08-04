@@ -181,6 +181,12 @@
             if (wrap && side) {
                 side.classList.toggle('damu-collapsed');
                 wrap.classList.toggle('damu-side-hidden');
+                /* Запоминаем состояние в sessionStorage — при переходе
+                   на другой раздел панель останется в том же виде */
+                try {
+                    var collapsed = side.classList.contains('damu-collapsed');
+                    sessionStorage.setItem('damu-sidebar', collapsed ? 'collapsed' : 'expanded');
+                } catch (e) { /* приватный режим */ }
             }
             return;
         }
@@ -229,6 +235,25 @@
         targetKey = null;
     }, { passive: true });
 
+    /* Восстановление состояния боковой панели при переходе между разделами.
+       Dash при навигации перерисовывает DOM — классы damu-collapsed и
+       damu-side-hidden пропадают. Здесь мы применяем сохранённое
+       в sessionStorage состояние к свежей разметке. */
+    var sidebarRestored = null;  /* id элемента, которому уже применили */
+    function restoreSidebar() {
+        var side = document.getElementById('section-sidebar');
+        if (!side || side === sidebarRestored) return;
+        sidebarRestored = side;
+        try {
+            var state = sessionStorage.getItem('damu-sidebar');
+            if (state === 'collapsed') {
+                side.classList.add('damu-collapsed');
+                var wrap = side.closest('.damu-sec-wrap');
+                if (wrap) wrap.classList.add('damu-side-hidden');
+            }
+        } catch (e) { /* приватный режим */ }
+    }
+
     window.addEventListener('scroll', schedule, { passive: true });
     window.addEventListener('resize', schedule);
 
@@ -236,10 +261,66 @@
        при загрузке мало: наблюдаем за появлением новых узлов. Следим только
        за childList — изменения атрибутов не отслеживаются намеренно, иначе
        highlight() будил бы сам себя, ведь он как раз меняет классы. */
-    new MutationObserver(schedule).observe(document.body, {
+    new MutationObserver(function () {
+        schedule();
+        restoreSidebar();
+    }).observe(document.body, {
         childList: true,
         subtree: true
     });
 
+    /* ── Example 3: Global dynamics toggle ── */
+    document.addEventListener('click', function (e) {
+        var dynBtn = e.target.closest('#damu-dyn-toggle');
+        if (dynBtn) {
+            var card = dynBtn.closest('[style]');
+            while (card && !card.querySelector('.damu-proj-dynamics')) {
+                card = card.parentElement;
+            }
+            if (!card) return;
+            card.classList.toggle('damu-dyn-open');
+            var isOpen = card.classList.contains('damu-dyn-open');
+            dynBtn.textContent = isOpen ? 'Скрыть динамику ▴' : 'Показать динамику ▾';
+            return;
+        }
+        
+        var yearBtn2026 = e.target.closest('#damu-btn-2026');
+        var yearBtn2025 = e.target.closest('#damu-btn-2025');
+        if (yearBtn2026 || yearBtn2025) {
+            var is2025 = !!yearBtn2025;
+            var btn26 = document.getElementById('damu-btn-2026');
+            var btn25 = document.getElementById('damu-btn-2025');
+            var rows26 = document.getElementById('damu-rows-2026');
+            var rows25 = document.getElementById('damu-rows-2025');
+            
+            if (btn26 && btn25 && rows26 && rows25) {
+                if (is2025) {
+                    btn25.style.fontWeight = '700';
+                    btn25.style.background = 'var(--damu-accent, #17452e)';
+                    btn25.style.color = '#fff';
+                    
+                    btn26.style.fontWeight = '500';
+                    btn26.style.background = 'transparent';
+                    btn26.style.color = 'var(--damu-muted)';
+                    
+                    rows26.style.display = 'none';
+                    rows25.style.display = 'block';
+                } else {
+                    btn26.style.fontWeight = '700';
+                    btn26.style.background = 'var(--damu-accent, #17452e)';
+                    btn26.style.color = '#fff';
+                    
+                    btn25.style.fontWeight = '500';
+                    btn25.style.background = 'transparent';
+                    btn25.style.color = 'var(--damu-muted)';
+                    
+                    rows25.style.display = 'none';
+                    rows26.style.display = 'block';
+                }
+            }
+        }
+    });
+
     schedule();
+    restoreSidebar();
 }());

@@ -226,8 +226,11 @@ def instrument_card(item: dict, expanded: bool) -> html.Div:
                 html.Div([
                     html.Div([
                         html.Span("Проектов за месяц, шт"),
+                        # Цвет переменной, а не значением: вписанный
+                        # `rgba(32,30,29,.75)` в тёмной теме давал контраст
+                        # 1.03 : 1 — текст сливался с фоном (замерено 04.08.2026)
                         html.Span(f"за год {num(sum(item['months']))}",
-                                  style={"color": "rgba(32,30,29,.75)"}),
+                                  style={"color": "var(--damu-ink)"}),
                     ], className="damu-band-kicker d-flex justify-content-between mb-2",
                         style={"color": "var(--damu-muted)"}),
                     *_months(item, CARD_CHART_H, "damu-inst2-month",
@@ -264,7 +267,7 @@ def programs_block() -> dbc.Card:
                     "opacity": .45}),
                     className="damu-bar", style={"height": "7px"}),
                 html.Span(num(count), className="damu-prog-value",
-                          style={"fontWeight": 400, "color": "rgba(32,30,29,.6)"}),
+                          style={"fontWeight": 400, "color": "var(--damu-muted)"}),
             ], className="damu-prog-row",
                 style={"gridTemplateColumns": "minmax(0,1fr) 90px 42px 60px 32px",
                        "height": "23px", "fontSize": "0.78rem", "marginBottom": 0})

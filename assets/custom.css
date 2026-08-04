@@ -89,7 +89,15 @@
     --damu-divider: rgba(32, 30, 29, 0.4);
     --damu-hairline: rgba(32, 30, 29, 0.12);
     --damu-muted: rgba(32, 30, 29, 0.55);
-    --damu-track: #eae7e7;       /* незаполненная часть полосок и шкал */
+    /* Незаполненная часть полосок и шкал.
+       !! Задана прозрачностью, а не готовым цветом, и это принципиально.
+       Был `#eae7e7` — а поверхность карточки `#eae9e9`: контраст 1.02 : 1,
+       то есть дорожки не видно вовсе, и полоса выглядела обрывающейся
+       в пустоту (замерено 04.08.2026). В тёмной теме этой беды не было
+       именно потому, что там дорожка с самого начала задана прозрачностью.
+       Прозрачная сама подстраивается под поверхность, на которую легла,
+       и не разъедется с ней, если админ поменяет оформление. */
+    --damu-track: rgba(32, 30, 29, 0.1);
 
     /* Тени взяты из дизайн-системы: мягкие, «чернильные», без синевы */
     --damu-shadow-sm: 0 1px 2px rgba(45, 43, 43, 0.14);
@@ -203,8 +211,6 @@
 :root[data-theme="dark"] .damu-mini-label,
 :root[data-theme="dark"] .damu-reset-filters { color: var(--damu-muted); }
 :root[data-theme="dark"] .damu-side-toggle {
-    background-color: var(--damu-surface);
-    border-color: var(--damu-divider);
     color: var(--damu-ink);
 }
 :root[data-theme="dark"] .damu-sec-subtab { background-color: var(--damu-track); }
@@ -1245,19 +1251,25 @@ a:hover {
     flex-basis: 46px;
     max-width: 46px;
 }
-/* Шапка полосы: ячейка под кнопку ☰ и подпись, которая уезжает
-   при сворачивании вместе с названиями */
+.damu-side-list.damu-collapsed .damu-side-head-label,
+.damu-side-list.damu-collapsed .damu-side-name {
+    display: none;
+}
+/* Шапка полосы: кнопка ☰ и подпись «Все разделы». При сворачивании
+   подпись прячется за overflow: hidden родителя, кнопка остаётся. */
 .damu-side-head {
     display: flex;
     align-items: center;
     height: 36px;
     border-bottom: 1px solid var(--damu-hairline);
+    white-space: nowrap;
+}
+.damu-side-head-label {
     font-size: 0.6rem;
     font-weight: 800;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--damu-muted);
-    white-space: nowrap;
 }
 .damu-side-list .nav-link {
     display: flex;
@@ -1378,42 +1390,22 @@ a:hover {
     column-gap: 1.5rem;
 }
 
-/* Кнопка ☰ сидит на границе сайдбара и содержимого.
-
-   Кнопка **едет вместе с человеком всегда** (sticky), открыт список или
-   свёрнут: и свернуть, и вернуть его хочется как раз тогда, когда
-   прокрутил вниз. Сначала при свёрнутом списке она оставалась наверху,
-   но пользователь попросил одинаковое поведение — так и правда меньше
-   думать, где её искать.
-
-   Отрицательные боковые отступы при ширине 26 px дают нулевую ширину:
-   кнопка визуально садится на границу, но места в раскладке не занимает
-   и потому не сдвигает содержимое. */
+/* Кнопка ☰ теперь живёт внутри шапки списка, а не отдельным элементом
+   между сайдбаром и контентом. Она занимает ту же 46-пиксельную ячейку,
+   что и аббревиатуры разделов, поэтому при сворачивании ничего не дёргается. */
 .damu-side-toggle {
-    position: sticky;
-    top: calc(var(--damu-nav-h, 3.9rem) + 0.5rem);
-    align-self: flex-start;   /* иначе flex растянет кнопку по всей высоте */
-    flex: 0 0 auto;
-    margin: 0 -13px 0 -36px;  /* садится в 46-пиксельную ячейку полосы */
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background-color: #ffffff;
-    border: 1px solid rgba(32, 30, 29, 0.25);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    flex: 0 0 36px;
+    width: 36px;
+    height: 100%;
+    border: none;
+    background: transparent;
     cursor: pointer;
-    z-index: 6;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
     padding: 0;
     color: var(--damu-ink);
-}
-/* Список свёрнут — кнопка так же едет, только без нависания над списком:
-   слева от неё теперь сразу содержимое */
-.damu-sec-wrap.damu-side-hidden .damu-side-toggle {
-    margin-left: 0;
 }
 
 .damu-sec-main {
@@ -1702,3 +1694,51 @@ a:hover {
     color: rgba(32, 30, 29, 0.4);
     line-height: 1;
 }
+
+/* ── Example 3 и 5: раскрывающаяся динамика по месяцам ──
+   !! min-width: 0 добавлен 04.08.2026 (найдено на примере 5, но правило
+   общее для класса, поэтому чинит и третий пример тоже). У flex-элемента
+   по умолчанию минимальная ширина — ширина его содержимого; на экране
+   1366px раскрытая динамика 2025 года распирала страницу вбок на ~90 px,
+   потому что колонке было физически некуда сжаться. `overflow: hidden`
+   ниже уже обрезает лишнее, min-width: 0 просто разрешает сжатие вместо
+   вылезания за края. */
+.damu-proj-col { width: 220px; min-width: 0; transition: width 0.3s ease; overflow: hidden; }
+.damu-proj-dynamics { display: none; }
+.damu-dyn-open .damu-proj-col { width: var(--dyn-target-width, 400px); }
+.damu-dyn-open .damu-proj-default { display: none; }
+.damu-dyn-open .damu-proj-dynamics { display: block; }
+
+/* ══ Пример 5 — цвета инструментов ══════════════════════════════════════
+   !! ВРЕМЕННЫЙ БЛОК: удаляется вместе со страницами-примерами
+   (`pages/explore_example.py`, `core/examples.py`). Найти — по `ex5`.
+
+   Здесь он, а не в inline-стилях примера, по одной причине: у тёмной темы
+   свои значения, а тему выбирают в браузере. Python о ней не знает, вписать
+   пару «светлый / тёмный» в inline-стиль нечем.
+
+   Приём тот же, что у карточек инструментов на главной (`damu-c-1/2/3`):
+   класс кладёт цвет в переменную, а полоса, клетки и подписи внутри берут
+   её оттуда — иначе цвет пришлось бы вписывать в десяток мест каждой строки.
+
+   Значения тёмной темы — те же оттенки, поднятые по светлоте: на фоне
+   #131211 тёмная зелень и золото почти сливаются с поверхностью, и четыре
+   инструмента перестают различаться.
+
+   !! Четвёртый (субсидирование) — бирюзовый `#008b8a` / `#21a3a2`, а не
+   оливковый, каким он был здесь до 04.08.2026. Подогнан под цвет главной
+   (`accent_3` в `core/theme.py`) по просьбе пользователя: вопрос третьего
+   цвета уже решён, а «Разбор» его сравнивал только пока решения не было. */
+.damu-ex5-c1 { --ex5-k: #17452e; }   /* все инструменты */
+.damu-ex5-c2 { --ex5-k: #1f7a4d; }   /* гарантирование */
+.damu-ex5-c3 { --ex5-k: #b08a2e; }   /* кредитование */
+.damu-ex5-c4 { --ex5-k: #008b8a; }   /* субсидирование */
+
+:root[data-theme="dark"] .damu-ex5-c1 { --ex5-k: #2e7d55; }
+:root[data-theme="dark"] .damu-ex5-c2 { --ex5-k: #4fb37f; }
+:root[data-theme="dark"] .damu-ex5-c3 { --ex5-k: #d9ae4a; }
+:root[data-theme="dark"] .damu-ex5-c4 { --ex5-k: #21a3a2; }
+
+/* Своей дорожки у примера НЕТ — он берёт общую `--damu-track`.
+   Была временная `--ex5-track`, пока общая переменная светлой темы
+   оставалась невидимой; 04.08.2026 починили общую, и дубль убран. */

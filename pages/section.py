@@ -189,10 +189,15 @@ def sections_menu(active_key: str):
 
     return html.Div(
         [
-            # Пустая ячейка под кнопку ☰ — она лежит отдельным элементом
-            # снаружи полосы, чтобы оставаться видимой и при сворачивании
-            html.Div([html.Span(className="damu-side-abbr"),
-                      html.Span("Все разделы")], className="damu-side-head"),
+            # Кнопка ☰ — первый элемент списка; при сворачивании остаётся
+            # видимой, потому что живёт внутри той же полосы
+            html.Div([
+                html.Button("☰", id="section-sidebar-toggle",
+                            className="damu-side-toggle",
+                            **{"data-toggle-sidebar": "1",
+                               "aria-label": "Свернуть список разделов"}),
+                html.Span("Все разделы", className="damu-side-head-label"),
+            ], className="damu-side-head"),
             dbc.Nav(links, vertical=True, pills=True),
         ],
         className="damu-side-list",
@@ -248,7 +253,7 @@ def chart_stubs():
     return html.Div([
         html.Div("Колонки под этот разрез в таблице фактов заведены, "
                  "данных пока нет.",
-                 style={"fontSize": "0.75rem", "color": "rgba(32,30,29,.55)"}),
+                 style={"fontSize": "0.75rem", "color": "var(--damu-muted)"}),
         html.Div([html.Div(className="damu-stub-field") for _ in range(2)],
                  className="damu-stub-fields"),
     ], className="damu-kpi2")
@@ -365,13 +370,6 @@ def layout(key: str | None = None, **kwargs):
     return html.Div(
         [
             sections_menu(key),
-            # Кнопка сворачивания списка. Работает целиком в браузере:
-            # сворачивание — вопрос вида, а не данных, гонять его через
-            # сервер незачем
-            html.Button("☰", id="section-sidebar-toggle",
-                        className="damu-side-toggle",
-                        **{"data-toggle-sidebar": "1",
-                           "aria-label": "Свернуть список разделов"}),
             html.Div(
                 [
                     html.H2(f"{program} на {updated}", className="damu-sec-title"),
