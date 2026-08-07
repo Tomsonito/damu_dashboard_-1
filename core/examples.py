@@ -44,7 +44,7 @@ EXAMPLES = [
     {"key": "3", "source": "1c", "title": "Пример 3",
      "note": "Два столбца — инструменты слева, все программы справа"},
     {"key": "4", "source": "1d", "title": "Пример 4",
-     "note": "Компактные шкалы-полукруги и настоящая карта областей"},
+     "note": "Четыре разных дизайна карточки инструмента — выбрать один"},
     {"key": "5", "source": "доработка 1c", "title": "Пример 5",
      "note": "Тот же состав, что в примере 3: год квадратиками, "
              "без засечки темпа, читаемая тёмная тема"},
@@ -94,32 +94,51 @@ def num(value: float, decimals: int = 0) -> str:
     return text.replace(".", ",") if decimals else text
 
 
-def _points(values, width: float, height: float) -> list[tuple[float, float]]:
-    """Точки ломаной внутри бокса: первая слева, последняя справа.
+def _points(values, width: float, height: float,
+            slots: int | None = None) -> list[tuple[float, float]]:
+    """Точки ломаной внутри бокса.
 
     Масштаб от минимума к максимуму, а не от нуля: у месячных чисел разброс
     небольшой, и от нуля ломаная выродилась бы в прямую под потолком.
+
+    Два способа расставить точки по горизонтали:
+
+    - **без `slots`** — первая у левого края, последняя у правого. Так линия
+      занимает всю ширину; годится, когда подписей ровно столько же, сколько
+      значений, и крайние подписи прижаты к краям;
+    - **со `slots`** — точки стоят по ЦЕНТРАМ `slots` равных колонок. Нужно,
+      когда месяцев на подписи больше, чем значений: тогда каждая точка стоит
+      ровно над своей подписью, а линия честно обрывается там, где кончился
+      год. Без этого двенадцать подписей разъехались бы с семью точками,
+      и график читался бы неверно.
     """
     pad = 1.5
-    usable_w = width - 2 * pad
     usable_h = height - 2 * pad - 1
     low, high = min(values), max(values)
     spread = (high - low) or 1
-    step = usable_w / (len(values) - 1) if len(values) > 1 else 0
+    if slots:
+        step = width / slots
+        xs = [step * (i + 0.5) for i in range(len(values))]
+    else:
+        usable_w = width - 2 * pad
+        step = usable_w / (len(values) - 1) if len(values) > 1 else 0
+        xs = [pad + i * step for i in range(len(values))]
     return [
-        (pad + i * step, pad + usable_h - (v - low) / spread * usable_h)
+        (xs[i], pad + usable_h - (v - low) / spread * usable_h)
         for i, v in enumerate(values)
     ]
 
 
 def spark(values, color: str, width: float = 232, height: float = 34,
-          fill_opacity: float = 0.16, stroke: float = 1.75) -> str:
+          fill_opacity: float = 0.16, stroke: float = 1.75,
+          slots: int | None = None) -> str:
     """Спарклайн картинкой: ломаная плюс заливка под ней.
 
     `preserveAspectRatio="none"` — картинка тянется по ширине родителя,
     как в макете: спарклайн там занимает всю колонку, какой бы та ни была.
+    Поэтому `slots` работает и после растяжения: доли ширины сохраняются.
     """
-    pts = _points(values, width, height)
+    pts = _points(values, width, height, slots)
     line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
     area = (f"M{line.replace(' ', ' L')}"
             f" L{pts[-1][0]:.1f},{height} L{pts[0][0]:.1f},{height} Z")
@@ -132,6 +151,19 @@ def spark(values, color: str, width: float = 232, height: float = 34,
         f'stroke-width="{stroke}" stroke-linejoin="round"/>'
         f'{circles}</svg>'
     )
+
+
+#: Цвета ВНУТРИ картинок-SVG. Отдельные от переменных выше, и это не дубль.
+#:
+#: !! `var(--damu-*)` внутри `data:image/svg+xml` не работает: картинка —
+#: отдельный документ, переменные страницы туда не доходят, и остаётся
+#: только запасное значение из `var(...)`. То есть дорожка шкалы была бы
+#: светло-серой всегда, включая тёмную тему.
+#:
+#: Выход тот же, что у диаграмм (`NEUTRAL_INK` в `core/charts.py`):
+#: полупрозрачный серый читается и на светлой поверхности, и на тёмной.
+SVG_TRACK = "rgba(128,124,122,0.28)"
+SVG_MARK = "rgba(128,124,122,0.95)"
 
 
 def gauge(percent: float, pace: float, color: str,
@@ -150,10 +182,10 @@ def gauge(percent: float, pace: float, color: str,
     x2, y2 = _polar(pace, cx, cy, radius + 6.5)
     return _svg(
         f'<svg viewBox="0 0 {width} {height}" xmlns="http://www.w3.org/2000/svg">'
-        f'<path d="{track}" fill="none" stroke="{TRACK}" stroke-width="13"/>'
+        f'<path d="{track}" fill="none" stroke="{SVG_TRACK}" stroke-width="13"/>'
         f'<path d="{fill}" fill="none" stroke="{color}" stroke-width="13"/>'
         f'<line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" '
-        f'stroke="{INK}" stroke-width="2.5"/></svg>'
+        f'stroke="{SVG_MARK}" stroke-width="2.5"/></svg>'
     )
 
 

@@ -40,6 +40,10 @@ class Ctx:
     #: Раздел (колонка `program`). None — считать по всем разделам сразу:
     #: так смотрят главная и «Разбор». Страница раздела передаёт свой.
     program: str | None = None
+    #: Год, выбранный человеком в шапке. Совпадает с `year`, пока у показателя
+    #: есть данные за него; разошлись — `year` подставлен слоем данных,
+    #: и заголовок обязан про это сказать (см. `title`).
+    asked_year: int | None = None
 
     @property
     def meta(self) -> dict:
@@ -51,7 +55,13 @@ class Ctx:
 
     @property
     def title(self) -> str:
-        return f"{self.meta['title']} — {self.year} год"
+        head = f"{self.meta['title']} — {self.year} год"
+        if self.asked_year and self.asked_year != self.year:
+            # !! Пометка обязательна. Тихо подставить 2024-й там, где человек
+            # выбрал 2026-й, — худший вид ошибки: цифры выглядят свежими,
+            # график не пустой, и заметить подмену нечем
+            head += f" · за {self.asked_year} данных нет"
+        return head
 
     def scaled(self, df: pd.DataFrame, column: str = "value") -> pd.DataFrame:
         """Готовит колонки для показа.
@@ -102,6 +112,44 @@ def supports_log(chart_type: str) -> bool:
 NEUTRAL_INK = "rgba(128,124,122,1)"
 NEUTRAL_GRID = "rgba(128,124,122,0.25)"
 
+#: Сетка пунктиром, а не сплошной (просьба пользователя 07.08.2026).
+#: `dot` — точками; `dash` штрихами читается тяжелее и на графике
+#: с полосами начинает походить на отметку порога, а не на разметку.
+GRID_DASH = "dot"
+
+#: Пунктирная линия прозрачнее сплошной при той же заливке: половина её
+#: длины — пустота (замерено: штрих 3 px, пропуск 3 px). Поэтому у сетки
+#: своя прозрачность, чуть выше общей `NEUTRAL_GRID` — чтобы на экране
+#: она весила столько же, сколько весила сплошная. Нулевая линия остаётся
+#: на `NEUTRAL_GRID`: она сплошная, и добавлять ей веса не нужно.
+GRID_COLOR = "rgba(128,124,122,0.34)"
+
+
+def _grid_across_bars(fig: go.Figure) -> None:
+    """Оставляет сетку только ПОПЕРЁК полос, вдоль — убирает.
+
+    Просьба пользователя 07.08.2026: «без горизонтальных линий, вертикальные
+    можно оставить». Сказано про рейтинг регионов — там полосы лежат, и линии
+    вдоль них (по одной на каждую из двадцати областей) ничего не измеряют,
+    а только рябят.
+
+    Правило поэтому общее, но зависит от направления полос, а не от названия
+    оси: сетка нужна там, где значения, и не нужна там, где подписи.
+    У лежащих полос это значит «убрать горизонтальные», у стоящих — ровно
+    наоборот: подписи у них внизу, и лишними становятся вертикальные
+    (замерено на «Выдано гарантий — по годам»: 17 линий между годами).
+
+    Виды, собранные не из полос (точки, ящик, карта), не трогаем: у них
+    обе оси числовые, и сетка нужна на обеих.
+    """
+    bars = [t for t in fig.data if t.type == "bar"]
+    if not bars:
+        return
+    if all(getattr(t, "orientation", None) == "h" for t in bars):
+        fig.update_yaxes(showgrid=False)
+    elif all(getattr(t, "orientation", None) != "h" for t in bars):
+        fig.update_xaxes(showgrid=False)
+
 
 def build(chart_type: str, indicator: str, year, regions, log: bool = False,
           height: int | None = None, program: str | None = None) -> go.Figure:
@@ -113,12 +161,20 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
     вид оставляет свою, а если не просил — 700, как было.
     """
     entry = _REGISTRY.get(chart_type) or _REGISTRY["bar"]
+    # Год один на весь сайт, а показатели кончаются в разные годы: гарантии
+    # доходят до 2026-го, разрез СЭЭ по областям обрывается на 2024-м. Раньше
+    # несовпадение давало пустые оси, и понять, сломано это или данных правда
+    # нет, было нечем. Теперь слой данных подставляет ближайший год с числами,
+    # а заголовок пишет, что год подставлен (см. `Ctx.title`).
+    asked = int(year)
+    shown = data.resolve_year(indicator, asked, program)
     ctx = Ctx(
         indicator=indicator,
-        year=int(year),
+        year=shown if shown is not None else asked,
         regions=regions or None,
         log=bool(log) and entry["log_ok"],
         program=program,
+        asked_year=asked,
     )
     # Оформление сайта распространяется и на диаграммы: иначе страница была
     # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
@@ -153,9 +209,15 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
     )
     # Сетка и оси — полупрозрачным серым по той же причине: он читается
     # и на светлом, и на тёмном, а фиксированный цвет пришлось бы менять
-    # вместе с темой, то есть протаскивать её в каждый коллбэк
-    fig.update_xaxes(gridcolor=NEUTRAL_GRID, zerolinecolor=NEUTRAL_GRID)
-    fig.update_yaxes(gridcolor=NEUTRAL_GRID, zerolinecolor=NEUTRAL_GRID)
+    # вместе с темой, то есть протаскивать её в каждый коллбэк.
+    #
+    # Сама сетка пунктирная; нулевая линия остаётся сплошной — она не
+    # разметка, а начало отсчёта, и путать её с делениями не нужно
+    fig.update_xaxes(gridcolor=GRID_COLOR, griddash=GRID_DASH,
+                     zerolinecolor=NEUTRAL_GRID)
+    fig.update_yaxes(gridcolor=GRID_COLOR, griddash=GRID_DASH,
+                     zerolinecolor=NEUTRAL_GRID)
+    _grid_across_bars(fig)
 
     if height:
         # Пресет виджета сильнее собственной высоты вида: на экране из
@@ -367,6 +429,107 @@ def _message(text: str) -> go.Figure:
 
 
 # ─────────────────────────── Рейтинги ───────────────────────────
+
+
+
+#: Сколько знаков названия отрасли влезает в подпись, не сжимая сам график.
+#: Полное название остаётся в подсказке при наведении.
+INDUSTRY_LABEL_MAX = 32
+
+
+def _industry_label(name: str) -> str:
+    """Короткая подпись отрасли: буква секции ОКЭД и урезанное название.
+
+    В источнике названия длиной до 78 знаков («E-Водоснабжение;
+    канализационная система, контроль над сбором и распределением
+    отходов»). Целиком они съедали половину ширины графика, а сами полосы
+    сжимались в чёрточки; часть подписей при этом всё равно обрезалась
+    с левого края (замерено 07.08.2026).
+
+    Буква секции остаётся всегда: она короткая, стоит в начале и по ней
+    отрасль узнают те, кто работает с ОКЭД каждый день.
+    """
+    code, _, rest = str(name).partition("-")
+    if len(code) > 2 or not rest.strip():      # не вида «C-…» — берём как есть
+        code, rest = "", str(name)
+    rest = rest.strip()
+    if len(rest) > INDUSTRY_LABEL_MAX:
+        rest = rest[:INDUSTRY_LABEL_MAX - 1].rstrip(" ,;.") + "…"
+    return f"{code} · {rest}" if code else rest
+
+
+def _breakdown(column: str, shorten=None):
+    """Собирает вид «рейтинг по разрезу»: полосы с числом у каждой.
+
+    Один и тот же график нужен четырём разрезам — отрасли, банки,
+    субъектность, цели займа. Отличаются они только колонкой и тем, надо ли
+    сокращать подписи, поэтому вместо четырёх почти одинаковых функций
+    здесь одна, а `@chart` регистрирует её четыре раза с разными
+    параметрами.
+
+    Ось значений скрыта намеренно. Число подписано у каждой полосы, и ось
+    под ними повторяла бы ту же информацию второй раз — а места на неё
+    уходило столько, что подписи делений разворачивало вертикально
+    (было видно на скриншоте 07.08.2026). Полоса плюс её число читаются
+    без оси; за точным сравнением есть подсказка при наведении.
+    """
+
+    def builder(ctx: Ctx) -> go.Figure:
+        df = data.get_breakdown(ctx.indicator, ctx.year, column,
+                                regions=ctx.regions, program=ctx.program)
+        if df.empty:
+            return _message(NO_DATA)
+
+        df = ctx.scaled(df)
+        df["label"] = ([shorten(v) for v in df[column]] if shorten
+                       else df[column].astype(str))
+        return _breakdown_figure(df, ctx, column)
+
+    return builder
+
+
+def _breakdown_figure(df, ctx: Ctx, column: str) -> go.Figure:
+    fig = px.bar(
+        df, x="shown", y="label", orientation="h", text="текст",
+        custom_data=[column],
+        labels={"shown": ctx.unit, "label": ""}, title=ctx.title,
+    )
+    fig.update_traces(
+        textposition="outside",
+        # Подпись рисуется за краем области построения — иначе plotly
+        # прячет ту, что не влезла, и полоса остаётся без числа
+        cliponaxis=False,
+        textfont_size=11,
+        # Тонкие полосы с зазором: сплошная заливка во всю строку читается
+        # тяжело, а разницу длин видно одинаково при любой толщине
+        width=0.62,
+        marker_line_width=0,
+        hovertemplate="<b>%{customdata[0]}</b><br>%{text}<extra></extra>",
+    )
+    # Самая длинная полоса не должна упираться в край: справа от неё стоит
+    # число, и без запаса оно наезжает на границу карточки
+    top = float(df["shown"].max() or 0)
+    fig.update_xaxes(visible=False, range=[0, top * 1.22 if top else 1])
+    # `automargin` сам отводит место под подписи, какой бы длины они ни
+    # вышли после сокращения: у разных разрезов подписи разной длины.
+    # !! Поля здесь не задаём: `build()` ставит свои уже после этой функции,
+    # и всё, что мы напишем в `margin`, будет затёрто. Автополя оси
+    # переживают это — они прибавляются к заданным, а не заменяют их
+    fig.update_yaxes(categoryorder="total ascending", showgrid=False,
+                     automargin=True, ticksuffix="  ")
+    fig.update_layout(bargap=0.34)
+    return fig
+
+
+#: Четыре разреза одним видом. Порядок регистрации = порядок в списке
+#: «Виды диаграмм» настройщика виджетов.
+chart("industries", "Полосы — отрасли (ОКЭД)")(_breakdown("industry", _industry_label))
+chart("banks", "Полосы — БВУ (банки)")(_breakdown("bank"))
+chart("subjects", "Полосы — субъектность")(_breakdown("subject_type"))
+chart("purposes", "Полосы — цели займа")(_breakdown("loan_purpose"))
+#: Программа из самой выгрузки, а не раздел сайта — они лежат в разных
+#: колонках намеренно (см. `program` и `source_program` в разборщике).
+chart("programs", "Полосы — программы")(_breakdown("source_program"))
 
 
 @chart("bar", "Полосы — рейтинг")

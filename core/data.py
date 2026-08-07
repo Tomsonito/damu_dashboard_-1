@@ -173,7 +173,13 @@ def load_facts() -> pd.DataFrame:
     повторные вызовы получают копию из памяти, а не ходят на диск.
     Опубликовалась новая — ключ кэша сменился, факты перечитались.
     Поэтому свежесть не страдает: кэш не «протухает», а привязан к данным.
+
+    Поверх этого — память на время ОДНОГО запроса, см. `_request_memo`.
     """
+    memo = _request_memo()
+    if memo is not None and "facts" in memo:
+        return memo["facts"]
+
     version = get_published_version()
     if version == 0:
         # Тот же тип ошибки, что и при отсутствии файла: страницы уже умеют
@@ -182,7 +188,53 @@ def load_facts() -> pd.DataFrame:
             "В хранилище нет опубликованных данных. Запустите:\n"
             "  python -m etl.run   (первая загрузка публикуется сразу)"
         )
-    return _facts_cached(version, _demo_stamp())
+    df = _facts_cached(version, _demo_stamp(), FACTS_SHAPE)
+    if memo is not None:
+        memo["facts"] = df
+    return df
+
+
+#: !! Поднимите это число, если поменяли ФОРМУ таблицы в `_facts_cached`:
+#: колонки, типы, состав строк. Ключ кэша складывается из версии данных
+#: и отпечатка демо — про код он не знает ничего, поэтому после правки
+#: разбора кэш продолжает отдавать таблицу старой формы. Так и случилось
+#: 07.08.2026: колонки перевели в категории, замер показал прежние 177 МБ,
+#: и минуту было непонятно, почему правка «не работает».
+FACTS_SHAPE = 2
+
+
+def _request_memo() -> dict | None:
+    """Память на время одного HTTP-запроса. Вне запроса — `None`.
+
+    Зачем она поверх файлового кэша. Один вызов `load_facts()` стоит около
+    60 мс: два пробных запроса к DuckDB (номер версии и отпечаток демо)
+    плюс распаковка снимка из файлового кэша — 26 МБ через pickle. Само по
+    себе немного, но за отрисовку раздела СЭЭ функцию зовут **33 раза**
+    (двенадцать диаграмм и четыре карточки, каждая по своим показателям),
+    и это складывалось в 2 секунды из 2,7 (замерено 07.08.2026).
+
+    Почему именно запрос, а не процесс. Кэш нарочно сделан файловым, чтобы
+    воркеры Gunicorn делили его и не держали по своей копии фактов
+    (см. `core/cache.py`). Память на весь процесс вернула бы ту самую
+    копию на каждого воркера. А запрос — самый большой отрезок времени,
+    внутри которого данные заведомо не меняются: он живёт миллисекунды,
+    новая версия за это время появиться не может. Свежесть не страдает
+    вообще: следующий запрос снова спросит версию.
+
+    Вне веб-запроса (консоль, ETL, тесты) возвращается `None`, и всё
+    работает ровно как раньше.
+    """
+    try:
+        from flask import g, has_request_context
+    except ImportError:                         # flask не установлен
+        return None
+    if not has_request_context():
+        return None
+    store = getattr(g, "_damu_request_memo", None)
+    if store is None:
+        store = {}
+        g._damu_request_memo = store
+    return store
 
 
 def _demo_stamp() -> str:
@@ -202,8 +254,22 @@ def _demo_stamp() -> str:
     return f"{int(df.iloc[0]['n'])}@{df.iloc[0]['t']}"
 
 
+#: Колонки-разрезы: значений в них десятки, а строк сотни тысяч.
+#:
+#: !! `date` в список НЕ входит намеренно. У показателей с `agg: last`
+#: свёртка ищет последнюю дату через `idxmax`, а на неупорядоченной
+#: категории сравнение падает. Выигрыш от неё всё равно маленький —
+#: значений там втрое больше, чем в любом настоящем разрезе.
+CATEGORICAL = (
+    "indicator", "period", "region", "industry", "bank", "subject_type",
+    "loan_purpose", "instrument", "program", "source_program",
+    "source_file", "loaded_at",
+)
+
+
 @cache.memoize()
-def _facts_cached(version: int, demo: str) -> pd.DataFrame:
+def _facts_cached(version: int, demo: str, shape: int = 1) -> pd.DataFrame:
+    # `shape` в теле не нужен — он часть ключа кэша, см. FACTS_SHAPE
     # version — и ключ кэша, и фильтр: в таблице лежат снимки разных версий
     df = _query_storage(f"SELECT * EXCLUDE (version) FROM facts WHERE version = {version}")
     df["is_total"] = df["is_total"].astype(bool)
@@ -217,6 +283,16 @@ def _facts_cached(version: int, demo: str) -> pd.DataFrame:
         extra["is_total"] = extra["is_total"].astype(bool)
         df = pd.concat([df, extra], ignore_index=True)
 
+    # Разрезы — категориями, а не строками. Повод не в аккуратности,
+    # а в весе: когда 07.08.2026 к фактам добавились ОКЭД, БВУ,
+    # субъектность и цели займа, строк стало 157 тысяч вместо 28,
+    # таблица распухла до 197 МБ, а чтение из кэша — с 61 мс до 369.
+    # Категория хранит не саму строку в каждой ячейке, а номер в словаре
+    # значений: банков 108, отраслей 39, разделов 5. Замерено: 197 -> 5 МБ,
+    # результаты группировок совпали до копейки.
+    for column in CATEGORICAL:
+        if column in df.columns:
+            df[column] = df[column].astype("category")
     return df
 
 
@@ -288,6 +364,49 @@ def get_indicator_choices() -> list[dict]:
 def get_years() -> list[int]:
     """Годы, за которые есть данные, свежий первым."""
     return sorted(load_facts()["report_year"].unique().tolist(), reverse=True)
+
+
+def indicator_years(indicator: str, program: str | None = None) -> list[int]:
+    """Годы, за которые есть данные У ЭТОГО показателя, свежий первым.
+
+    Не то же самое, что `get_years()`: тот отвечает «какие годы вообще есть
+    в хранилище», а источники приходят разной длины. Гарантии и кредиты
+    доходят до 2026-го, разрез СЭЭ по областям обрывается на 2024-м —
+    и общий список годов про это ничего не знает.
+    """
+    df = _only_program(load_facts(), program)
+    df = df[(df.indicator == indicator) & df.value.notna()]
+    return sorted(df["report_year"].unique().tolist(), reverse=True)
+
+
+def resolve_year(indicator: str, year: int, program: str | None = None) -> int | None:
+    """Год, который реально можно показать: выбранный или ближайший с данными.
+
+    Зачем это нужно. Год выбирается один на весь сайт, а показатели кончаются
+    в разные годы. До 07.08.2026 несовпадение давало пустой экран: человек
+    открывал раздел и видел пустые оси, не понимая, сломано это или данных
+    правда нет.
+
+    Правило: выбранный год, если он есть; иначе **ближайший предыдущий**
+    с данными (2026 → 2025 → 2024 …). Если выбранный старше всех имеющихся,
+    берём самый старый — показать хоть что-то honestнее, чем пустая ось.
+
+    Возвращает `None`, только когда данных нет вовсе: показатель в реестре
+    описан, а строк по нему в хранилище не появилось. Тогда диаграмма
+    честно скажет «нет данных» — подставлять нечего.
+
+    !! Подставленный год ОБЯЗАН быть виден на экране. Тихо показать 2024-й
+    там, где человек выбрал 2026-й, — худший вид ошибки: цифры выглядят
+    свежими и никак не помечены. Пометку рисует `charts.build`.
+    """
+    years = indicator_years(indicator, program)
+    if not years:
+        return None
+    year = int(year)
+    if year in years:
+        return year
+    earlier = [y for y in years if y < year]
+    return int(earlier[0] if earlier else years[-1])
 
 
 def format_value(value: float, indicator: str) -> str:
@@ -376,14 +495,42 @@ def get_country_years(
 
     Отличие от `get_region_dynamics`: там строка на каждую область,
     здесь — на каждый год. Для виджета «как менялось в целом».
+
+    !! Считается ОДНИМ проходом по годам, а не вызовом `get_country_total`
+    в цикле. Так было до 07.08.2026, и это оказалось самым дорогим местом
+    на сайте: двадцать лет × (перечитать таблицу фактов + отфильтровать) —
+    2,2 секунды на одну диаграмму (замерено). На странице раздела таких
+    диаграмм четыре, и они одни давали 9 секунд из 10.
+
+    Логика повторяет `get_country_total` слово в слово, только фильтр по
+    году снят, а группировка идёт по паре (год, регион). Держать их
+    согласованными обязательно: разойдутся — «Годы» перестанут сходиться
+    с карточкой за тот же год.
     """
-    years = sorted(load_facts()["report_year"].unique().tolist())
-    rows = []
-    for year in years:
-        value = get_country_total(indicator, int(year), regions, program)
-        if value is not None:
-            rows.append({"report_year": int(year), "value": value})
-    return pd.DataFrame(rows, columns=["report_year", "value"])
+    df = load_facts()
+    selected = _only_program(df[df.indicator == indicator], program)
+    if selected.empty:
+        return pd.DataFrame(columns=["report_year", "value"])
+
+    # Официальная строка-итог годится, только когда смотрим всю страну:
+    # при выбранных областях она про другое (см. `get_country_total`)
+    official = selected[selected.is_total]
+    if not regions and not official.empty:
+        out = _aggregate(official, indicator, ["report_year"])
+    else:
+        per_region = selected[~selected.is_total]
+        if regions:
+            per_region = per_region[per_region.region.isin(regions)]
+        if per_region.empty:
+            return pd.DataFrame(columns=["report_year", "value"])
+        per_region = _aggregate(per_region, indicator, ["report_year", "region"])
+        how = get_indicator_meta(indicator).get("agg", "sum")
+        grouped = per_region.groupby("report_year", as_index=False)["value"]
+        out = grouped.mean() if how == "mean" else grouped.sum()
+
+    out = out[["report_year", "value"]].copy()
+    out["report_year"] = out["report_year"].astype(int)
+    return out.sort_values("report_year").reset_index(drop=True)
 
 
 def get_derived_percent(
@@ -495,15 +642,35 @@ def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
         kpi_indicators(set(df["indicator"].unique())) if program else cfg["kpi_order"]
     )
 
-    current = _country_totals(df, year)
-    previous = _country_totals(df, year - 1)
+    # Итоги считаются по годам, а год у каждого показателя теперь может быть
+    # свой: где-то данные кончились в 2024-м, где-то доходят до 2026-го
+    # (см. `resolve_year`). Считаем по требованию и запоминаем — иначе один
+    # и тот же год пересчитывался бы для каждой карточки заново
+    _totals_by_year: dict[int, dict[str, float]] = {}
+
+    def totals(y: int) -> dict[str, float]:
+        if y not in _totals_by_year:
+            _totals_by_year[y] = _country_totals(df, y)
+        return _totals_by_year[y]
+
+    def for_indicator(key: str) -> tuple[dict, dict, int]:
+        """Итоги за год этого показателя: сам год, он же минус один."""
+        effective = resolve_year(key, year, program) or int(year)
+        return totals(effective), totals(effective - 1), effective
 
     # Опубликованный ручной план. Если он введён, знаменатель производных
     # карточек берётся из него, а не из фактов: «Согласно плану %» начинает
     # считаться от годового плана, введённого админом. Плана нет — всё как
     # раньше, от суммы показателя-знаменателя за загруженные месяцы.
-    plan_current = get_published_plan(year)
-    plan_previous = get_published_plan(year - 1)
+    #
+    # План спрашивается за ТОТ ЖЕ год, за который посчитан факт: если факт
+    # подставлен за 2024-й, делить его на план 2026-го было бы бессмыслицей
+    _plan_by_year: dict[int, dict[str, float]] = {}
+
+    def plan(y: int) -> dict[str, float]:
+        if y not in _plan_by_year:
+            _plan_by_year[y] = get_published_plan(y)
+        return _plan_by_year[y]
 
     rows = []
     for indicator in order:
@@ -517,6 +684,10 @@ def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
             # и это правильно: производное надо считать из частей, иначе
             # однажды разойдётся с ними
             left, right = difference
+            # Год берём по левой части: производное считается из своих
+            # слагаемых, и подставлять им разные годы нельзя — разность
+            # плана 2026-го и факта 2024-го не значила бы ничего
+            current, previous, effective = for_indicator(left)
             if left not in current or right not in current:
                 continue
             value = current[left] - current[right]
@@ -530,6 +701,8 @@ def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
             # Подменяется только знаменатель: числитель — это факт,
             # и ручным планом он быть не может
             denom = derived["denominator"]
+            current, previous, effective = for_indicator(derived["numerator"])
+            plan_current, plan_previous = plan(effective), plan(effective - 1)
             cur_totals = {**current, **(
                 {denom: plan_current[denom]} if denom in plan_current else {}
             )}
@@ -546,6 +719,7 @@ def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
             change = None if before is None else value - before
             change_kind = "pp"
         else:
+            current, previous, effective = for_indicator(indicator)
             if indicator not in current:
                 continue
             value = current[indicator]
@@ -562,15 +736,103 @@ def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
                 "text": format_value(value, indicator),
                 "change_pct": change,
                 "change_kind": change_kind,
+                # За какой год карточка на самом деле посчитана. Совпадает
+                # с выбранным, пока у показателя есть данные за него;
+                # разошлось — карточка обязана это показать (см. kpi_card)
+                "year": effective,
             }
         )
-    return pd.DataFrame(rows)
+    # !! Колонки перечислены явно, и это не украшательство. Без них пустой
+    # список давал DataFrame ВООБЩЕ БЕЗ колонок, и первое же обращение
+    # `kpi["indicator"]` на стороне страницы падало с `KeyError`. Поймано
+    # 07.08.2026 на разделе, где ни у одного показателя не оказалось данных:
+    # страница обязана показать «показателей нет», а не уронить коллбэк
+    return pd.DataFrame(rows, columns=[
+        "indicator", "short", "title", "value", "text",
+        "change_pct", "change_kind", "year",
+    ])
 
 
 def get_region_choices() -> list[str]:
     """Регионы по алфавиту — для фильтра. Строка итога исключена."""
     df = load_facts()
     return sorted(df.loc[~df.is_total, "region"].unique().tolist())
+
+
+
+#: Чем разборщик помечает строку, у которой такого разреза нет.
+#:
+#: !! Пустую ячейку заменяют словом, а не оставляют пустой, потому что
+#: `groupby` в pandas молча выбрасывает группы с `NaN` в ключе — и часть
+#: строк исчезла бы из сумм без единой ошибки. Но показывать «Неизвестно»
+#: очередной отраслью тоже нельзя: это не значение, а признак того, что
+#: у источника такого разреза нет вовсе.
+NO_VALUE = "Неизвестно"
+
+
+def get_breakdown(
+    indicator: str,
+    year: int,
+    column: str,
+    limit: int | None = None,
+    regions: list[str] | None = None,
+    program: str | None = None,
+) -> pd.DataFrame:
+    """Значения показателя в разрезе любой колонки-разреза, по убыванию.
+
+    Одна функция на все разрезы: отрасли (ОКЭД), банки (БВУ), субъектность,
+    цели займа. Отличается от `get_regions` только тем, что колонка приходит
+    параметром — правило отбора и свёртки то же самое.
+
+    Разрез, которого у источника нет, отдаёт пустую таблицу (у таких строк
+    в колонке стоит `NO_VALUE`), и диаграмма честно пишет «нет данных»
+    вместо одной полосы «Неизвестно» во весь экран.
+    """
+    df = load_facts()
+    empty = pd.DataFrame(columns=[column, "value"])
+    if column not in df.columns:
+        return empty
+
+    selected = _only_program(
+        df[(df.indicator == indicator) & (df.report_year == year) & (~df.is_total)],
+        program,
+    )
+    if regions:
+        selected = selected[selected.region.isin(regions)]
+    selected = selected[selected[column].notna() & (selected[column] != NO_VALUE)]
+    if selected.empty:
+        return empty
+
+    selected = _aggregate(selected, indicator, [column])
+    selected = selected.sort_values("value", ascending=False)
+    if limit:
+        selected = selected.head(limit)
+    return selected
+
+
+def get_industries(
+    indicator: str,
+    year: int,
+    limit: int | None = None,
+    regions: list[str] | None = None,
+    program: str | None = None,
+) -> pd.DataFrame:
+    """Разрез по отраслям — частный случай `get_breakdown`."""
+    return get_breakdown(indicator, year, "industry", limit, regions, program)
+
+
+def has_breakdown(column: str, program: str | None = None) -> bool:
+    """Есть ли у раздела хоть одна строка с этим разрезом.
+
+    Нужна странице раздела: пока разреза нет, на его месте стоит макетная
+    карточка «как это будет выглядеть»; появился — карточку убираем, чтобы
+    выдуманные числа не стояли рядом с настоящими.
+    """
+    df = load_facts()
+    if column not in df.columns:
+        return False
+    rows = _only_program(df, program)
+    return bool((rows[column].notna() & (rows[column] != NO_VALUE)).any())
 
 
 def get_regions(

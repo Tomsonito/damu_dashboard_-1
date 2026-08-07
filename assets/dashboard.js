@@ -320,20 +320,20 @@
             if (btn26 && btn25 && rows26 && rows25) {
                 if (is2025) {
                     btn25.style.fontWeight = '700';
-                    btn25.style.background = 'var(--damu-accent, #17452e)';
-                    btn25.style.color = '#fff';
-                    
+                    btn25.style.background = 'var(--damu-accent, #1f7a4d)';
+                    btn25.style.color = 'var(--damu-on-accent, #fff)';
+
                     btn26.style.fontWeight = '500';
                     btn26.style.background = 'transparent';
                     btn26.style.color = 'var(--damu-muted)';
-                    
+
                     rows26.style.display = 'none';
                     rows25.style.display = 'block';
                 } else {
                     btn26.style.fontWeight = '700';
-                    btn26.style.background = 'var(--damu-accent, #17452e)';
-                    btn26.style.color = '#fff';
-                    
+                    btn26.style.background = 'var(--damu-accent, #1f7a4d)';
+                    btn26.style.color = 'var(--damu-on-accent, #fff)';
+
                     btn25.style.fontWeight = '500';
                     btn25.style.background = 'transparent';
                     btn25.style.color = 'var(--damu-muted)';

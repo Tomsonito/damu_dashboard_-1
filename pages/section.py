@@ -240,6 +240,15 @@ def kpi_card(row: pd.Series, pace: float | None = None) -> html.Div:
     elif row.get("note"):
         body.append(html.Div(row["note"], className="small text-muted mt-2"))
 
+    # !! Год, за который карточка на самом деле посчитана. Пишем его ТОЛЬКО
+    # когда он разошёлся с выбранным в шапке: у показателей данные кончаются
+    # в разные годы, и слой данных подставляет ближайший с числами
+    # (`data.resolve_year`). Молча показать 2024-й там, где выбран 2026-й, —
+    # худший вид ошибки: цифра выглядит свежей и ничем не помечена
+    if row.get("year") and row.get("year") != row.get("asked_year"):
+        body.append(html.Div(f"данные за {int(row['year'])} год",
+                             className="damu-kpi2-year"))
+
     return html.Div(body, className="damu-kpi2 h-100")
 
 
@@ -339,7 +348,13 @@ def section_block(section_key: str, tab: dict):
         # «regions», но про ОКЭД там речи нет — своя вкладка «Отрасли» рядом.
         # Проверяем название вкладки, а не её ключ: он для навигации,
         # а не про то, что на самом деле должно на ней быть
-        if "ОКЭД" in tab.get("title", ""):
+        # !! Карточка показывается, только пока настоящего разреза по ОКЭД
+        # у раздела НЕТ. С 07.08.2026 у гарантий, кредитов и Өрлеу он есть
+        # (приехал из тех же файлов), и держать рядом с настоящими полосами
+        # выдуманные числа было бы прямым обманом — плашка «Макетные числа»
+        # спасает от этого только пока настоящих цифр не существует вовсе
+        if "ОКЭД" in tab.get("title", "") and not data.has_breakdown(
+                "industry", widgets.program_of(section_key)):
             body.insert(0, dbc.Row(dbc.Col(oked_card(), lg=6),
                                    className="g-3 mb-3"))
     else:
@@ -482,6 +497,9 @@ def render_kpi(year, _version, key, ids):
         cards = []
         for _, row in kpi.iterrows():
             row = row.copy()
+            # Что выбрано в шапке — чтобы карточка знала, когда её год
+            # подставлен, и написала об этом
+            row["asked_year"] = int(year)
             # «Факт» получает полосу с засечкой, «Освоение» — строку про темп
             if row["indicator"] == "demo_fact":
                 row["share_pct"] = _fact_share(kpi)

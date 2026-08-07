@@ -55,6 +55,88 @@ indicators:
   # но другим методом и за другой период — цифры не сходятся. Это разные
   # показатели, сливать их в один нельзя.
 
+
+
+  see_output_industry:
+    title: "Выпуск продукции (в сумме, млрд тенге)"
+    short: "Выпуск продукции"
+    unit: "млрд тенге"
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "млрд ₸"
+    decimals: 0
+    agg: sum
+
+  see_jobs_created_industry:
+    title: "Количество созданных рабочих мест (ед.)"
+    short: "Создано раб. мест"
+    unit: "ед."
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "ед."
+    decimals: 0
+    agg: sum
+
+  see_jobs_saved_industry:
+    title: "Количество сохраненных рабочих мест (ед.)"
+    short: "Сохранено раб. мест"
+    unit: "ед."
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "ед."
+    decimals: 0
+    agg: sum
+
+  see_tax_revenue_industry:
+    title: "Налоговые поступления (в сумме, млрд тенге)"
+    short: "Налоговые поступления"
+    unit: "млрд тенге"
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "млрд ₸"
+    decimals: 0
+    agg: sum
+
+  see_output:
+    title: "Выпуск продукции (в сумме, млрд тенге)"
+    short: "Выпуск продукции"
+    unit: "млрд тенге"
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "млрд ₸"
+    decimals: 0
+    agg: sum
+
+  see_jobs_created:
+    title: "Количество созданных рабочих мест (ед.)"
+    short: "Создано раб. мест"
+    unit: "ед."
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "ед."
+    decimals: 0
+    agg: sum
+
+  see_jobs_saved:
+    title: "Количество сохраненных рабочих мест (ед.)"
+    short: "Сохранено раб. мест"
+    unit: "ед."
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "ед."
+    decimals: 0
+    agg: sum
+
+  see_tax_revenue:
+    title: "Налоговые поступления (в сумме, млрд тенге)"
+    short: "Налоговые поступления"
+    unit: "млрд тенге"
+    kind: flow_ytd
+    divisor: 1
+    display_unit: "млрд ₸"
+    decimals: 0
+    agg: sum
+
   budget_allocated:
     title: "Выделено бюджета"
     short: "План (выделено)"
@@ -100,6 +182,26 @@ indicators:
     unit: "млн тенге"
     kind: flow
     divisor: 1000
+    display_unit: "млрд ₸"
+    decimals: 2
+    agg: sum
+
+  credits_issued:
+    title: "Выдано кредитов"
+    short: "Кредиты"
+    unit: "тенге"
+    kind: flow
+    divisor: 1000000000
+    display_unit: "млрд ₸"
+    decimals: 2
+    agg: sum
+
+  guarantees_issued:
+    title: "Выдано гарантий"
+    short: "Гарантии"
+    unit: "тенге"
+    kind: flow
+    divisor: 1000000000
     display_unit: "млрд ₸"
     decimals: 2
     agg: sum
@@ -309,10 +411,10 @@ section_tabs_by_section:
   # места, налоговые поступления), только разрез снаружи разный.
   see:
     - {key: years,      title: "Динамика по годам",   data: true,
-       kpi: [demo_plan, demo_fact, demo_rest, demo_execution]}
+       kpi: [see_output, see_jobs_created, see_tax_revenue, see_jobs_saved]}
        # 4 диаграммы: выпуск продукции (млрд ₸) · созданные раб. места (ед.)
        # · налоговые поступления (млрд ₸) · сохранённые раб. места (ед.)
-    - {key: industries, title: "Отрасли",              data: false}
+    - {key: industries, title: "Отрасли",              data: true}
        # те же 4 диаграммы, разрез по отраслям
     - {key: regions,    title: "Регионы",              data: true}
        # те же 4 диаграммы, разрез по регионам
@@ -322,11 +424,11 @@ section_tabs_by_section:
   # только с числом диаграмм и показателей из документа в комментариях.
   guarantee:
     - {key: years,       title: "Динамика по годам",     data: true,
-       kpi: [demo_plan, demo_fact, demo_rest, demo_execution]}
+       kpi: [guarantees_issued]}
        # 1 диаграмма (динамика по годам) + 4 показателя: проекты (ед.) ·
        # уникальные заёмщики (ед.) · сумма кредитов (млрд ₸) · сумма
        # гарантий (млрд ₸)
-    - {key: programs,    title: "Программа/цели займа",  data: false}
+    - {key: programs,    title: "Программа/цели займа",  data: true}
        # 2 диаграммы (программы · цели займа) + те же 4 показателя
     - {key: plan,        title: "План/освоение",         data: false, abbr: "ПО"}
        # 4 диаграммы: программы (млрд ₸) · финансовые институты (млрд ₸,
@@ -334,7 +436,7 @@ section_tabs_by_section:
        # остаток · % исполнения (млрд ₸ / %)
     - {key: regions,     title: "ОКЭД/Регионы",          data: true}
        # 2 диаграммы (виды деятельности · регионы) + те же 4 показателя
-    - {key: banks,       title: "БВУ/субъектность",      data: false}
+    - {key: banks,       title: "БВУ/субъектность",      data: true}
        # 2 диаграммы (финансовые институты · субъектность) + те же 4 показателя
     - {key: gf1_limits,  title: "Лимиты",        group: "ГФ1", data: false}
        # 1 таблица: распределение лимитов на БВУ по ГФ1 (млн ₸) + 4 показателя:
@@ -375,16 +477,16 @@ section_tabs_by_section:
   # диаграммы в источнике нет и по документу.
   credit:
     - {key: years,    title: "Динамика по годам",    data: true,
-       kpi: [demo_plan, demo_fact, demo_rest, demo_execution]}
+       kpi: [credits_issued]}
        # 1 диаграмма (динамика по годам) + 2 показателя: уникальные
        # заёмщики (ед.) · сумма кредитов итого (млрд ₸)
-    - {key: programs, title: "Программы/Цели займа", data: false}
+    - {key: programs, title: "Программы/Цели займа", data: true}
        # 3 диаграммы: программы · цели займа · (третья не описана) +
        # 3 показателя: уникалы · сумма кредитов итого · сумма кредитов Өрлеу
     - {key: regions,  title: "ОКЭД/Регионы",         data: true}
        # 3 диаграммы: регионы · виды деятельности · (третья не описана) +
        # те же 3 показателя
-    - {key: banks,    title: "БВУ/Субъектность",     data: false}
+    - {key: banks,    title: "БВУ/Субъектность",     data: true}
        # 3 диаграммы: финансовые институты · субъектность ·
        # (третья не описана) + те же 3 показателя
 
@@ -392,13 +494,13 @@ section_tabs_by_section:
   # там же, отдельным показателем), но и самостоятельный раздел с тремя
   # вкладками — тот же приём, что у ГФ1/ГФ2.
   orleu:
-    - {key: status,  title: "Текущий статус",             data: false}
+    - {key: status,  title: "Текущий статус",             data: true, kpi: [credits_issued]}
        # 2 диаграммы: размещение · выдано + 2 показателя: уникалы (ед.) ·
        # сумма кредитов итого (млрд ₸)
-    - {key: terms,   title: "Цели займа/БВУ/Субъектность", data: false}
+    - {key: terms,   title: "Цели займа/БВУ/Субъектность", data: true, kpi: [credits_issued]}
        # 4 диаграммы: программы · цели займа · субъектность ·
        # финансовые институты + те же 2 показателя
-    - {key: regions, title: "ОКЭД/Регионы",               data: true}
+    - {key: regions, title: "ОКЭД/Регионы",               data: true, kpi: [credits_issued]}
        # 2 диаграммы: ОКЭД · регионы + те же 2 показателя
 
   # Суб. выдача (субсидирование) — семь вкладок, «Іскер Аймақ» в группе
@@ -837,20 +939,83 @@ section_widgets_by_page:
   # `years_total` на «Факт» — тот же принцип, что у kpi-карточек этой
   # вкладки: показывает динамику по годам честно, под своей подписью,
   # не выдавая её за то, чего документ на самом деле просит.
-  see:years:           [{chart: years_total, indicator: demo_fact, size: large}]
-  guarantee:years:     [{chart: years_total, indicator: demo_fact, size: large}]
-  credit:years:        [{chart: years_total, indicator: demo_fact, size: large}]
+  # !! Размер здесь — ключ из `widget_sizes` выше: small / medium / large.
+  # Стояло `normal`, такого пресета нет, и `size_meta` молча подставлял
+  # средний. Ошибки не было, но и настройка не действовала: чтобы поменять
+  # размер, надо писать существующее имя.
+  see:years:
+    - {chart: years_total, indicator: see_output, size: medium}
+    - {chart: years_total, indicator: see_jobs_created, size: medium}
+    - {chart: years_total, indicator: see_tax_revenue, size: medium}
+    - {chart: years_total, indicator: see_jobs_saved, size: medium}
+  guarantee:years:     [{chart: years_total, indicator: guarantees_issued, size: large}]
+  credit:years:        [{chart: years_total, indicator: credits_issued, size: large}]
   subsidy:years:       [{chart: years_total, indicator: demo_fact, size: large}]
 
   # «Регионы»/«ОКЭД и регионы» — единственная настоящая диаграмма, которую
   # документ здесь называет и на которую есть данные: разбивка по областям.
   # ОКЭД (вторая половина смысла у большинства этих вкладок) — по-прежнему
   # макетная карточка `oked_card()` в pages/section.py, не виджет.
-  see:regions:          [{chart: bar, indicator: demo_fact, size: large}]
-  guarantee:regions:    [{chart: bar, indicator: demo_fact, size: large}]
+  see:regions:
+    - {chart: bar, indicator: see_output, size: medium}
+    - {chart: bar, indicator: see_jobs_created, size: medium}
+    - {chart: bar, indicator: see_tax_revenue, size: medium}
+    - {chart: bar, indicator: see_jobs_saved, size: medium}
+  # Отрасли — во всю ширину (large), а не по две в ряд, и это не про красоту.
+  # Категорий девятнадцать, у каждой длинное название: в половинной колонке
+  # высотой 420 px на строку остаётся ~17 px, подписи налезают друг на друга,
+  # а часть их plotly просто прячет. Во всю ширину — 700 px на 19 строк
+  # (~31 px) и вдвое больше места под сами названия.
+  see:industries:
+    - {chart: industries, indicator: see_output_industry, size: large}
+    - {chart: industries, indicator: see_jobs_created_industry, size: large}
+    - {chart: industries, indicator: see_tax_revenue_industry, size: large}
+    - {chart: industries, indicator: see_jobs_saved_industry, size: large}
+  # !! Ключ «раздел:вкладка» должен встречаться в этом блоке РОВНО ОДИН РАЗ.
+  # YAML на дубль не ругается — молча побеждает последний. Поймано
+  # 07.08.2026: `orleu:terms` оказался объявлен дважды, и вкладка «Цели
+  # займа/БВУ/Субъектность» показывала один график по областям вместо
+  # четырёх разрезов. Ошибки при этом не было нигде.
+  #
+  # Разрезы, приехавшие 07.08.2026 из тех же файлов: ОКЭД, БВУ,
+  # субъектность и цели займа лежали в выгрузках с самого начала, разборщик
+  # просто читал из них четыре колонки из шестнадцати. Вкладки под них уже
+  # были нарисованы по «Описанию разделов» и стояли с заглушкой.
+  #
+  # Отрасли — во всю ширину (категорий много, подписи длинные), остальные
+  # по две в ряд: банков полтора десятка, а субъектностей и целей по три-
+  # четыре — им большая карточка не нужна.
+  guarantee:regions:
+    - {chart: bar,        indicator: guarantees_issued, size: medium}
+    - {chart: industries, indicator: guarantees_issued, size: medium}
+  guarantee:programs:
+    - {chart: programs,   indicator: guarantees_issued, size: medium}
+    - {chart: purposes,   indicator: guarantees_issued, size: medium}
+  guarantee:banks:
+    - {chart: banks,      indicator: guarantees_issued, size: medium}
+    - {chart: subjects,   indicator: guarantees_issued, size: medium}
+  credit:programs:
+    - {chart: programs,   indicator: credits_issued, size: medium}
+    - {chart: purposes,   indicator: credits_issued, size: medium}
+  credit:banks:
+    - {chart: banks,      indicator: credits_issued, size: medium}
+    - {chart: subjects,   indicator: credits_issued, size: medium}
+  # Өрлеу: вкладки назывались «Цели займа/БВУ/Субъектность» и «ОКЭД/Регионы»,
+  # а показывали трижды один и тот же график по областям — своих виджетов
+  # у них не было, и брался общий набор
+  orleu:terms:
+    - {chart: purposes,   indicator: credits_issued, size: medium}
+    - {chart: banks,      indicator: credits_issued, size: medium}
+    - {chart: subjects,   indicator: credits_issued, size: medium}
+    - {chart: programs,   indicator: credits_issued, size: medium}
   guarantee_debt:regions: [{chart: bar, indicator: demo_fact, size: large}]
-  credit:regions:       [{chart: bar, indicator: demo_fact, size: large}]
-  orleu:regions:        [{chart: bar, indicator: demo_fact, size: large}]
+  credit:regions:
+    - {chart: bar,        indicator: credits_issued, size: medium}
+    - {chart: industries, indicator: credits_issued, size: medium}
+  orleu:status:         [{chart: bar, indicator: credits_issued, size: large}]
+  orleu:regions:
+    - {chart: bar,        indicator: credits_issued, size: medium}
+    - {chart: industries, indicator: credits_issued, size: medium}
   subsidy:regions:      [{chart: bar, indicator: demo_fact, size: large}]
   subsidy_debt:regions: [{chart: bar, indicator: demo_fact, size: large}]
   subsidy_pay:regions:  [{chart: bar, indicator: demo_fact, size: large}]

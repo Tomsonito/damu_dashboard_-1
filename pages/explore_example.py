@@ -72,6 +72,13 @@ def _instruments() -> list[dict]:
             "status_color": GREEN if n["on_track"] else LATE,
             "status": "В графике" if n["on_track"] else "Отставание",
             "gap_short": ("+" if n["on_track"] else "−") + num(abs(n["gap"]), 1) + " п.п.",
+            # Словами, а не знаком «+»: в прежней карточке стояло
+            # «от плана +27,1 п.п.» — плюс к чему и от чего, приходилось
+            # додумывать. Знаковая запись осталась там, где рядом есть
+            # подпись, объясняющая её смысл
+            "pace_phrase": ("быстрее плана на " if n["on_track"]
+                            else "отстаёт от плана на ")
+                           + num(abs(n["gap"]), 1) + " п.п.",
         })
     return out
 
@@ -123,11 +130,13 @@ def _bar(width, color, height=5, track=TRACK, opacity=None, extra=None):
     return html.Div(html.Div(style=fill), style=style)
 
 
-def _paced_bar(percent_width, pace_left, color, height=12, track=TRACK):
-    """Полоса «план → факт» с засечкой ожидаемого темпа.
+def _paced_bar(percent_width, color, height=12, track=TRACK):
+    """Полоса «план → факт»: дорожка во весь план, заливка по факту.
 
-    Три числа в одной графике: сколько плана, сколько факта и где сейчас
-    должен был быть факт, если осваивать ровно.
+    !! Засечки ожидаемого темпа здесь НЕТ, хотя параметр `pace_left` до
+    07.08.2026 в подписи стоял: сама засечка была убрана раньше (просьба
+    пользователя, она же отличает пример 5 от третьего), а параметр остался
+    и ничего не делал. Убран, чтобы не выглядел работающим.
     """
     return html.Div(
         [
@@ -154,20 +163,40 @@ def _status(item, size="11px", dot=7):
     )
 
 
+def _mock_badge():
+    """Плашка «Макетные числа» — одна на все примеры.
+
+    Цвета взяты переменными второго цвета темы — ровно те же, что у класса
+    `.damu-mock-badge` на главной. Раньше здесь стояло `#6a531c` значением,
+    и в тёмной теме плашка была тёмно-коричневой на тёмном (тот же промах,
+    что чинили на главной 04.08.2026).
+    """
+    return html.Span(
+        "Макетные числа",
+        title="Разрезов по инструментам в хранилище пока нет — числа из эскиза",
+        style={"fontSize": "8.5px", "fontWeight": 700, "letterSpacing": ".1em",
+               "textTransform": "uppercase", "whiteSpace": "nowrap",
+               "color": "var(--damu-accent-2-dark, #6a531c)",
+               "border": "1px solid var(--damu-accent-2, #b08a2e)",
+               "padding": "2px 6px"},
+    )
+
+
 def _title_row(pace_note=None, right=None):
-    """Строка заголовка: «Освоение плана», годы, плашка макетных чисел."""
+    """Строка заголовка: «Освоение плана», годы, плашка макетных чисел.
+
+    Мелкая нарочно (07.08.2026, просьба пользователя — «сделать меньше,
+    как в примере 1»). Заголовок примера — подпись к сравниваемой раскладке,
+    а не самостоятельный экран: крупная H1 в 19 px забирала внимание у того,
+    ради чего примеры и существуют. Размеры взяты у примера 1, где заголовок
+    был мелким с самого начала.
+    """
     children = [
         html.H1("Освоение плана",
-                style={"margin": 0, "fontSize": "19px", "fontWeight": 800,
-                       "letterSpacing": "-0.015em"}),
+                style={"margin": 0, "fontSize": "15px", "fontWeight": 900,
+                       "letterSpacing": ".05em", "textTransform": "uppercase"}),
         _year_switch(),
-        html.Span(
-            "Макетные числа",
-            title="Разрезов по инструментам в хранилище пока нет — числа из эскиза",
-            style={"fontSize": "9.5px", "fontWeight": 700, "letterSpacing": ".1em",
-                   "textTransform": "uppercase", "color": "#6a531c",
-                   "border": f"1px solid {GOLD}", "padding": "3px 7px"},
-        ),
+        _mock_badge(),
     ]
     if pace_note:
         children.append(html.Div(pace_note, style={"marginLeft": "auto",
@@ -175,25 +204,35 @@ def _title_row(pace_note=None, right=None):
     if right is not None:
         children.append(right)
     return html.Div(children, style={"display": "flex", "alignItems": "center",
-                                     "gap": "16px"})
+                                     "gap": "12px"})
 
 
 def _year_switch():
-    """Переключатель годов из макета. В примерах он **не работает**.
+    """Переключатель годов из макета.
 
-    Оставлен нарочно: он часть раскладки, которую и оценивают. Чтобы кнопка
-    не выглядела сломанной, про это написано в подсказке при наведении.
+    В примерах 3 и 5 он **работает** (обработчик в `assets/dashboard.js`
+    прячет один набор строк и показывает другой), в примерах 1 и 4 — нет:
+    там строки нарисованы один раз, и переключать нечего. Оставлен во всех
+    четырёх нарочно — он часть раскладки, которую и оценивают.
+
+    Размер мелкий: заголовок примера должен быть подписью, а не вывеской.
+    Раньше пример 1 добивался того же, ужимая обычный переключатель через
+    `transform: scale(0.8)` — но трансформация уменьшает картинку, а не
+    место под неё, и рядом оставалась дырка в четверть ширины.
     """
-    common = {"fontFamily": "inherit", "fontSize": "13px", "padding": "5px 16px",
-              "border": "none", "cursor": "default"}
+    common = {"fontFamily": "inherit", "fontSize": "11.5px",
+              "padding": "3px 13px", "border": "none", "cursor": "pointer"}
     return html.Div(
         [
-            html.Span("2026", id="damu-btn-2026", style={**common, "fontWeight": 700,
-                                     "background": GREEN, "color": "#fff", "cursor": "pointer"}),
-            html.Span("2025", id="damu-btn-2025", style={**common, "fontWeight": 500,
-                                     "borderLeft": "1px solid var(--damu-divider)",
-                                     "background": "transparent",
-                                     "color": "var(--damu-muted)", "cursor": "pointer"}),
+            html.Span("2026", id="damu-btn-2026",
+                      style={**common, "fontWeight": 700,
+                             "background": "var(--damu-accent, #1f7a4d)",
+                             "color": "var(--damu-on-accent, #fff)"}),
+            html.Span("2025", id="damu-btn-2025",
+                      style={**common, "fontWeight": 500,
+                             "borderLeft": "1px solid var(--damu-divider)",
+                             "background": "transparent",
+                             "color": "var(--damu-muted)"}),
         ],
         id="damu-year-toggle",
         title="Нажмите для переключения года",
@@ -206,11 +245,71 @@ def _pace_note(items) -> str:
     return f"прошло {day} из {total} дней года · ожидаемый темп {num(items[0]['pace'], 1)} %"
 
 
-def _card(children, extra=None):
+def _card(children, extra=None, klass=None):
     """Карточка-поверхность дизайн-системы."""
     style = {"background": SURFACE, "boxShadow": SHADOW}
     style.update(extra or {})
-    return html.Div(children, style=style)
+    return html.Div(children, className=klass, style=style)
+
+
+def _dyn_toggle(extra=None):
+    """Кнопка «Показать динамику» — одна на весь пример.
+
+    !! id и обе подписи те же, что были у примера 3, и это единственное,
+    на что смотрит обработчик в `assets/dashboard.js`. Он идёт вверх
+    от кнопки до первого предка, внутри которого лежит `.damu-proj-dynamics`,
+    вешает на него класс `damu-dyn-open` — и дальше всё делает CSS. Поэтому
+    кнопку можно ставить куда угодно: в шапку колонки (пример 1), в заголовок
+    страницы (пример 4) или в шапку таблицы (примеры 3 и 5). Своя подпись
+    у примера была бы затёрта: текст кнопки при нажатии переписывает JS.
+    """
+    style = {"fontSize": "10px", "fontWeight": 600, "letterSpacing": "normal",
+             "textTransform": "none", "whiteSpace": "nowrap", "cursor": "pointer",
+             "color": "var(--damu-ink)", "background": "var(--damu-track)",
+             "padding": "4px 12px"}
+    style.update(extra or {})
+    return html.Span("Показать динамику ▾", id="damu-dyn-toggle", n_clicks=0,
+                     style=style)
+
+
+def _month_bars(values, labels, color, bar_h=34, gap="4px", font="9px"):
+    """Столбики по месяцам: число сверху, дорожка со столбиком, месяц снизу.
+
+    Дорожка есть у КАЖДОГО месяца из `labels`, в том числе у ещё не
+    наступившего, — у того она просто пустая, а вместо числа прочерк.
+    Так неполный год виден как неполный, а не как более короткий: тот же
+    приём, что у клеток примера 5. Пропускать будущие месяцы нельзя —
+    двенадцать месяцев на экране должны остаться двенадцатью.
+
+    Столбик растёт внутри дорожки, а не сам по себе: у дорожки высота
+    постоянная, поэтому строка не скачет от месяца к месяцу и ничего
+    не вылезает за отведённое место (в примере 4 до 07.08.2026 столбики
+    рисовались высотой до 65 px в коробке высотой 46 и налезали на подпись).
+    """
+    top = max(values) or 1
+    columns = []
+    for i, label in enumerate(labels):
+        value = values[i] if i < len(values) else None
+        bar = (html.Div(style={"height": f"{max(2, round(value / top * bar_h))}px",
+                               "background": color})
+               if value is not None else None)
+        columns.append(html.Div(
+            [
+                html.Div(num(value) if value is not None else "—",
+                         style={"fontSize": font, "fontWeight": 700, "lineHeight": 1,
+                                "color": INK if value is not None else PALE,
+                                "fontVariantNumeric": "tabular-nums"}),
+                html.Div(bar, style={"height": f"{bar_h}px", "marginTop": "4px",
+                                     "background": TRACK, "display": "flex",
+                                     "flexDirection": "column",
+                                     "justifyContent": "flex-end"}),
+                html.Div(label, style={"fontSize": font, "lineHeight": 1,
+                                       "color": PALE, "marginTop": "4px"}),
+            ],
+            style={"flex": 1, "minWidth": 0, "textAlign": "center"},
+        ))
+    return html.Div(columns, style={"display": "flex", "alignItems": "flex-end",
+                                    "gap": gap})
 
 
 def _card_head(title, note=None, right=None, size="15px", pad="13px 20px 11px"):
@@ -236,7 +335,7 @@ def _legend(long=22, short=12):
     return html.Div(
         [one(long, "Освоено, млрд ₸"), one(short, "Проектов, шт")],
         style={"marginLeft": "auto", "display": "flex", "alignItems": "center",
-               "gap": "16px", "fontSize": "11px", "color": "rgba(32,30,29,.55)"},
+               "gap": "16px", "fontSize": "11px", "color": MUTED},
     )
 
 
@@ -249,7 +348,7 @@ def _programs_card(columns, per_row, grid, row_height, font_size,
             html.Div(
                 [
                     html.Span(row["name"], style={
-                        "color": "rgba(32,30,29,.8)", "overflow": "hidden",
+                        "color": INK, "overflow": "hidden",
                         "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
                     _bar(row["amount_width"], column["color"], height=6),
                     html.Span(row["amount"], style={
@@ -257,7 +356,7 @@ def _programs_card(columns, per_row, grid, row_height, font_size,
                         "fontVariantNumeric": "tabular-nums"}),
                     _bar(row["count_width"], column["color"], height=6, opacity=".45"),
                     html.Span(row["count"], style={
-                        "textAlign": "right", "color": "rgba(32,30,29,.6)",
+                        "textAlign": "right", "color": MUTED,
                         "fontVariantNumeric": "tabular-nums"}),
                 ],
                 style={"display": "grid", "gridTemplateColumns": grid,
@@ -298,19 +397,94 @@ def _programs_card(columns, per_row, grid, row_height, font_size,
 
 
 # ──────────────────────── Пример 1 · ровная сетка ────────────────────────
+#
+# Ширина колонки «Динамика» лежит в переменной `--dyn-w`, а соседние колонки
+# заданы долями (`fr`) с маленьким минимумом. Поэтому при раскрытии динамики
+# они сжимаются, и «Факт, млрд ₸» уезжает влево, освобождая место, — то же
+# движение, что в примере 5, только там его делает flex, а здесь grid.
+#
+# Значения переменной (232 px свёрнуто, 340 px раскрыто) — в `custom.css`,
+# блок «Пример 1»: их переключает класс `damu-dyn-open`, который вешает
+# на карточку общий обработчик кнопки, а он живёт в браузере, не в Python.
 
-GRID_1 = "236px 132px 128px 1fr 158px 96px 232px 116px"
+GRID_1 = ("minmax(130px,1.15fr) 112px 88px minmax(80px,1fr) "
+          "128px 84px var(--dyn-w,232px) 100px")
+
+
+def _spark_months(values, labels, color, font="10px", label_font="7.5px"):
+    """Спарклайн и подписи месяцев под ним: месяц, под ним число.
+
+    Когда подписей БОЛЬШЕ, чем значений (год показан целиком, а закрылись
+    не все месяцы), точки ставятся по центрам месячных колонок — тогда
+    каждая стоит ровно над своей подписью, а линия честно обрывается там,
+    где кончился год. У ненаступивших месяцев вместо числа прочерк.
+
+    Когда подписей столько же, сколько значений, точки стоят от края
+    до края, а крайние подписи прижаты к краям — так линия занимает
+    всю ширину колонки, как в макете.
+    """
+    slots = len(labels) if len(labels) != len(values) else None
+    columns = []
+    for i, label in enumerate(labels):
+        value = values[i] if i < len(values) else None
+        align = "center"
+        if slots is None:
+            align = ("left" if i == 0
+                     else "right" if i == len(labels) - 1 else "center")
+        columns.append(html.Div(
+            [
+                html.Div(label, style={
+                    "fontSize": label_font, "textTransform": "uppercase",
+                    "opacity": 0.6, "marginBottom": "2px",
+                    "letterSpacing": "0.05em"}),
+                html.Div(num(value) if value is not None else "—"),
+            ],
+            style={"flex": 1, "minWidth": 0, "textAlign": align},
+        ))
+    return html.Div([
+        html.Img(src=examples.spark(values, color, 232, 34, slots=slots),
+                 style={"display": "block", "width": "100%", "height": "34px"}),
+        html.Div(columns, style={
+            "display": "flex", "justifyContent": "space-between",
+            "marginTop": "4px", "fontSize": font, "color": PALE,
+            "fontVariantNumeric": "tabular-nums", "fontWeight": 600}),
+    ])
+
+
+def _ex1_dynamics(item: dict) -> html.Div:
+    """Колонка «Динамика» в двух состояниях: свёрнутом и раскрытом.
+
+    График в обоих один и тот же — спарклайн (просьба пользователя
+    07.08.2026: «динамику за 12 месяцев можно оставлять в таком же
+    графике»). Меняется только охват: шесть последних закрытых месяцев
+    или весь год двенадцатью колонками.
+    """
+    money = list(item["money_by_month"])
+    return html.Div(
+        [
+            html.Div(_spark_months(money[-6:], mockup.MONTHS7[-6:], item["color"]),
+                     className="damu-proj-default"),
+            html.Div(_spark_months(money, mockup.MONTHS12, item["color"],
+                                   font="9px", label_font="7px"),
+                     className="damu-proj-dynamics"),
+        ],
+        style={"minWidth": 0},
+    )
 
 
 def _example_1():
     items = _instruments()
     head = html.Div(
-        [html.Div(t, style={"textAlign": a}) for t, a in [
-            ("Инструмент", "left"), ("Факт, млрд ₸", "right"),
-            ("Выполнение", "right"), ("План → факт", "left"),
-            ("Проекты факт / план", "right"), ("Уникальных", "right"),
-            ("Динамика Фев → Июл", "left"), ("Статус", "right"),
-        ]],
+        [
+            *[html.Div(t, style={"textAlign": a}) for t, a in [
+                ("Инструмент", "left"), ("Факт, млрд ₸", "right"),
+                ("Выполнение", "right"), ("План → факт", "left"),
+                ("Проекты факт / план", "right"), ("Уникальных", "right"),
+            ]],
+            html.Div([html.Span("Динамика"), _dyn_toggle({"marginLeft": "auto"})],
+                     style={"display": "flex", "alignItems": "center", "gap": "8px"}),
+            html.Div("Статус", style={"textAlign": "right"}),
+        ],
         style={"display": "grid", "gridTemplateColumns": GRID_1, "alignItems": "end",
                "gap": "0 16px", "padding": "12px 20px 8px", "fontSize": "9.5px",
                "fontWeight": 700, "letterSpacing": ".09em", "textTransform": "uppercase",
@@ -325,15 +499,18 @@ def _example_1():
                     html.Span(style={"width": "4px", "height": "30px",
                                      "background": it["color"], "flex": "none"}),
                     html.Div([
-                        html.Div(it["title"], style={"fontSize": "15px",
-                                                     "fontWeight": 700,
-                                                     "letterSpacing": "-0.01em"}),
+                        html.Div(it["title"], style={
+                            "fontSize": "15px", "fontWeight": 700,
+                            "letterSpacing": "-0.01em", "whiteSpace": "nowrap",
+                            "overflow": "hidden", "textOverflow": "ellipsis"}),
                         html.Div(f"план {num(it['plan'])} млрд ₸",
-                                 style={"fontSize": "11.5px", "color": MUTED}),
-                    ]),
-                ], style={"display": "flex", "alignItems": "center", "gap": "10px"}),
+                                 style={"fontSize": "11.5px", "color": MUTED,
+                                        "whiteSpace": "nowrap"}),
+                    ], style={"minWidth": 0}),
+                ], style={"display": "flex", "alignItems": "center", "gap": "10px",
+                          "minWidth": 0}),
                 html.Div(html.Span(num(it["fact"]), style={
-                    "fontSize": "24px", "fontWeight": 800, "letterSpacing": "-0.02em",
+                    "fontSize": "23px", "fontWeight": 800, "letterSpacing": "-0.02em",
                     "fontVariantNumeric": "tabular-nums"}), style={"textAlign": "right"}),
                 html.Div([
                     html.Div(f"{num(it['percent'], 1)} %", style={
@@ -341,13 +518,13 @@ def _example_1():
                         "fontVariantNumeric": "tabular-nums"}),
                 ], style={"textAlign": "right"}),
                 html.Div([
-                    _paced_bar(f"{min(it['percent'], 100):.1f}%",
-                               f"{it['pace']:.1f}%", it["color"], height=14),
+                    _paced_bar(f"{min(it['percent'], 100):.1f}%", it["color"],
+                               height=14),
                     html.Div([html.Span("0"), html.Span(f"{num(it['plan'])} млрд ₸")],
                              style={"display": "flex", "justifyContent": "space-between",
                                     "marginTop": "4px", "fontSize": "10.5px",
-                                    "color": PALE}),
-                ]),
+                                    "color": PALE, "whiteSpace": "nowrap"}),
+                ], style={"minWidth": 0}),
                 html.Div([
                     html.Div(f"{num(it['projects_fact'])} / {num(it['projects_plan'])}",
                              style={"fontSize": "15px", "fontWeight": 600,
@@ -355,50 +532,30 @@ def _example_1():
                     _bar(f"{it['projects_percent']:.1f}%", it["color"],
                          extra={"marginTop": "5px"}),
                 ], style={"textAlign": "right"}),
-                html.Div(
-                    html.Div([
-                        html.Span(num(it["unique"]), style={"fontWeight": 800, "fontSize": "14px", "color": INK}),
-                        html.Span(" проектов", style={"fontSize": "10px", "color": MUTED})
-                    ], style={"display": "inline-block", "background": HAIRLINE, 
-                              "padding": "3px 8px", "borderRadius": "6px", "textAlign": "right"}),
-                    style={"textAlign": "right"}
-                ),
+                # Раньше здесь была плашка с заливкой и скруглением: она
+                # выбивалась из ряда (радиус в дизайн-системе нулевой везде)
+                # и весила больше соседних колонок, хотя число в ней —
+                # такое же справочное. Теперь колонка устроена как соседняя:
+                # число и мелкая строка «из скольких»
                 html.Div([
-                    html.Img(src=examples.spark(it["dynamics"], it["color"], 232, 34),
-                             style={"display": "block", "width": "232px",
-                                    "height": "34px"}),
-                    html.Div(
-                        [html.Div([
-                            html.Div(mockup.MONTHS[i], style={"fontSize": "7.5px", "textTransform": "uppercase", "opacity": 0.6, "marginBottom": "2px", "letterSpacing": "0.05em"}),
-                            html.Div(num(v))
-                        ], style={"flex": 1, "textAlign": "center" if i > 0 and i < len(it["dynamics"]) - 1 else ("left" if i == 0 else "right")}) 
-                         for i, v in enumerate(it["dynamics"])],
-                        style={"display": "flex", "justifyContent": "space-between",
-                               "marginTop": "4px", "fontSize": "10px", "color": PALE,
-                               "fontVariantNumeric": "tabular-nums", "fontWeight": 600}
-                    ),
-                ]),
+                    html.Div(num(it["unique"]), style={
+                        "fontSize": "15px", "fontWeight": 700,
+                        "fontVariantNumeric": "tabular-nums"}),
+                    html.Div(f"из {num(it['projects_fact'])}", style={
+                        "fontSize": "10.5px", "color": PALE, "marginTop": "3px",
+                        "whiteSpace": "nowrap"}),
+                ], style={"textAlign": "right"}),
+                _ex1_dynamics(it),
                 html.Div(_status(it), style={"textAlign": "right"}),
             ],
             style={"display": "grid", "gridTemplateColumns": GRID_1,
                    "alignItems": "center", "gap": "0 16px", "padding": "14px 20px",
                    "borderBottom": f"1px solid {HAIRLINE}"},
-        ))
+            ))
 
     return [
-        _card([
-            html.Div("Освоение плана", style={
-                "position": "absolute", "left": "20px", "top": "-34px",
-                "fontSize": "15px", "fontWeight": 900, "textTransform": "uppercase",
-                "letterSpacing": ".05em", "color": INK
-            }),
-            html.Div(_year_switch(), style={
-                "position": "absolute", "right": "0", "top": "-36px", 
-                "transform": "scale(0.8)", "transformOrigin": "right bottom"
-            }),
-            head,
-            *rows,
-        ], extra={"position": "relative", "marginTop": "45px"}),
+        _title_row(),
+        _card([head, *rows], klass="damu-ex1"),
         _programs_card(_programs([TOTAL, GREEN, GOLD, TEAL]), 4,
                        "1fr 56px 40px 44px 30px", 22, "12px", pad="14px 16px 0"),
     ]
@@ -446,9 +603,15 @@ def _example_3():
                 months_labels = mockup.MONTHS12
                 proj_data = it["projects_by_month_full"]
             else:
-                months_labels = mockup.MONTHS
+                # !! Здесь стоял список из ШЕСТИ месяцев (Фев–Июл) при семи
+                # числах (Янв–Июл). `zip` ниже молча обрезал лишнее — и год
+                # выходил подписан со сдвигом на месяц: под «Фев» стояло
+                # январское число, июльское не показывалось вовсе. Найдено
+                # 07.08.2026, когда шестимесячный список убрали из mockup
+                months_labels = mockup.MONTHS7
                 proj_data = it["projects_by_month"]
-                
+
+
             unique_by_month = [int(v * ratio) for v in proj_data]
             max_proj = max(proj_data) or 1
             
@@ -478,7 +641,7 @@ def _example_3():
                         ], style={"display": "flex", "alignItems": "center", "gap": "10px", "marginBottom": "6px"}),
                         
                         html.Div([
-                            _paced_bar(f"{min(it['percent'], 100):.1f}%", f"{it['pace']:.1f}%", it["color"], height=14, track=track),
+                            _paced_bar(f"{min(it['percent'], 100):.1f}%", it["color"], height=14, track=track),
                             html.Div(
                                 html.Div(f"{num(it['percent'], 1)}%", 
                                          style={"position": "absolute", "right": 0, "transform": "translateX(50%)", "fontSize": "14px", "fontWeight": 700, "color": it["color"], "fontVariantNumeric": "tabular-nums", "marginTop": "4px", "whiteSpace": "nowrap"}),
@@ -581,136 +744,369 @@ def _example_3():
     ]
 
 
-# ─────────────────── Пример 4 · компактные шкалы и карта ───────────────────
+# ─────────────────── Пример 4 · четыре дизайна карточки ───────────────────
+#
+# 07.08.2026 страница переделана. Пользователь сказал, что карточки
+# не нравятся («строка факт план выглядит вообще странно»), и попросил
+# показать на этой странице ЧЕТЫРЕ РАЗНЫХ дизайна — чтобы выбрать один.
+#
+# Поэтому каждая из четырёх карточек оформлена по-своему, а данные в них
+# прежние: у каждой свой инструмент. Подпись «Вариант N» стоит в шапке,
+# чтобы выбор можно было назвать номером.
+#
+# Разбор прежней карточки, из которого выросли варианты:
+#
+# 1. `ФАКТ 540 · ПЛАН 620 · млрд ₸` тремя колонками — единица висела
+#    отдельным столбцом и не принадлежала ни одному числу, а план был
+#    набран тем же кеглем, только серым, будто это выключенное число того
+#    же ранга. Факт и план — одна дробь, и теперь они так и написаны:
+#    «540 из 620 млрд ₸» (`_ex4_money`);
+# 2. шкала-полукруг рядом с крупным процентом показывала одно и то же
+#    число дважды и занимала 120×68 px. Осталась в первом варианте — там
+#    она и есть предмет сравнения;
+# 3. три процента в карточке (87,1 · +27,1 п.п. · 86,0) не были подписаны —
+#    теперь у каждого своя подпись, а разрыв с планом написан словами
+#    («быстрее плана на 27,1 п.п.»), а не знаком плюс;
+# 4. столбики динамики вылезали за свою коробку (65 px в коробке 46);
+# 5. цвета, вписанные значением, в тёмной теме давали тёмное по тёмному.
+
+
+def _ex4_block(children, first: bool = False):
+    """Секция карточки: сверху линия-разделитель, кроме самой первой."""
+    style = {} if first else {"marginTop": "12px", "paddingTop": "11px",
+                              "borderTop": f"1px solid {HAIRLINE}"}
+    return html.Div(children, style=style)
+
+
+def _ex4_money(item, size="22px"):
+    """«540 из 620 млрд ₸» — факт крупно, остальное подписью.
+
+    Единица привязана к числу, а не висит отдельной колонкой, и сразу
+    видно, что это одна дробь, а не два независимых показателя. Ровно эта
+    строка в прежней карточке и не нравилась пользователю.
+    """
+    return html.Div([
+        html.B(num(item["fact"]), style={
+            "fontSize": size, "fontWeight": 800, "letterSpacing": "-0.02em",
+            "fontVariantNumeric": "tabular-nums"}),
+        html.Span(f"из {num(item['plan'])} млрд ₸", style={
+            "fontSize": "12.5px", "color": MUTED, "whiteSpace": "nowrap"}),
+    ], style={"display": "flex", "alignItems": "baseline", "gap": "6px"})
+
+
+def _ex4_metric(label, value, percent, color, extra=None):
+    """Строка-показатель: подпись и число, под ними полоска с процентом.
+
+    Один и тот же кирпичик для денег, проектов и уникальных — на нём
+    держится четвёртый вариант: три показателя, набранные одинаково,
+    сравниваются взглядом без арифметики.
+    """
+    style = {"display": "flex", "flexDirection": "column", "gap": "5px"}
+    style.update(extra or {})
+    return html.Div([
+        html.Div([
+            _kicker(label),
+            html.Span(value, style={
+                "marginLeft": "auto", "fontSize": "13px", "fontWeight": 700,
+                "whiteSpace": "nowrap", "fontVariantNumeric": "tabular-nums"}),
+        ], style={"display": "flex", "alignItems": "baseline", "gap": "8px"}),
+        html.Div([
+            _bar(f"{min(percent, 100):.1f}%", color, height=6, extra={"flex": 1}),
+            html.Span(f"{num(percent, 1)} %", style={
+                "width": "44px", "textAlign": "right", "fontSize": "10px",
+                "color": PALE, "fontVariantNumeric": "tabular-nums"}),
+        ], style={"display": "flex", "alignItems": "center", "gap": "8px"}),
+    ], style=style)
+
+
+def _year_cells(values, color, height=16):
+    """Год двенадцатью клетками: плотность цвета — доля от лучшего месяца.
+
+    Тот же приём, что в примере 5, но цвет здесь приходит значением:
+    у примера 5 он едет переменной темы, а карточки этой страницы взяты
+    из макета вместе со своей палитрой. Ненаступившие месяцы — пустая
+    рамка, иначе неполный год выглядел бы как полный, просто короче.
+
+    Нижняя граница плотности 0.28: клетка самого слабого месяца должна
+    остаться видимой клеткой, иначе «мало» и «ничего» выглядят одинаково.
+    """
+    top = max(values) or 1
+    cells, letters = [], []
+    for i, name in enumerate(mockup.MONTHS12):
+        if i < len(values):
+            cells.append(html.Span(
+                title=f"{name} — {num(values[i])} млрд ₸",
+                style={"flex": 1, "height": f"{height}px", "background": color,
+                       "opacity": round(0.28 + 0.72 * values[i] / top, 2)}))
+        else:
+            cells.append(html.Span(style={
+                "flex": 1, "height": f"{height}px",
+                "boxShadow": f"inset 0 0 0 1px {HAIRLINE}"}))
+        # Подписан каждый третий месяц: первая буква на всех дала бы
+        # «я ф м а м и и а с о н д», где «м» и «и» встречаются дважды
+        letters.append(html.Span(
+            name.lower() if i % 3 == 0 else "",
+            style={"flex": 1, "textAlign": "center", "fontSize": "8.5px",
+                   "fontWeight": 700, "color": PALE}))
+    return html.Div([
+        html.Div(cells, style={"display": "flex", "gap": "3px", "marginTop": "8px"}),
+        html.Div(letters, style={"display": "flex", "gap": "3px", "marginTop": "3px"}),
+    ])
+
+
+def _ex4_dyn(item, kind="bars"):
+    """Динамика в двух состояниях: шесть месяцев и весь год.
+
+    Оба состояния лежат в разметке сразу, показ переключает общая кнопка
+    (`_dyn_toggle`) через классы `damu-proj-default` / `damu-proj-dynamics`.
+    Вид графика — часть дизайна варианта, поэтому он здесь параметром.
+    """
+    money = list(item["money_by_month"])
+    # Пары «96 → 335» в подписи нет намеренно: она называла первый и последний
+    # месяц ГОДА, а в свёрнутом виде показаны последние шесть — числа
+    # не сходились с картинкой. Все значения и так подписаны под графиком
+    head = html.Div("Динамика, млрд ₸",
+                    style={"fontSize": "9.5px", "fontWeight": 700,
+                           "letterSpacing": ".09em", "textTransform": "uppercase",
+                           "color": PALE, "marginBottom": "7px"})
+
+    if kind == "spark":
+        short = _spark_months(money[-6:], mockup.MONTHS7[-6:], item["color"],
+                              font="9px")
+        full = _spark_months(money, mockup.MONTHS12, item["color"],
+                             font="7.5px", label_font="6.5px")
+    elif kind == "cells":
+        short = _year_cells(money, item["color"])
+        full = _month_bars(money, mockup.MONTHS12, item["color"],
+                           bar_h=32, gap="2px", font="8.5px")
+    else:
+        short = _month_bars(money[-6:], mockup.MONTHS7[-6:], item["color"],
+                            bar_h=32, gap="5px", font="9.5px")
+        full = _month_bars(money, mockup.MONTHS12, item["color"],
+                           bar_h=32, gap="2px", font="8.5px")
+
+    return [head,
+            html.Div(short, className="damu-proj-default"),
+            html.Div(full, className="damu-proj-dynamics")]
+
+
+def _ex4_pace(item, extra=None):
+    """Отставание или опережение — словами, а не знаком «+»."""
+    style = {"fontSize": "11px", "fontWeight": 600, "color": item["status_color"]}
+    style.update(extra or {})
+    return html.Div(item["pace_phrase"], style=style)
+
+
+# ── Вариант 1 · шкала ──
+# Ближе всех к прежней карточке: шкала на месте, но строка денег
+# переписана одной фразой, а подписи получили все три числа.
+
+def _ex4_v1(it):
+    return [
+        _ex4_block([
+            html.Div([
+                html.Img(src=examples.gauge(it["percent"], it["pace"], it["color"]),
+                         style={"display": "block", "width": "108px",
+                                "height": "61px", "flex": "none"}),
+                html.Div([
+                    html.Div([
+                        html.Span(num(it["percent"], 1), style={
+                            "fontSize": "29px", "fontWeight": 800, "lineHeight": 1,
+                            "letterSpacing": "-0.03em", "color": it["color"],
+                            "fontVariantNumeric": "tabular-nums"}),
+                        html.Span("%", style={
+                            "fontSize": "15px", "fontWeight": 600,
+                            "color": it["color"], "opacity": .65}),
+                    ], style={"display": "flex", "alignItems": "baseline",
+                              "gap": "3px"}),
+                    html.Div("освоено от плана", style={
+                        "fontSize": "10px", "color": PALE, "marginTop": "3px"}),
+                    _ex4_pace(it, {"marginTop": "6px"}),
+                ], style={"minWidth": 0}),
+            ], style={"display": "flex", "alignItems": "center", "gap": "12px"}),
+        ], first=True),
+        _ex4_block([
+            _ex4_money(it),
+            _bar(f"{min(it['percent'], 100):.1f}%", it["color"], height=8,
+                 extra={"marginTop": "8px"}),
+        ]),
+        _ex4_block([
+            html.Div([
+                html.Div([
+                    _kicker("Проектов"),
+                    html.Div(f"{num(it['projects_fact'])} / {num(it['projects_plan'])}",
+                             style={"fontSize": "14px", "fontWeight": 700,
+                                    "marginTop": "3px",
+                                    "fontVariantNumeric": "tabular-nums"}),
+                ]),
+                html.Div([
+                    _kicker("Из них уникальных"),
+                    html.Div(num(it["unique"]), style={
+                        "fontSize": "14px", "fontWeight": 700, "marginTop": "3px",
+                        "fontVariantNumeric": "tabular-nums"}),
+                ], style={"textAlign": "right"}),
+            ], style={"display": "flex", "justifyContent": "space-between",
+                      "gap": "12px"}),
+        ]),
+        _ex4_block(_ex4_dyn(it, "bars")),
+    ]
+
+
+# ── Вариант 2 · полоса ──
+# Без шкалы: главное здесь деньги, а не процент. Процент стоит справа
+# от полосы — там же, где она кончается, и читается как её подпись.
+
+def _ex4_v2(it):
+    return [
+        _ex4_block([
+            _ex4_money(it, size="30px"),
+            html.Div([
+                _bar(f"{min(it['percent'], 100):.1f}%", it["color"], height=14,
+                     extra={"flex": 1, "outline": f"1px solid {HAIRLINE}",
+                            "outlineOffset": "-1px"}),
+                html.Div(f"{num(it['percent'], 1)} %", style={
+                    "width": "54px", "textAlign": "right", "fontSize": "14px",
+                    "fontWeight": 800, "color": it["color"],
+                    "fontVariantNumeric": "tabular-nums"}),
+            ], style={"display": "flex", "alignItems": "center", "gap": "10px",
+                      "marginTop": "11px"}),
+            _ex4_pace(it, {"marginTop": "7px"}),
+        ], first=True),
+        _ex4_block([
+            _ex4_metric("Проектов, шт",
+                        f"{num(it['projects_fact'])} из {num(it['projects_plan'])}",
+                        it["projects_percent"], it["color"]),
+            _ex4_metric("Уникальных из них",
+                        f"{num(it['unique'])} из {num(it['projects_fact'])}",
+                        it["unique"] / max(it["projects_fact"], 1) * 100,
+                        it["color"], extra={"marginTop": "11px"}),
+        ]),
+        _ex4_block(_ex4_dyn(it, "spark")),
+    ]
+
+
+# ── Вариант 3 · крупный процент ──
+# Процент занимает всю верхнюю часть, остальное уходит в строгую таблицу
+# «подпись → значение»: числа выстроены по правому краю и сравниваются
+# сверху вниз. Год — клетками, как в примере 5.
+
+def _ex4_v3(it):
+    rows = [
+        ("Факт", f"{num(it['fact'])} млрд ₸"),
+        ("План", f"{num(it['plan'])} млрд ₸"),
+        ("Проектов", f"{num(it['projects_fact'])} / {num(it['projects_plan'])}"),
+        ("Уникальных", num(it["unique"])),
+    ]
+    return [
+        _ex4_block([
+            html.Div([
+                html.Span(num(it["percent"], 1), style={
+                    "fontSize": "42px", "fontWeight": 800, "lineHeight": 1,
+                    "letterSpacing": "-0.04em", "color": it["color"],
+                    "fontVariantNumeric": "tabular-nums"}),
+                html.Span("%", style={"fontSize": "18px", "fontWeight": 600,
+                                      "color": it["color"], "opacity": .6}),
+            ], style={"display": "flex", "alignItems": "baseline", "gap": "4px"}),
+            html.Div("освоено от плана", style={
+                "fontSize": "10px", "color": PALE, "marginTop": "3px"}),
+            _bar(f"{min(it['percent'], 100):.1f}%", it["color"], height=10,
+                 extra={"marginTop": "10px"}),
+            _ex4_pace(it, {"marginTop": "7px"}),
+        ], first=True),
+        _ex4_block([
+            html.Div([
+                html.Span(label, style={"color": MUTED}),
+                html.Span(value, style={
+                    "marginLeft": "auto", "fontWeight": 700, "whiteSpace": "nowrap",
+                    "fontVariantNumeric": "tabular-nums"}),
+            ], style={"display": "flex", "alignItems": "baseline", "gap": "8px",
+                      "fontSize": "12.5px", "height": "23px"})
+            for label, value in rows
+        ]),
+        _ex4_block(_ex4_dyn(it, "cells")),
+    ]
+
+
+# ── Вариант 4 · три полосы ──
+# Крупного числа нет вовсе, и это осознанно: три показателя набраны
+# одинаково и стоят друг под другом, поэтому сравниваются взглядом —
+# и между собой, и с такой же карточкой соседнего инструмента.
+
+def _ex4_v4(it):
+    return [
+        _ex4_block([
+            _ex4_metric("Освоено, млрд ₸",
+                        f"{num(it['fact'])} из {num(it['plan'])}",
+                        it["percent"], it["color"]),
+            _ex4_metric("Проектов, шт",
+                        f"{num(it['projects_fact'])} из {num(it['projects_plan'])}",
+                        it["projects_percent"], it["color"],
+                        extra={"marginTop": "12px"}),
+            _ex4_metric("Уникальных из них",
+                        f"{num(it['unique'])} из {num(it['projects_fact'])}",
+                        it["unique"] / max(it["projects_fact"], 1) * 100,
+                        it["color"], extra={"marginTop": "12px"}),
+            _ex4_pace(it, {"marginTop": "11px"}),
+        ], first=True),
+        _ex4_block(_ex4_dyn(it, "bars")),
+    ]
+
+
+#: Название варианта и то, чем он собран. Порядок — порядок карточек
+#: в ряду, то есть номер варианта совпадает с номером инструмента.
+EX4_VARIANTS = [
+    ("Шкала", _ex4_v1),
+    ("Полоса", _ex4_v2),
+    ("Крупный процент", _ex4_v3),
+    ("Три полосы", _ex4_v4),
+]
+
+
+def _ex4_card(item, number: int, name: str, body):
+    """Общая оболочка: цветная черта, номер варианта, название, статус."""
+    return html.Div(
+        [
+            html.Div([
+                _kicker(f"Вариант {number} · {name}"),
+                html.Div([
+                    html.Span(item["title"], style={
+                        "fontSize": "13.5px", "fontWeight": 800,
+                        "letterSpacing": "-0.01em"}),
+                    html.Span(_status(item, "10px", 6),
+                              style={"marginLeft": "auto"}),
+                ], style={"display": "flex", "alignItems": "center", "gap": "8px",
+                          "marginTop": "4px"}),
+            ], style={"padding": "10px 16px 9px",
+                      "borderBottom": f"1px solid {HAIRLINE}"}),
+            html.Div(body, style={"padding": "12px 16px 14px", "flex": 1}),
+        ],
+        style={"background": SURFACE, "boxShadow": SHADOW,
+               "borderTop": f"3px solid {item['color']}",
+               "display": "flex", "flexDirection": "column"},
+    )
+
 
 def _example_4():
     items = _instruments()
-
-    cards = []
-    for i, it in enumerate(items):
-        values = it["dynamics"]
-        low, high = min(values), max(values)
-        spread = (high - low) or 1
-        bars = [
-            html.Div([
-                html.Div(style={"width": "100%", "background": it["color"],
-                                "height": f"{16 + 30 * (v - low) / spread:.0f}px",
-                                "opacity": 1 if j == len(values) - 1
-                                else 0.45 + 0.4 * j / (len(values) - 1)}),
-                html.Span(m, style={"fontSize": "10px", "color": PALE}),
-            ], style={"flex": 1, "display": "flex", "flexDirection": "column",
-                      "alignItems": "center", "gap": "4px"})
-            for j, (m, v) in enumerate(zip(mockup.MONTHS, values))
-        ]
-
-        cards.append(html.Div([
-            html.Div([
-                html.Span(it["title"], style={"fontSize": "13.5px", "fontWeight": 800,
-                                              "letterSpacing": "-0.01em"}),
-                html.Span(_status(it, "10px", 6), style={"marginLeft": "auto"}),
-            ], style={"display": "flex", "alignItems": "center", "gap": "8px",
-                      "padding": "11px 16px 9px",
-                      "borderBottom": f"1px solid rgba(32,30,29,.14)"}),
-            html.Div([
-                html.Div([
-                    html.Div([
-                        html.Img(src=examples.gauge(it["percent"], it["pace"],
-                                                    it["color"]),
-                                 style={"display": "block", "width": "120px",
-                                        "height": "68px"}),
-                        html.Div("0 · 100 %", style={
-                            "textAlign": "center", "fontSize": "10px",
-                            "fontWeight": 700, "color": PALE, "letterSpacing": ".08em",
-                            "marginTop": "-6px"}),
-                    ], style={"flex": "none"}),
-                    html.Div([
-                        html.Div([
-                            html.Span(num(it["percent"], 1), style={
-                                "fontSize": "34px", "fontWeight": 800,
-                                "letterSpacing": "-0.03em", "lineHeight": 1,
-                                "color": it["color"],
-                                "fontVariantNumeric": "tabular-nums"}),
-                            html.Span("%", style={"fontSize": "16px", "fontWeight": 600,
-                                                  "color": it["color"], "opacity": .65}),
-                        ], style={"display": "flex", "alignItems": "baseline",
-                                  "gap": "4px"}),
-                        html.Div([
-                            html.Span("от плана ", style={"fontSize": "11px", "color": MUTED}),
-                            html.Span(it["gap_short"], style={
-                                "fontSize": "11.5px", "fontWeight": 700,
-                                "color": it["status_color"]}),
-                        ], style={
-                            "marginTop": "6px", "background": "rgba(0,0,0,0.03)",
-                            "padding": "4px 8px", "borderRadius": "4px",
-                            "display": "inline-block"
-                        }),
-                    ], style={"minWidth": 0}),
-                ], style={"display": "flex", "alignItems": "center", "gap": "14px"}),
-                html.Div([
-                    html.Div([_kicker("Факт"),
-                              html.Div(num(it["fact"]), style={
-                                  "fontSize": "20px", "fontWeight": 800,
-                                  "letterSpacing": "-0.02em",
-                                  "fontVariantNumeric": "tabular-nums"})]),
-                    html.Div([_kicker("План"),
-                              html.Div(num(it["plan"]), style={
-                                  "fontSize": "20px", "fontWeight": 600, "color": PALE,
-                                  "letterSpacing": "-0.02em",
-                                  "fontVariantNumeric": "tabular-nums"})],
-                             style={"textAlign": "right"}),
-                    html.Div("млрд ₸", style={"fontSize": "10.5px", "color": PALE,
-                                              "alignSelf": "flex-end"}),
-                ], style={"display": "flex", "justifyContent": "space-between",
-                          "alignItems": "baseline", "marginTop": "12px",
-                          "paddingTop": "11px", "borderTop": f"1px solid {HAIRLINE}"}),
-                html.Div([
-                    html.Div([
-                        _kicker("Проекты ф/п"),
-                        html.Div(f"{num(it['projects_fact'])} / {num(it['projects_plan'])}",
-                                 style={"fontSize": "14px", "fontWeight": 700,
-                                        "marginTop": "3px",
-                                        "fontVariantNumeric": "tabular-nums"}),
-                        _bar(f"{it['projects_percent']:.1f}%", it["color"],
-                             extra={"marginTop": "5px"}),
-                        html.Div(f"{num(it['projects_percent'], 1)} %",
-                                 style={"fontSize": "10px", "color": PALE,
-                                        "marginTop": "4px"}),
-                    ]),
-                    html.Div([
-                        _kicker("Уникальных"),
-                        html.Div(num(it["unique"]), style={
-                            "fontSize": "14px", "fontWeight": 700, "marginTop": "3px",
-                            "fontVariantNumeric": "tabular-nums"}),
-                        html.Div(f"из {num(it['projects_fact'])}",
-                                 style={"fontSize": "10px", "color": PALE,
-                                        "marginTop": "10px"}),
-                    ]),
-                ], style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
-                          "gap": "12px", "marginTop": "12px", "paddingTop": "11px",
-                          "borderTop": f"1px solid {HAIRLINE}"}),
-                html.Div([
-                    html.Div([
-                        html.Span("Динамика"),
-                        html.Span(f"{num(values[0])} → {num(it['fact'])}",
-                                  style={"color": "rgba(32,30,29,.7)"}),
-                    ], style={"display": "flex", "justifyContent": "space-between",
-                              "fontSize": "9.5px", "fontWeight": 700,
-                              "letterSpacing": ".09em", "textTransform": "uppercase",
-                              "color": PALE, "marginBottom": "7px"}),
-                    html.Div(bars, style={"display": "flex", "alignItems": "flex-end",
-                                          "gap": "5px", "height": "46px"}),
-                ], style={"marginTop": "12px", "paddingTop": "11px",
-                          "borderTop": f"1px solid {HAIRLINE}"}),
-            ], style={"padding": "12px 16px 14px"}),
-        ], style={"background": SURFACE,
-                  "boxShadow": "0 3px 10px rgba(45,43,43,.16)" if i == 0 else SHADOW,
-                  "borderTop": f"3px solid {it['color']}", "display": "flex",
-                  "flexDirection": "column"}))
+    cards = [
+        _ex4_card(it, i + 1, name, build(it))
+        for i, (it, (name, build)) in enumerate(zip(items, EX4_VARIANTS))
+    ]
 
     return [
-        _title_row(),
+        # Кнопка одна на все четыре карточки: обработчик вешает класс
+        # на общего предка, и раскрываются они разом. Ставить кнопку
+        # в каждую карточку значило бы четыре одинаковых id на странице
+        _title_row(right=_dyn_toggle({"marginLeft": "auto"})),
+        html.Div(
+            "Четыре варианта оформления одной и той же карточки — данные "
+            "в них настоящие для этой страницы, отличается только подача. "
+            "Выбранный вариант потом останется один на все инструменты.",
+            style={"fontSize": "12px", "color": MUTED, "marginTop": "-4px"},
+        ),
         html.Div(cards, style={"display": "grid",
-                               "gridTemplateColumns": "repeat(4,1fr)", "gap": "14px"}),
+                               "gridTemplateColumns": "repeat(4,1fr)", "gap": "14px",
+                               "alignItems": "stretch"}),
         _card([
             _card_head(
                 "Освоение по регионам", "картограмма по показателю «Освоено бюджета»",
@@ -1023,16 +1419,11 @@ def _example_5():
             html.Div("Инструмент · план → факт", style={"flex": 1}),
             html.Div([
                 html.Span("Проекты", style={"marginRight": "10px"}),
-                # Тот же id и те же классы, что в примере 3, — значит
-                # работает уже написанный обработчик в assets/dashboard.js.
-                # Столкновения нет: страница показывает один пример за раз
-                html.Span("Показать динамику ▾", id="damu-dyn-toggle", n_clicks=0,
-                          style={"fontSize": "10px", "fontWeight": 600,
-                                 "letterSpacing": "normal", "textTransform": "none",
-                                 "color": "var(--damu-ink)",
-                                 "background": "var(--damu-track)",
-                                 "padding": "4px 12px", "cursor": "pointer",
-                                 "verticalAlign": "middle"}),
+                # Кнопка общая на все примеры (`_dyn_toggle`): id и подписи
+                # те же, что были в примере 3, — значит работает уже
+                # написанный обработчик в assets/dashboard.js. Столкновения
+                # нет: страница показывает один пример за раз
+                _dyn_toggle({"verticalAlign": "middle"}),
             ], style={"textAlign": "right"}),
         ],
         style={"display": "flex", "gap": "16px", "padding": "12px 20px 8px",
@@ -1062,27 +1453,10 @@ def _example_5():
                "flexDirection": "column", "minWidth": 0},
     )
 
-    title = html.Div(
-        [
-            html.H1("Освоение плана", style={
-                "margin": 0, "fontSize": "19px", "fontWeight": 800,
-                "letterSpacing": "-0.015em"}),
-            _year_switch(),
-            html.Span(
-                "Макетные числа",
-                title="Разрезов по инструментам в хранилище пока нет — числа из эскиза",
-                style={"fontSize": "9.5px", "fontWeight": 700,
-                       "letterSpacing": ".1em", "textTransform": "uppercase",
-                       "color": "var(--damu-muted)",
-                       "border": "1px solid var(--damu-hairline)",
-                       "padding": "3px 7px"},
-            ),
-        ],
-        style={"display": "flex", "alignItems": "center", "gap": "16px"},
-    )
-
     return [
-        title,
+        # Заголовок общий с примерами 1, 3 и 4 (`_title_row`) — мелкий,
+        # чтобы не спорить с раскладкой, которую и сравнивают
+        _title_row(),
         html.Div([instruments, _ex5_programs()],
                  style={"display": "grid", "gridTemplateColumns": "1fr 640px",
                         "gap": "14px", "marginTop": "14px"}),
