@@ -331,12 +331,29 @@ def section_block(section_key: str, tab: dict):
         )]
         # У разреза «ОКЭД/Регионы» половина смысла — отрасли, а их в базе
         # нет. Показываем макетную карточку рядом с настоящими виджетами,
-        # честно помеченную; регионы под ней — уже по-настоящему
-        if tab["key"] == "regions":
+        # честно помеченную; регионы под ней — уже по-настоящему.
+        #
+        # !! Раньше проверялся ключ вкладки (`tab["key"] == "regions"`) —
+        # ломалось на разделах, где «Регионы» вынесены отдельно от «Отрасли»
+        # (СЭЭ, 04.08.2026): та вкладка называется «Регионы», ключ тот же
+        # «regions», но про ОКЭД там речи нет — своя вкладка «Отрасли» рядом.
+        # Проверяем название вкладки, а не её ключ: он для навигации,
+        # а не про то, что на самом деле должно на ней быть
+        if "ОКЭД" in tab.get("title", ""):
             body.insert(0, dbc.Row(dbc.Col(oked_card(), lg=6),
                                    className="g-3 mb-3"))
     else:
         body = [chart_stubs()]
+
+    # Карточки-показатели этой вкладки — свои у каждой, а не один общий
+    # ряд над всей лентой (так было до 04.08.2026). Место под них ставим
+    # только если во вкладке есть чему показываться: пустой Row без кпи
+    # в конфиге — лишний элемент, который никогда не заполнится
+    if tab.get("kpi"):
+        body.insert(0, dbc.Row(
+            id={"type": "section-kpi", "index": tab["key"]},
+            className="g-3 mb-3",
+        ))
 
     title = [html.Span(tab["title"])]
     if not tab.get("data"):
@@ -351,6 +368,46 @@ def section_block(section_key: str, tab: dict):
         className="damu-sec-block",
         **{"data-key": tab["key"]},
     )
+
+
+def section_feed(section_key: str, tabs: list[dict]) -> list:
+    """Лента раздела: вкладки одной группы собираются под общий заголовок.
+
+    Полоса вкладок наверху уже показывает группу ОДНОЙ кнопкой, которая
+    раскрывает ряд «пилюль». Лента повторяет то же устройство: заголовок
+    группы один раз, под ним её подсекции с отступом и полосой слева.
+
+    !! Без этого на Казначействе лента читалась так: ВСДС · ГФ1 · ГФ2 ·
+    ВСДС · ГФ1 · ГФ2 · … · ВСДС · ГФ1 · ГФ2 — по тройке на каждую из трёх
+    групп («Информация», «Доходность», «Trades»), и, долистав до «ГФ1»,
+    понять, чей он, было нечем: девять подписей из пятнадцати неуникальны
+    (замерено 06.08.2026). Заголовок группы возвращает потерянный контекст.
+
+    Группы идут в конфиге подряд, поэтому собираем их одним проходом,
+    а не сортировкой: порядок вкладок в `config.yaml` — это и порядок
+    секций на экране, менять его нельзя.
+    """
+    feed: list = []
+    index = 0
+    while index < len(tabs):
+        group = tabs[index].get("group")
+        if not group:
+            feed.append(section_block(section_key, tabs[index]))
+            index += 1
+            continue
+
+        members = []
+        while index < len(tabs) and tabs[index].get("group") == group:
+            members.append(section_block(section_key, tabs[index]))
+            index += 1
+        feed.append(html.Div(
+            [
+                html.Div(group, className="damu-sec-group-title"),
+                html.Div(members, className="damu-sec-group-body"),
+            ],
+            className="damu-sec-group",
+        ))
+    return feed
 
 
 def layout(key: str | None = None, **kwargs):
@@ -377,8 +434,7 @@ def layout(key: str | None = None, **kwargs):
                     # отсюда, а не разбирают адрес заново
                     dcc.Store(id="section-key", data=key),
                     tab_bar(tabs),
-                    dbc.Row(id="section-kpi", className="my-3 g-3"),
-                    *[section_block(key, tab) for tab in tabs],
+                    *section_feed(key, tabs),
                 ],
                 className="damu-sec-main",
             ),
@@ -388,40 +444,53 @@ def layout(key: str | None = None, **kwargs):
 
 
 @callback(
-    Output("section-kpi", "children"),
+    Output({"type": "section-kpi", "index": ALL}, "children"),
     Input("filter-year", "value"),
     Input("data-version", "data"),
     Input("section-key", "data"),
+    State({"type": "section-kpi", "index": ALL}, "id"),
 )
-def render_kpi(year, _version, key):
-    """Карточки раздела: план, освоено, остаток, процент — состав из конфига."""
-    program = widgets.program_of(key)
-    kpi = data.get_kpi(int(year), program=program)
-    order = data.load_config().get("section_kpi") or []
-    if order:
-        kpi = kpi[kpi["indicator"].isin(order)]
-        kpi = kpi.set_index("indicator").reindex(
-            [k for k in order if k in set(kpi["indicator"])]
-        ).reset_index()
-    if kpi.empty:
-        return dbc.Alert("По этому разделу нет показателей за выбранный год.",
-                         color="light", className="border")
+def render_kpi(year, _version, key, ids):
+    """Карточки-показатели каждой вкладки со своим `kpi` в конфиге.
 
+    Раньше был один общий ряд над всей лентой — с 04.08.2026 у каждой
+    вкладки свой набор и своё место, `widgets.tabs_of()` подсказывает,
+    что именно показывать. Приём тот же, что у `render_widgets`: одна
+    вкладка на месте не найдена — рисуем то, что есть в остальных,
+    вместо того чтобы падать целиком.
+    """
+    program = widgets.program_of(key)
+    tabs_by_key = {tab["key"]: tab for tab in widgets.tabs_of(key)}
+    kpi_all = data.get_kpi(int(year), program=program)
     # Ожидаемый темп — доля прошедшего года. Он же засечка на полосе факта
     # и он же тихая строка под процентом освоения: одно число, два способа
     # показать, отстаём мы или идём ровно
     pace, _, _ = mockup.expected_pace()
-    cards = []
-    for _, row in kpi.iterrows():
-        row = row.copy()
-        # «Факт» получает полосу с засечкой, «Освоение» — строку про темп
-        if row["indicator"] == "demo_fact":
-            row["share_pct"] = _fact_share(kpi)
-        elif row["indicator"] == "demo_execution":
-            faster = "быстрее" if _execution_value(row) >= pace else "медленнее"
-            row["note"] = f"{faster} плана — прошло {pace:.1f} % года".replace(".", ",")
-        cards.append(dbc.Col(kpi_card(row, pace), xs=12, md=True))
-    return cards
+
+    out = []
+    for comp_id in ids:
+        order = (tabs_by_key.get(comp_id["index"]) or {}).get("kpi") or []
+        kpi = kpi_all[kpi_all["indicator"].isin(order)]
+        kpi = kpi.set_index("indicator").reindex(
+            [k for k in order if k in set(kpi["indicator"])]
+        ).reset_index()
+        if kpi.empty:
+            out.append(dbc.Alert(
+                "По этому разделу нет показателей за выбранный год.",
+                color="light", className="border"))
+            continue
+        cards = []
+        for _, row in kpi.iterrows():
+            row = row.copy()
+            # «Факт» получает полосу с засечкой, «Освоение» — строку про темп
+            if row["indicator"] == "demo_fact":
+                row["share_pct"] = _fact_share(kpi)
+            elif row["indicator"] == "demo_execution":
+                faster = "быстрее" if _execution_value(row) >= pace else "медленнее"
+                row["note"] = f"{faster} плана — прошло {pace:.1f} % года".replace(".", ",")
+            cards.append(dbc.Col(kpi_card(row, pace), xs=12, md=True))
+        out.append(cards)
+    return out
 
 
 def _fact_share(kpi: pd.DataFrame) -> float | None:

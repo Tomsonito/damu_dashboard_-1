@@ -89,6 +89,27 @@
         }
     }
 
+    /* То же, но для СУММЫ липких полос — шапки и полосы вкладок вместе.
+       От неё отсчитывает свой `top` липкая подпись секции: она должна
+       вставать вплотную под вкладками, а не под одной шапкой.
+
+       Своя переменная, а не сумма в CSS через calc: высота полосы вкладок
+       меняется на ходу — второй ряд появляется, когда раскрыта группа
+       (замерено раньше: 45 px против 92). CSS об этом знать неоткуда,
+       а здесь мы и так мерим это на каждый кадр для линии чтения.
+
+       !! Вызывать ПОСЛЕ highlight(): это он показывает и прячет ряд
+       «пилюль», то есть меняет ту самую высоту. До него измерили бы
+       прошлое состояние и подпись прыгала бы на кадр позже. */
+    var stickyHeightSet = null;
+    function syncStickyHeight() {
+        var height = stickyHeight();
+        if (height && height !== stickyHeightSet) {
+            stickyHeightSet = height;
+            document.documentElement.style.setProperty('--damu-sticky-h', height + 'px');
+        }
+    }
+
     function currentSectionKey() {
         var blocks = document.querySelectorAll('.damu-sec-block');
         if (!blocks.length) {
@@ -152,6 +173,9 @@
             scheduled = false;
             syncNavHeight();
             highlight();
+            /* Строго после highlight — он меняет высоту полосы вкладок,
+               показывая или пряча ряд «пилюль» */
+            syncStickyHeight();
         });
     }
 

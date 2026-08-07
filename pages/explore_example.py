@@ -132,11 +132,11 @@ def _paced_bar(percent_width, pace_left, color, height=12, track=TRACK):
     return html.Div(
         [
             html.Div(style={"position": "absolute", "left": 0, "top": 0,
-                            "bottom": 0, "width": percent_width, "background": color}),
-            html.Div(style={"position": "absolute", "top": "-3px", "bottom": "-3px",
-                            "left": pace_left, "width": "2px", "background": INK}),
+                            "bottom": 0, "width": percent_width, "background": color,
+                            "borderRadius": "4px"}),
         ],
-        style={"position": "relative", "height": f"{height}px", "background": track},
+        style={"position": "relative", "height": f"{height}px", "background": track,
+               "borderRadius": "4px", "boxShadow": "inset 0 0 0 1px rgba(0,0,0,0.06)"},
     )
 
 
@@ -307,7 +307,7 @@ def _example_1():
     head = html.Div(
         [html.Div(t, style={"textAlign": a}) for t, a in [
             ("Инструмент", "left"), ("Факт, млрд ₸", "right"),
-            ("Выполнение", "right"), ("План → факт, засечка = ожидаемый темп", "left"),
+            ("Выполнение", "right"), ("План → факт", "left"),
             ("Проекты факт / план", "right"), ("Уникальных", "right"),
             ("Динамика Фев → Июл", "left"), ("Статус", "right"),
         ]],
@@ -339,9 +339,6 @@ def _example_1():
                     html.Div(f"{num(it['percent'], 1)} %", style={
                         "fontSize": "17px", "fontWeight": 800, "color": it["color"],
                         "fontVariantNumeric": "tabular-nums"}),
-                    html.Div(it["gap_short"], style={"fontSize": "11px",
-                                                     "color": it["status_color"],
-                                                     "fontWeight": 600}),
                 ], style={"textAlign": "right"}),
                 html.Div([
                     _paced_bar(f"{min(it['percent'], 100):.1f}%",
@@ -358,20 +355,28 @@ def _example_1():
                     _bar(f"{it['projects_percent']:.1f}%", it["color"],
                          extra={"marginTop": "5px"}),
                 ], style={"textAlign": "right"}),
-                html.Div(num(it["unique"]), style={
-                    "textAlign": "right", "fontSize": "15px", "fontWeight": 600,
-                    "color": "rgba(32,30,29,.75)", "fontVariantNumeric": "tabular-nums"}),
+                html.Div(
+                    html.Div([
+                        html.Span(num(it["unique"]), style={"fontWeight": 800, "fontSize": "14px", "color": INK}),
+                        html.Span(" проектов", style={"fontSize": "10px", "color": MUTED})
+                    ], style={"display": "inline-block", "background": HAIRLINE, 
+                              "padding": "3px 8px", "borderRadius": "6px", "textAlign": "right"}),
+                    style={"textAlign": "right"}
+                ),
                 html.Div([
                     html.Img(src=examples.spark(it["dynamics"], it["color"], 232, 34),
                              style={"display": "block", "width": "232px",
                                     "height": "34px"}),
-                    html.Div([
-                        html.Span(num(it["dynamics"][0])),
-                        html.Span(num(it["fact"]), style={"fontWeight": 700,
-                                                          "color": "rgba(32,30,29,.7)"}),
-                    ], style={"display": "flex", "justifyContent": "space-between",
-                              "marginTop": "3px", "fontSize": "10px", "color": PALE,
-                              "fontVariantNumeric": "tabular-nums"}),
+                    html.Div(
+                        [html.Div([
+                            html.Div(mockup.MONTHS[i], style={"fontSize": "7.5px", "textTransform": "uppercase", "opacity": 0.6, "marginBottom": "2px", "letterSpacing": "0.05em"}),
+                            html.Div(num(v))
+                        ], style={"flex": 1, "textAlign": "center" if i > 0 and i < len(it["dynamics"]) - 1 else ("left" if i == 0 else "right")}) 
+                         for i, v in enumerate(it["dynamics"])],
+                        style={"display": "flex", "justifyContent": "space-between",
+                               "marginTop": "4px", "fontSize": "10px", "color": PALE,
+                               "fontVariantNumeric": "tabular-nums", "fontWeight": 600}
+                    ),
                 ]),
                 html.Div(_status(it), style={"textAlign": "right"}),
             ],
@@ -382,30 +387,18 @@ def _example_1():
 
     return [
         _card([
-            html.Div(
-                [
-                    html.H1("Освоение плана", style={
-                        "margin": 0, "fontSize": "19px", "fontWeight": 800,
-                        "letterSpacing": "-0.015em"}),
-                    _year_switch(),
-                    html.Div([
-                        html.Div(_pace_note(items), style={"fontSize": "12px",
-                                                           "color": MUTED}),
-                        html.Span("Макетные числа", style={
-                            "fontSize": "9.5px", "fontWeight": 700,
-                            "letterSpacing": ".1em", "textTransform": "uppercase",
-                            "color": "#6a531c", "border": f"1px solid {GOLD}",
-                            "padding": "3px 7px", "whiteSpace": "nowrap"}),
-                    ], style={"marginLeft": "auto", "display": "flex",
-                              "alignItems": "center", "gap": "14px"}),
-                ],
-                style={"display": "flex", "alignItems": "center", "gap": "16px",
-                       "padding": "14px 20px 12px",
-                       "borderBottom": f"1px solid {DIVIDER}"},
-            ),
+            html.Div("Освоение плана", style={
+                "position": "absolute", "left": "20px", "top": "-34px",
+                "fontSize": "15px", "fontWeight": 900, "textTransform": "uppercase",
+                "letterSpacing": ".05em", "color": INK
+            }),
+            html.Div(_year_switch(), style={
+                "position": "absolute", "right": "0", "top": "-36px", 
+                "transform": "scale(0.8)", "transformOrigin": "right bottom"
+            }),
             head,
             *rows,
-        ]),
+        ], extra={"position": "relative", "marginTop": "45px"}),
         _programs_card(_programs([TOTAL, GREEN, GOLD, TEAL]), 4,
                        "1fr 56px 40px 44px 30px", 22, "12px", pad="14px 16px 0"),
     ]
@@ -641,11 +634,16 @@ def _example_4():
                                                   "color": it["color"], "opacity": .65}),
                         ], style={"display": "flex", "alignItems": "baseline",
                                   "gap": "4px"}),
-                        html.Div("от плана", style={"fontSize": "11px", "color": MUTED,
-                                                    "marginTop": "3px"}),
-                        html.Div(it["gap_short"], style={
-                            "fontSize": "11.5px", "fontWeight": 700,
-                            "color": it["status_color"], "marginTop": "5px"}),
+                        html.Div([
+                            html.Span("от плана ", style={"fontSize": "11px", "color": MUTED}),
+                            html.Span(it["gap_short"], style={
+                                "fontSize": "11.5px", "fontWeight": 700,
+                                "color": it["status_color"]}),
+                        ], style={
+                            "marginTop": "6px", "background": "rgba(0,0,0,0.03)",
+                            "padding": "4px 8px", "borderRadius": "4px",
+                            "display": "inline-block"
+                        }),
                     ], style={"minWidth": 0}),
                 ], style={"display": "flex", "alignItems": "center", "gap": "14px"}),
                 html.Div([
@@ -710,7 +708,7 @@ def _example_4():
                   "flexDirection": "column"}))
 
     return [
-        _title_row(pace_note=_pace_note(items) + " — засечка на шкале"),
+        _title_row(),
         html.Div(cards, style={"display": "grid",
                                "gridTemplateColumns": "repeat(4,1fr)", "gap": "14px"}),
         _card([
@@ -1115,26 +1113,7 @@ def layout(key: str | None = None, **kwargs):
         )
 
     children = []
-    # Примеры 3 и 5 показываются во весь экран, без служебного заголовка:
-    # их оценивают как готовую страницу, а не как карточку в списке
-    if key not in ("3", "5"):
-        children.extend([
-            html.Div(
-                [
-                    html.H2(example["title"], className="mt-4 mb-0"),
-                    html.Span(f"вариант {example['source']} из макета",
-                              className="text-muted small"),
-                    html.Div(
-                        dash.dcc.Link("← все примеры", href="/explore",
-                                      className="small"),
-                        className="ms-auto",
-                    ),
-                ],
-                className="d-flex align-items-baseline gap-3",
-            ),
-            html.P(example["note"], className="text-muted small mb-3"),
-        ])
-    
+
     children.append(
         html.Div(BUILDERS[example["key"]](),
                  style={"display": "flex", "flexDirection": "column",

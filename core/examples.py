@@ -78,14 +78,14 @@ COLORS = {"all": TOTAL, "guarantee": GREEN, "credit": GOLD, "subsidy": TEAL}
 
 #: Постоянные величины дизайн-системы, которые в примерах встречаются
 #: десятки раз. Держим их именами, чтобы правка была в одном месте.
-INK = "#201e1d"
-MUTED = "rgba(32,30,29,.5)"
-PALE = "rgba(32,30,29,.45)"
-HAIRLINE = "rgba(32,30,29,.12)"
-DIVIDER = "rgba(32,30,29,.28)"
-SURFACE = "#eae9e9"
-TRACK = "#e2e0df"
-SHADOW = "0 1px 2px rgba(45,43,43,.14)"
+INK = "var(--damu-ink, #201e1d)"
+MUTED = "var(--damu-muted, rgba(32,30,29,.5))"
+PALE = "var(--damu-muted, rgba(32,30,29,.45))"
+HAIRLINE = "var(--damu-hairline, rgba(32,30,29,.12))"
+DIVIDER = "var(--damu-divider, rgba(32,30,29,.28))"
+SURFACE = "var(--damu-surface, #eae9e9)"
+TRACK = "var(--damu-track, #e2e0df)"
+SHADOW = "var(--damu-shadow, 0 1px 2px rgba(45,43,43,.14))"
 
 
 def num(value: float, decimals: int = 0) -> str:
@@ -123,12 +123,14 @@ def spark(values, color: str, width: float = 232, height: float = 34,
     line = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
     area = (f"M{line.replace(' ', ' L')}"
             f" L{pts[-1][0]:.1f},{height} L{pts[0][0]:.1f},{height} Z")
+    circles = "".join(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.5" fill="{color}"/>' for x, y in pts)
     return _svg(
         f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
         f'xmlns="http://www.w3.org/2000/svg">'
         f'<path d="{area}" fill="{color}" opacity="{fill_opacity}"/>'
         f'<polyline points="{line}" fill="none" stroke="{color}" '
-        f'stroke-width="{stroke}" stroke-linejoin="round"/></svg>'
+        f'stroke-width="{stroke}" stroke-linejoin="round"/>'
+        f'{circles}</svg>'
     )
 
 

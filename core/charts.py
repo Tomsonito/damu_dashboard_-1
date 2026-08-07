@@ -679,6 +679,43 @@ def _parallel(ctx: Ctx) -> go.Figure:
     return fig
 
 
+@chart("table", "Таблица — данные по регионам")
+def _table(ctx: Ctx) -> go.Figure:
+    """Таблица: показатели раздела в столбцах, регионы в строках.
+
+    Берёт все показатели сразу, как «Точки» и «Параллельные оси» —
+    фильтр показателя на неё не влияет, обе эти пары читают один и тот же
+    `data.get_table()`.
+
+    Заведена по просьбе с описанием разделов (04.08.2026): часть разрезов
+    там нарисована именно таблицей, а не графиком (лимиты на БВУ, пайплайн
+    проектов, план по ГФ2). Собрана через `go.Table`, а не `dash_table` —
+    так она остаётся обычной plotly-фигурой и ложится в существующий
+    виджет (`dcc.Graph`) без единой правки в `pages/section.py`.
+    Пока разрезов по БВУ и программам в данных нет, показывает то же, что
+    доступно уже сейчас: показатели раздела по регионам.
+    """
+    df = data.get_table(ctx.year, ctx.regions, ctx.program)
+    columns = [c for c in df.columns if c != "region"]
+    if df.empty or not columns:
+        return _message(NO_DATA)
+
+    headers = ["Регион"] + [data.get_indicator_meta(c)["short"] for c in columns]
+    cells = [df["region"].tolist()] + [
+        [data.format_value(v, c) for v in df[c]] for c in columns
+    ]
+    fig = go.Figure(go.Table(
+        header=dict(values=headers, align="left", height=30,
+                    fill_color="rgba(128,128,128,.18)",
+                    font=dict(size=12, color=NEUTRAL_INK)),
+        cells=dict(values=cells, align="left", height=28,
+                   fill_color="rgba(128,128,128,.04)",
+                   font=dict(size=12, color=NEUTRAL_INK)),
+    ))
+    fig.update_layout(title=f"Данные по регионам — {ctx.year} год")
+    return fig
+
+
 @chart("box", "Ящик — разброс по макрорегионам", log_ok=True)
 def _box(ctx: Ctx) -> go.Figure:
     """Ящик на каждый макрорегион.
