@@ -205,7 +205,8 @@ def sections_menu(active_key: str):
     )
 
 
-def kpi_card(row: pd.Series, pace: float | None = None) -> html.Div:
+def kpi_card(row: pd.Series, pace: float | None = None,
+             solo: bool = False) -> html.Div:
     """Карточка показателя: метка, крупное число, единица.
 
     !! Подписи «▲ 4,2 % к прошлому году» здесь больше нет — её убрали
@@ -214,6 +215,15 @@ def kpi_card(row: pd.Series, pace: float | None = None) -> html.Div:
     У карточки «Освоение» вместо неё тихая строка про ожидаемый темп,
     а у «Факта» — полоса с засечкой этого темпа: то же сравнение, но
     графикой, которая читается быстрее фразы.
+
+    `solo` — карточка у вкладки одна (подсекции «Динамики по годам»
+    у СЭЭ). Тогда она не стоит в ряду с соседями, а держит целую строку
+    над своим графиком, и левое выравнивание оставляло число одиноко
+    жаться к краю пустой полосы. Такая карточка встаёт по центру
+    и набирается крупнее — весь остальной вид даёт разбивку, а она
+    отвечает за единственное число раздела, поэтому его и видно первым.
+    Раскладку (ширину и центрирование колонки) задаёт `render_kpi`,
+    здесь — только вид самой карточки.
     """
     # Значение и единица приезжают одной строкой («1 307,9 млрд ₸»), а набрать
     # их надо разным кеглем. Единицу берём из реестра показателей, а не режем
@@ -228,7 +238,7 @@ def kpi_card(row: pd.Series, pace: float | None = None) -> html.Div:
         html.Div([
             html.Span(value, className="damu-kpi2-value"),
             html.Span(unit, className="damu-kpi2-unit"),
-        ], className="d-flex align-items-baseline gap-2 mt-2"),
+        ], className="damu-kpi2-figure d-flex align-items-baseline gap-2 mt-2"),
     ]
 
     percent = row.get("share_pct")
@@ -249,7 +259,8 @@ def kpi_card(row: pd.Series, pace: float | None = None) -> html.Div:
         body.append(html.Div(f"данные за {int(row['year'])} год",
                              className="damu-kpi2-year"))
 
-    return html.Div(body, className="damu-kpi2 h-100")
+    return html.Div(body, className="damu-kpi2 h-100"
+                    + (" damu-kpi2--solo" if solo else ""))
 
 
 def chart_stubs():
@@ -301,6 +312,44 @@ def oked_card():
     ], className="damu-kpi2 h-100")
 
 
+def _years_toggle(item: dict, program: str | None) -> html.Div | None:
+    """Кнопка «Показать динамику» для вида «Годы» со свёрнутым показом.
+
+    `None`, если у виджета нет `recent_years` (08.08.2026 — только у СЭЭ)
+    или у показателя и так не больше лет, чем в свёрнутом виде: разворачивать
+    было бы нечего, а кнопка без действия выглядела бы сломанной.
+
+    Переключение сделано в браузере (`assets/dashboard.js`, обработчик
+    `[data-years-toggle]`), без коллбэка: сервер уже прислал ВСЕ года
+    в фигуре, клик только раздвигает видимое окно оси через
+    `Plotly.relayout` — новый запрос к серверу не нужен.
+
+    `!!` Границы окна (`data-range-lo/hi`) обязаны совпадать с тем, что
+    выставляет `_years_total` в `core/charts.py` — иначе кнопка «Скрыть»
+    вернёт не тот диапазон, что был изначально.
+    """
+    recent = item.get("recent_years")
+    if not recent:
+        return None
+    total = len(data.indicator_years(item["indicator"], program))
+    if total <= recent:
+        return None
+    lo, hi = total - recent - 0.5, total - 0.5
+    return html.Div(
+        html.Button(
+            "Показать динамику ▾", n_clicks=0,
+            # `data-open` — состояние кнопки. Держим его атрибутом, а не
+            # классом на колонке, как в первой версии: там кнопка заодно
+            # раздвигала карточку на всю ширину, а теперь график и так
+            # во всю линию своей подсекцией, и менять раскладку нечем
+            **{"data-years-toggle": "1", "data-open": "0",
+               "data-range-lo": lo, "data-range-hi": hi},
+            className="damu-years-toggle",
+        ),
+        className="d-flex justify-content-end mb-1",
+    )
+
+
 def widget_grid(section_key: str, tab_key: str, items: list[dict]):
     """Места под диаграммы одного разреза; фигуры подставит коллбэк.
 
@@ -311,18 +360,23 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
     if not items:
         return dbc.Alert("Виджетов нет. Добавьте их на странице «Виджеты».",
                          color="light", className="border")
+    program = widgets.program_of(section_key)
     columns = []
     for item in items:
         preset = widgets.size_meta(item["size"])
+        toggle = _years_toggle(item, program)
         columns.append(
             dbc.Col(
                 dbc.Card(
-                    dcc.Graph(
-                        id={"type": "section-widget",
-                            "index": f"{tab_key}|{item['id']}"},
-                        style={"height": f"{preset['height']}px"},
-                        config={"displayModeBar": False},
-                    ),
+                    [
+                        *([toggle] if toggle is not None else []),
+                        dcc.Graph(
+                            id={"type": "section-widget",
+                                "index": f"{tab_key}|{item['id']}"},
+                            style={"height": f"{preset['height']}px"},
+                            config={"displayModeBar": False},
+                        ),
+                    ],
                     className="shadow-sm p-2 h-100",
                 ),
                 xs=12, lg=preset["columns"], className="mb-3",
@@ -494,6 +548,13 @@ def render_kpi(year, _version, key, ids):
                 "По этому разделу нет показателей за выбранный год.",
                 color="light", className="border"))
             continue
+        # Одна карточка на вкладку — особый случай, а не «ряд из одного»:
+        # растянутая во всю ширину, она читалась как пустая полоса с числом
+        # у левого края. Такую ставим по центру и уже колонкой заметной
+        # ширины (`mx-auto` центрирует колонку внутри `dbc.Row` — это
+        # обычный flex-ряд). Ряд из двух и больше остаётся как был:
+        # `md=True` делит строку поровну между соседями.
+        solo = len(kpi) == 1
         cards = []
         for _, row in kpi.iterrows():
             row = row.copy()
@@ -506,7 +567,10 @@ def render_kpi(year, _version, key, ids):
             elif row["indicator"] == "demo_execution":
                 faster = "быстрее" if _execution_value(row) >= pace else "медленнее"
                 row["note"] = f"{faster} плана — прошло {pace:.1f} % года".replace(".", ",")
-            cards.append(dbc.Col(kpi_card(row, pace), xs=12, md=True))
+            if solo:
+                cards.append(dbc.Col(kpi_card(row, pace, solo=True), xs=12))
+            else:
+                cards.append(dbc.Col(kpi_card(row, pace), xs=12, md=True))
         out.append(cards)
     return out
 
@@ -562,6 +626,7 @@ def render_widgets(year, regions, _version, key, ids):
             charts.build(
                 item["chart"], item["indicator"], year, regions,
                 log=False, height=preset["height"], program=program,
+                recent_years=item.get("recent_years"),
             )
         )
     return figures

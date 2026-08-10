@@ -44,6 +44,11 @@ class Ctx:
     #: есть данные за него; разошлись — `year` подставлен слоем данных,
     #: и заголовок обязан про это сказать (см. `title`).
     asked_year: int | None = None
+    #: Свёрнутый показ вида «Годы»: сколько последних лет видно сразу,
+    #: остальные раскрывает кнопка на странице. `None` — показывать все
+    #: года, как было раньше. Читает только `_years_total`, остальные
+    #: 24 вида это поле не видят.
+    recent_years: int | None = None
 
     @property
     def meta(self) -> dict:
@@ -152,13 +157,17 @@ def _grid_across_bars(fig: go.Figure) -> None:
 
 
 def build(chart_type: str, indicator: str, year, regions, log: bool = False,
-          height: int | None = None, program: str | None = None) -> go.Figure:
+          height: int | None = None, program: str | None = None,
+          recent_years: int | None = None) -> go.Figure:
     """Собирает выбранную диаграмму и навешивает общее оформление.
 
     height — высота в пикселях. Задан (виджет на главной со своим пресетом
     размера) — диаграмма подгоняется под него, даже если вид просил себе
     другую высоту. Не задан (страница «Разбор», один график во весь экран) —
     вид оставляет свою, а если не просил — 700, как было.
+
+    recent_years — только для вида «Годы» (`years_total`), остальные
+    молча игнорируют. См. `Ctx.recent_years`.
     """
     entry = _REGISTRY.get(chart_type) or _REGISTRY["bar"]
     # Год один на весь сайт, а показатели кончаются в разные годы: гарантии
@@ -175,6 +184,7 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         log=bool(log) and entry["log_ok"],
         program=program,
         asked_year=asked,
+        recent_years=recent_years,
     )
     # Оформление сайта распространяется и на диаграммы: иначе страница была
     # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
@@ -203,6 +213,17 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         # была бы светлой заплатой; прозрачная принимает цвет карточки.
         plot_bgcolor="rgba(0,0,0,0)",
         paper_bgcolor="rgba(0,0,0,0)",
+        # !! Протяжка мышью по диаграмме БОЛЬШЕ НЕ ПРИБЛИЖАЕТ (10.08.2026).
+        # Умолчание plotly — `dragmode="zoom"`: движение мыши с зажатой
+        # кнопкой над полем графика приближает выделенный прямоугольник.
+        # Само по себе не беда, но панель инструментов у нас скрыта везде
+        # (`displayModeBar: False`), а вместе с ней и кнопка «сбросить оси» —
+        # выбраться из случайного приближения человеку нечем, и график
+        # остаётся сломанным до перезагрузки страницы. Так и вышло у СЭЭ:
+        # вместо пятнадцати лет на экране оставалось семь, последний столбец
+        # обрезан краем (воспроизведено протяжкой в браузере 10.08.2026).
+        # Подсказки при наведении от этого не страдают — они не про drag.
+        dragmode=False,
         # Русская типографика чисел: запятая для дробей, неразрывный пробел
         # для разрядов. Иначе plotly пишет по-английски: 454,416.0
         separators=", ",
@@ -1013,7 +1034,14 @@ def _gauge(ctx: Ctx) -> go.Figure:
 
 @chart("years_total", "Годы — итог по стране")
 def _years_total(ctx: Ctx) -> go.Figure:
-    """Как показатель менялся по годам, без разбивки по областям."""
+    """Как показатель менялся по годам, без разбивки по областям.
+
+    Все года — всегда в одной фигуре, ни один столбец не выбрасывается.
+    `ctx.recent_years` (08.08.2026, пока только у СЭЭ) лишь сужает НАЧАЛЬНОЕ
+    окно оси через `xaxis.range`: браузер потом сам раздвигает его кнопкой
+    «Показать динамику» (`assets/dashboard.js`, `Plotly.relayout`), без
+    нового обращения к серверу — данные там уже все.
+    """
     df = data.get_country_years(ctx.indicator, regions=ctx.regions, program=ctx.program)
     if df.empty:
         return _message(NO_DATA)
@@ -1027,6 +1055,13 @@ def _years_total(ctx: Ctx) -> go.Figure:
     fig.update_traces(textposition="outside")
     # Год — подпись, а не число на шкале: 2 022,5 года не бывает
     fig.update_xaxes(type="category")
+
+    # !! Точно та же формула границ — в pages/section.py (widget_grid),
+    # откуда JS-обработчик берёт числа для кнопки «Скрыть» (data-range-lo/
+    # hi). Разойдутся — раскрытие и укрытие будут показывать разную ширину.
+    total = len(df)
+    if ctx.recent_years and total > ctx.recent_years:
+        fig.update_xaxes(range=[total - ctx.recent_years - 0.5, total - 0.5])
     return fig
 
 

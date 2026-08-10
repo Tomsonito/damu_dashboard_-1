@@ -240,11 +240,16 @@ def for_year(year: int | None = None, expanded: bool = False,
         percent = fact / item["plan"] * 100 if item["plan"] else 0.0
         projects_percent = (projects_fact / item["projects_plan"] * 100
                             if item["projects_plan"] else 0.0)
+        # Доля уникальных среди состоявшихся проектов. Считается здесь,
+        # рядом с остальным производным, а не в разметке страницы: правило
+        # файла — то, что выводится из чисел, выводится в одном месте,
+        # иначе однажды разойдётся с ними
+        unique_share = (unique / projects_fact * 100) if projects_fact else 0.0
         gap = percent - pace
         out.append({
             **item,
             "fact": fact, "projects_fact": projects_fact, "unique": unique,
-            "repeat": projects_fact - unique,
+            "repeat": projects_fact - unique, "unique_share": unique_share,
             "months": months, "month_labels": tuple(labels),
             "percent": percent, "projects_percent": projects_percent,
             "pace": pace, "pace_day": day, "pace_days": days,

@@ -410,10 +410,24 @@ section_tabs_by_section:
   # же 4 диаграммы (выпуск продукции, созданные и сохранённые рабочие
   # места, налоговые поступления), только разрез снаружи разный.
   see:
-    - {key: years,      title: "Динамика по годам",   data: true,
-       kpi: [see_output, see_jobs_created, see_tax_revenue, see_jobs_saved]}
-       # 4 диаграммы: выпуск продукции (млрд ₸) · созданные раб. места (ед.)
-       # · налоговые поступления (млрд ₸) · сохранённые раб. места (ед.)
+    # «Динамика по годам» — не одна вкладка с четырьмя графиками, а ГРУППА
+    # из четырёх подсекций, по одной на показатель (08.08.2026, просьба
+    # пользователя). Механизм тот же, что у «ГФ1» в Гар. выдаче: в шапке
+    # одна кнопка «Динамика по годам», она раскрывает ряд «пилюль», каждая
+    # прокручивает к своей секции ленты.
+    #
+    # У каждой подсекции свой график во всю ширину (`size: large`
+    # в section_widgets_by_page) и своя карточка-показатель того же
+    # показателя: число и его динамика стоят рядом, а не в общем ряду
+    # из четырёх карточек над всей вкладкой, как было.
+    - {key: years_output,  title: "Выпуск продукции",  group: "Динамика по годам",
+       data: true, kpi: [see_output]}
+    - {key: years_jobs,    title: "Созданные раб. места", group: "Динамика по годам",
+       data: true, kpi: [see_jobs_created]}
+    - {key: years_tax,     title: "Налоговые поступления", group: "Динамика по годам",
+       data: true, kpi: [see_tax_revenue]}
+    - {key: years_saved,   title: "Сохранённые раб. места", group: "Динамика по годам",
+       data: true, kpi: [see_jobs_saved]}
     - {key: industries, title: "Отрасли",              data: true}
        # те же 4 диаграммы, разрез по отраслям
     - {key: regions,    title: "Регионы",              data: true}
@@ -943,11 +957,20 @@ section_widgets_by_page:
   # Стояло `normal`, такого пресета нет, и `size_meta` молча подставлял
   # средний. Ошибки не было, но и настройка не действовала: чтобы поменять
   # размер, надо писать существующее имя.
-  see:years:
-    - {chart: years_total, indicator: see_output, size: medium}
-    - {chart: years_total, indicator: see_jobs_created, size: medium}
-    - {chart: years_total, indicator: see_tax_revenue, size: medium}
-    - {chart: years_total, indicator: see_jobs_saved, size: medium}
+  # «Динамика по годам» у СЭЭ разбита на четыре подсекции, у каждой свой
+  # график во всю ширину (08.08.2026). Ключ здесь — «раздел:вкладка»,
+  # а вкладка теперь своя у каждого показателя.
+  #
+  # `recent_years: 5` — только у СЭЭ («работаем только с СЭЭ», Гар. выдачу
+  # и Кредит. выдачу пока не трогаем). График показывает последние пять лет
+  # С ДАННЫМИ у своего показателя (не пять календарных — у СЭЭ история
+  # обрывается на 2024-м), кнопка «Показать динамику» разворачивает до всех.
+  # Ширину кнопка больше не меняет: график и так во всю линию.
+  # Разбор — CODE_GUIDE, «Динамика по годам: свёрнутый вид».
+  see:years_output: [{chart: years_total, indicator: see_output,       size: large, recent_years: 5}]
+  see:years_jobs:   [{chart: years_total, indicator: see_jobs_created, size: large, recent_years: 5}]
+  see:years_tax:    [{chart: years_total, indicator: see_tax_revenue,  size: large, recent_years: 5}]
+  see:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: large, recent_years: 5}]
   guarantee:years:     [{chart: years_total, indicator: guarantees_issued, size: large}]
   credit:years:        [{chart: years_total, indicator: credits_issued, size: large}]
   subsidy:years:       [{chart: years_total, indicator: demo_fact, size: large}]
@@ -982,17 +1005,27 @@ section_widgets_by_page:
   # просто читал из них четыре колонки из шестнадцати. Вкладки под них уже
   # были нарисованы по «Описанию разделов» и стояли с заглушкой.
   #
-  # Отрасли — во всю ширину (категорий много, подписи длинные), остальные
-  # по две в ряд: банков полтора десятка, а субъектностей и целей по три-
-  # четыре — им большая карточка не нужна.
+  # Отрасли — во всю ширину: категорий 17–19, а на «среднем» пресете
+  # (420 px) это 22–25 px на строку — подписи ещё влезали, но впритык.
+  # Остальные разрезы (субъектность, цели) — по три-четыре значения,
+  # им большая карточка не нужна.
+  #
+  # !! Банки — тоже во всю ширину, и это не запас, а необходимость:
+  # у «Гар. выдачи» их 28. На среднем пресете (420 px) выходило по 7,4 px
+  # на строку, и Plotly в ответ прятал ПОЛОВИНУ подписей — 14 из 28,
+  # столбцы оставались все, а какой банк к какому относится, было не
+  # понять (поймано пользователем 07.08.2026 на скриншоте — «нечитаемые
+  # числа»). На большом пресете (700 px) — 25 px на строку, весь список
+  # виден. У «Кредит. выдачи» банков 15 и у «Өрлеу» 7 — там строка ниже
+  # порога и осталась средней, трогать незачем.
   guarantee:regions:
     - {chart: bar,        indicator: guarantees_issued, size: medium}
-    - {chart: industries, indicator: guarantees_issued, size: medium}
+    - {chart: industries, indicator: guarantees_issued, size: large}
   guarantee:programs:
     - {chart: programs,   indicator: guarantees_issued, size: medium}
     - {chart: purposes,   indicator: guarantees_issued, size: medium}
   guarantee:banks:
-    - {chart: banks,      indicator: guarantees_issued, size: medium}
+    - {chart: banks,      indicator: guarantees_issued, size: large}
     - {chart: subjects,   indicator: guarantees_issued, size: medium}
   credit:programs:
     - {chart: programs,   indicator: credits_issued, size: medium}
@@ -1011,11 +1044,11 @@ section_widgets_by_page:
   guarantee_debt:regions: [{chart: bar, indicator: demo_fact, size: large}]
   credit:regions:
     - {chart: bar,        indicator: credits_issued, size: medium}
-    - {chart: industries, indicator: credits_issued, size: medium}
+    - {chart: industries, indicator: credits_issued, size: large}
   orleu:status:         [{chart: bar, indicator: credits_issued, size: large}]
   orleu:regions:
     - {chart: bar,        indicator: credits_issued, size: medium}
-    - {chart: industries, indicator: credits_issued, size: medium}
+    - {chart: industries, indicator: credits_issued, size: large}
   subsidy:regions:      [{chart: bar, indicator: demo_fact, size: large}]
   subsidy_debt:regions: [{chart: bar, indicator: demo_fact, size: large}]
   subsidy_pay:regions:  [{chart: bar, indicator: demo_fact, size: large}]

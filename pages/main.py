@@ -203,6 +203,14 @@ def instrument_card(item: dict, expanded: bool) -> html.Div:
                              style={"left": f"{min(item['pace'], 100):.1f}%"}),
                 ], className="damu-inst2-track"),
 
+                # !! Обе колонки устроены ОДИНАКОВО: подпись, число, полоса,
+                # пояснение. Так было не всегда: до 10.08.2026 полоса стояла
+                # только у левой, а под правой («Уникальных») печаталось
+                # «выполнение 86,0 %» — процент ЛЕВОЙ колонки (430/500).
+                # То есть подпись описывала соседний столбец, а читалась как
+                # «выполнение уникальных». Правая при этом оставалась без
+                # полосы, отчего половина карточки выглядела пустой
+                # (замечено пользователем).
                 html.Div([
                     html.Div([
                         html.Div("Проекты факт / план", className="damu-band-kicker",
@@ -213,12 +221,17 @@ def instrument_card(item: dict, expanded: bool) -> html.Div:
                         html.Div(html.Div(className="damu-bar-fill", style={
                             "width": f"{min(item['projects_percent'], 100):.1f}%"}),
                             className="damu-bar mt-1"),
+                        html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
+                                 className="small text-muted mt-1"),
                     ]),
                     html.Div([
                         html.Div("Уникальных", className="damu-band-kicker",
                                  style={"color": "var(--damu-muted)"}),
                         html.Div(num(item["unique"]), className="damu-inst2-num"),
-                        html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
+                        html.Div(html.Div(className="damu-bar-fill", style={
+                            "width": f"{min(item['unique_share'], 100):.1f}%"}),
+                            className="damu-bar mt-1"),
+                        html.Div(f"выполнение {num(item['unique_share'], 1)} %",
                                  className="small text-muted mt-1"),
                     ]),
                 ], className="damu-inst2-block damu-inst2-pair"),

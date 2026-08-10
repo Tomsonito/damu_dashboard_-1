@@ -180,6 +180,20 @@
     --damu-accent-3: #21a3a2;
     --damu-nav-bg: #131211;
     --damu-nav-fg: #ecebe9;
+
+    /* !! Приглушённый текст Bootstrap. Класс `.text-muted` берёт цвет
+       из `--bs-secondary-color`, а тот собран из `--bs-body-color-rgb`
+       под СВЕТЛУЮ тему: `rgba(33,37,41,.75)`, почти чёрный. В тёмной он
+       давал контраст **1.09 : 1** — надписи «выполнение 86,0 %»,
+       «от плана» и «из 620 млрд ₸» на главной пропадали целиком
+       (замерено 10.08.2026, поймано пользователем на скриншоте).
+
+       Чиним переменной самого Bootstrap, а не заменой класса в разметке:
+       `.text-muted` стоит в 30 местах шести страниц, и одна строка здесь
+       чинит их все разом — тот же приём, что и с остальными `--bs-*`
+       в начале файла. Значение то же, что у `--damu-muted`. */
+    --bs-secondary-color: rgba(236, 235, 233, 0.5);
+    --bs-body-color-rgb: 236, 235, 233;
 }
 
 /* Карточкам вместо тени — рамка: на тёмном фоне тень не видна вовсе,
@@ -1342,6 +1356,116 @@ a:hover {
     border-top: 1px solid var(--damu-hairline);
     padding-top: 0.35rem;
 }
+/* Приближение мышью выключено на сервере (core/charts.py, `dragmode=False`),
+   но plotly всё равно кладёт поверх поля графика прозрачный слой с курсором-
+   прицелом. Прицел обещает выделение рамкой, которого больше нет, — возвращаем
+   обычную стрелку. Селектор с двумя классами весит больше плотлевского
+   `.js-plotly-plot .plotly .cursor-crosshair`, поэтому обходимся
+   без `!important`. */
+.js-plotly-plot .plotly .nsewdrag.drag { cursor: default; }
+
+/* ── Единственная карточка вкладки (подсекции «Динамики по годам»
+   у СЭЭ, 10.08.2026) ──
+
+   Она не делит строку с соседями, а стоит одна над своим графиком.
+   Раскладку задаёт Python (`render_kpi`: узкая колонка + `mx-auto`),
+   здесь — только вид: содержимое по центру, число крупнее и цветом
+   акцента, сверху та же зелёная черта, что у заголовка секции над ней.
+   Черта и цвет числа — ровно столько заметности, сколько просили:
+   карточку видно первой, но кричит она не громче заголовка.
+
+   10.08.2026 — стиль обновлён: карточка выглядела простым серым блоком,
+   а в тёмной теме — практически сливалась с фоном. Теперь:
+   · Светлая тема: мягкий градиент, тонкие скруглённые углы, тень
+   · Тёмная тема: glow-эффект на рамке и числе, контрастный фон
+
+   !! Цвета взяты переменными (`--damu-accent`), а не значениями: в тёмной
+   теме `--damu-accent` подменяется на светлый #4fb37f, и карточка едет
+   за темой сама. Вписанный сюда #1f7a4d стал бы тёмно-зелёным числом
+   на почти чёрном фоне. */
+.damu-kpi2--solo {
+    text-align: center;
+    border-top: 3px solid var(--damu-accent);
+    border-radius: 6px;
+    padding: 1.25rem 1.4rem 1.3rem;
+    background: linear-gradient(
+        180deg,
+        rgba(31, 122, 77, 0.06) 0%,
+        var(--damu-surface) 40%
+    );
+    box-shadow: 0 2px 12px rgba(31, 122, 77, 0.10),
+                0 1px 3px rgba(45, 43, 43, 0.08);
+    position: relative;
+    overflow: hidden;
+}
+/* Мягкий внутренний отблеск от акцента сверху — подчёркивает
+   зелёную черту и придаёт карточке глубину */
+.damu-kpi2--solo::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        var(--damu-accent),
+        transparent
+    );
+    opacity: 0.4;
+}
+/* !! Те же грабли, что у `.damu-inst2` выше: в тёмной теме карточкам
+   даётся рамка СОКРАЩЁННЫМ `border`, и она сбрасывает зелёную черту
+   сверху (замерено — вместо акцента приезжал hairline rgba(236,235,233,.1)).
+   Возвращаем черту отдельным правилом с тем же весом селектора; оно ниже
+   по файлу, поэтому побеждает. Переносить его выше нельзя.
+
+   10.08.2026 — тёмная тема теперь получает glow-эффект и контрастный фон:
+   карточка подсвечивается как «приборная панель». */
+:root[data-theme="dark"] .damu-kpi2--solo {
+    border-top: 3px solid var(--damu-accent);
+    border-radius: 6px;
+    background: linear-gradient(
+        180deg,
+        rgba(79, 179, 127, 0.12) 0%,
+        var(--damu-surface) 50%
+    );
+    box-shadow: 0 0 20px -4px rgba(79, 179, 127, 0.35),
+                0 0 40px -8px rgba(79, 179, 127, 0.15),
+                inset 0 1px 0 rgba(79, 179, 127, 0.15);
+    border-left: 1px solid rgba(79, 179, 127, 0.2);
+    border-right: 1px solid rgba(79, 179, 127, 0.2);
+    border-bottom: 1px solid rgba(79, 179, 127, 0.12);
+}
+:root[data-theme="dark"] .damu-kpi2--solo::before {
+    opacity: 0.7;
+}
+.damu-kpi2--solo .damu-kpi2-figure { justify-content: center; }
+.damu-kpi2--solo .damu-kpi2-value {
+    font-size: 2.4rem;
+    line-height: 1.1;
+    color: var(--damu-accent);
+}
+/* Тёмная тема: число получает мягкое свечение, чтобы выделяться
+   на тёмном фоне — тот же приём, что у заголовков секций */
+:root[data-theme="dark"] .damu-kpi2--solo .damu-kpi2-value {
+    text-shadow: 0 0 24px rgba(79, 179, 127, 0.4),
+                 0 0 6px rgba(79, 179, 127, 0.15);
+}
+.damu-kpi2--solo .damu-kpi2-label {
+    letter-spacing: 0.12em;
+    color: var(--damu-muted);
+    font-size: 0.62rem;
+}
+/* Строка про подставленный год: во всю ширину она тянула бы черту
+   от края до края карточки — прижимаем черту к самому тексту */
+.damu-kpi2--solo .damu-kpi2-year {
+    display: inline-block;
+    margin-top: 0.65rem;
+    padding: 0.35rem 0.9rem 0;
+}
+
 .damu-kpi2-track {
     position: relative;
     height: 7px;
@@ -1362,6 +1486,25 @@ a:hover {
     width: 2px;
     background-color: var(--damu-ink);
 }
+
+/* ── Вкладка «Динамика по годам»: свёрнутый показ + раскрытие (08.08.2026,
+   пока только у СЭЭ) ──
+
+   Кнопка — та же пилюля, что «Показать динамику» в примерах «Разбора»
+   (pages/explore_example.py, _dyn_toggle), но здесь своя копия: у примеров
+   инлайн-стили нарочно (страницы временные, удалятся целиком), а виджеты
+   раздела — постоянный код, для них стиль в custom.css. */
+.damu-years-toggle {
+    font-size: 0.625rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    color: var(--damu-ink);
+    background: var(--damu-track);
+    border: none;
+    padding: 4px 12px;
+}
+.damu-years-toggle:hover { background: var(--damu-divider); }
 
 /* Разрез без данных: честная строка и два поля со штриховкой.
    Пустые рамки без пояснения читались бы как поломка. */
