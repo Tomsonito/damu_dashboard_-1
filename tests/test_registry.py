@@ -6,6 +6,8 @@
 однажды был вписан словами в подпись галки и разошёлся с кодом.
 """
 
+import pytest
+
 from core import charts
 
 #: Виды, которые режут данные по измерению. У них разрез ОБЯЗАН быть
@@ -66,3 +68,38 @@ def test_разрезы_записаны_по_русски_и_с_маленьк�
             continue
         assert cut.startswith("по "), f"{key}: разрез «{cut}» не встроится в строку"
         assert cut[3].islower(), f"{key}: разрез «{cut}» с заглавной буквы"
+
+
+#: Виды, у которых названия (области, отрасли, банки) стоят подписями
+#: ВЕРТИКАЛЬНОЙ оси. Им обязателен `automargin`.
+WITH_SIDE_LABELS = [
+    ("bar", "see_output", "СЭЭ"),
+    ("dot", "see_output", "СЭЭ"),
+    ("funnel", "see_output", "СЭЭ"),
+    ("facets", "see_output", "СЭЭ"),
+    ("years", "see_output", "СЭЭ"),
+    ("industries", "see_output_industry", "СЭЭ"),
+    ("banks", "credits_issued", "Өрлеу"),
+]
+
+
+@pytest.mark.needs_storage
+@pytest.mark.parametrize("chart_type,indicator,program", WITH_SIDE_LABELS)
+def test_подписи_сбоку_просят_себе_место(chart_type, indicator, program):
+    """Без `automargin` Plotly СРЕЗАЕТ подписи, и молча.
+
+    Общее левое поле — 10 px (`build`), а «Карагандинская» это около сотни.
+    До 11.08.2026 просьба стояла только у видов, собранных через
+    `_breakdown_figure`; у полос, точек, воронки, панелей и сравнения лет
+    названия областей просто исчезали (поймано пользователем на разделе СЭЭ).
+
+    Проверяем именно готовую фигуру, а не исходник: важно, что до неё
+    настройка доехала, а не что строка написана.
+    """
+    fig = charts.build(chart_type, indicator, 2026, None,
+                       program=program, height=420, columns=6)
+    assert fig.data, f"у {chart_type} нет данных — проверка бессмысленна"
+    axes = [name for name in dir(fig.layout) if name.startswith("yaxis")]
+    for name in axes:
+        assert getattr(fig.layout, name).automargin, \
+            f"{chart_type}: у оси {name} нет automargin — подписи срежет"

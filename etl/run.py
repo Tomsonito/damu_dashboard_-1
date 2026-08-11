@@ -33,7 +33,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from core import cache, db, publish
+from core import cache, db, monitoring, publish
 from etl import load_budget
 
 DB_PATH = Path("data/analytics.duckdb")
@@ -241,10 +241,25 @@ def main() -> None:
     args = parser.parse_args()
 
     setup_logging()
+    if monitoring.init_etl():
+        log.info("Sentry подключён — ошибки прогона дублируются в кабинет")
     try:
         run(force=args.force)
     except Exception:
-        # В лог — с полным следом: cron ошибок не показывает, файл — единственный свидетель
+        # В лог — с полным следом: cron ошибок не показывает, файл — единственный свидетель.
+        #
+        # !! Если Sentry подключён (monitoring.init_etl), ЭТО ЖЕ исключение
+        # уйдёт и туда — но не потому, что оно «необработанное». Мы его как
+        # раз обрабатываем сами (except + SystemExit), и глобальный перехват
+        # sentry_sdk такое не увидит. Работает это через LoggingIntegration:
+        # у неё по умолчанию event_level=ERROR, и log.exception() — это
+        # ERROR-запись со стектрейсом, её она превращает в событие сама.
+        # Проверено вживую (без сети, с подменённым transport): 11.08.2026.
+        #
+        # Значит explicit sentry_sdk.capture_exception() здесь не нужен,
+        # НО если строку заменят на log.error(..., exc_info=False) или
+        # понизят уровень логгера ниже ERROR — отправка в Sentry молча
+        # прекратится, а в data/etl.log ошибка как была, так и останется.
         log.exception("прогон упал")
         raise SystemExit(1)
 

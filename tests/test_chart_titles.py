@@ -55,12 +55,18 @@ def test_широкий_виджет_держит_заголовок_одной_
 
 
 def test_узкий_виджет_переносит_год_на_вторую_строку():
-    """6 колонок — самый тесный случай на экране 1024 (замер: 336 px)."""
-    title = ctx(cut="по субъектности", columns=6).title
-    head, _, tail = title.partition("<br>")
-    assert tail, "в узком виджете заголовок обязан переноситься"
-    assert "по субъектности" in head
-    assert tail == "2026 год"
+    """6 колонок — самый тесный случай на экране 1024 (замер: 336 px).
+
+    Показатель взят с длинным названием: у короткого («Освоено бюджета»)
+    заголовок помещается в одну строку и переносить нечего — с 11.08.2026,
+    когда шрифт заголовка уменьшили с 17 px до 14 и в строку стало влезать
+    7 знаков на колонку вместо 5,5.
+    """
+    title = ctx(indicator="see_tax_revenue", cut="по субъектности",
+                columns=6).title
+    lines = title.split("<br>")
+    assert len(lines) > 1, "в узком виджете заголовок обязан переноситься"
+    assert lines[-1] == "2026 год", "год обязан уезжать на строку целиком"
 
 
 def test_год_никогда_не_рвётся_пополам():
@@ -88,10 +94,14 @@ def test_пометка_года_остаётся_при_переносе():
     assert "за 2026 данных нет" in title
 
 
-@pytest.mark.parametrize("columns,expected_max", [(4, 22), (6, 33), (12, 66)])
-def test_чем_уже_виджет_тем_короче_строка(columns, expected_max):
+# Бюджет строки — `columns * TITLE_CHARS_PER_COLUMN`. Число берём
+# из самого модуля, а не переписываем: поменяют шрифт заголовка —
+# поменяется и оно, а тест не должен от этого падать зря.
+@pytest.mark.parametrize("columns", [4, 6, 12])
+def test_чем_уже_виджет_тем_короче_строка(columns):
     """Бюджет строки считается от ширины пресета, а не одним числом на всех."""
     title = charts.Ctx(indicator="see_tax_revenue", year=2026, regions=None,
                        cut="по отраслям (ОКЭД)", columns=columns).title
     for line in title.split("<br>"):
-        assert len(line) <= expected_max + 2, f"строка длиннее бюджета: {line!r}"
+        budget = int(columns * charts.TITLE_CHARS_PER_COLUMN)
+        assert len(line) <= budget + 2, f"строка длиннее бюджета: {line!r}"

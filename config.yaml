@@ -66,6 +66,7 @@ indicators:
     display_unit: "млрд ₸"
     decimals: 0
     agg: sum
+    tone: 1
 
   see_jobs_created_industry:
     title: "Количество созданных рабочих мест (ед.)"
@@ -76,6 +77,7 @@ indicators:
     display_unit: "ед."
     decimals: 0
     agg: sum
+    tone: 2
 
   see_jobs_saved_industry:
     title: "Количество сохраненных рабочих мест (ед.)"
@@ -86,6 +88,7 @@ indicators:
     display_unit: "ед."
     decimals: 0
     agg: sum
+    tone: 2
 
   see_tax_revenue_industry:
     title: "Налоговые поступления (в сумме, млрд тенге)"
@@ -96,6 +99,7 @@ indicators:
     display_unit: "млрд ₸"
     decimals: 0
     agg: sum
+    tone: 3
 
   see_output:
     title: "Выпуск продукции (в сумме, млрд тенге)"
@@ -106,6 +110,7 @@ indicators:
     display_unit: "млрд ₸"
     decimals: 0
     agg: sum
+    tone: 1
 
   see_jobs_created:
     title: "Количество созданных рабочих мест (ед.)"
@@ -116,6 +121,7 @@ indicators:
     display_unit: "ед."
     decimals: 0
     agg: sum
+    tone: 2
 
   see_jobs_saved:
     title: "Количество сохраненных рабочих мест (ед.)"
@@ -126,6 +132,7 @@ indicators:
     display_unit: "ед."
     decimals: 0
     agg: sum
+    tone: 2
 
   see_tax_revenue:
     title: "Налоговые поступления (в сумме, млрд тенге)"
@@ -136,6 +143,7 @@ indicators:
     display_unit: "млрд ₸"
     decimals: 0
     agg: sum
+    tone: 3
 
   budget_allocated:
     title: "Выделено бюджета"
@@ -428,6 +436,19 @@ section_tabs_by_section:
        data: true, kpi: [see_tax_revenue]}
     - {key: years_saved,   title: "Сохранённые раб. места", group: "Динамика по годам",
        data: true, kpi: [see_jobs_saved]}
+    # !! «Отрасли» и «Регионы» — по ОДНОЙ вкладке с четырьмя диаграммами
+    # 2×2, а НЕ группа подсекций (решено 11.08.2026, после сравнения
+    # с оригинальным порталом tablo.fund.kz).
+    #
+    # Раскладку диктует разрез, а не единообразие. «Динамика по годам»
+    # выше разбита на подсекции потому, что это четыре временных ряда:
+    # их смотрят по одному, и каждому нужна ширина. Здесь наоборот —
+    # вопрос сравнительный: «Алматы первый по выпуску, а по рабочим
+    # местам тоже?». Четыре диаграммы рядом на него отвечают, подсекции
+    # такой вопрос убивают: пришлось бы прокручивать и держать в голове.
+    #
+    # Так же сделано и в оригинальном портале, с которого срисован
+    # дашборд, — там люди работают каждый день.
     - {key: industries, title: "Отрасли",              data: true}
        # те же 4 диаграммы, разрез по отраслям
     - {key: regions,    title: "Регионы",              data: true}
@@ -894,6 +915,15 @@ widget_sizes:
     label: "Большой — во всю ширину"
     columns: 12
     height: 700
+  # Ширина как у большого, высота как у среднего. Заведён 11.08.2026 для
+  # подсекций «Динамика по годам» у СЭЭ: там один график на подсекцию, ему
+  # нужна вся ширина, а 700 px высоты не помещались на экран вместе
+  # с липкой шапкой и карточкой-показателем — приходилось прокручивать,
+  # чтобы увидеть низ столбцов.
+  wide:
+    label: "Широкий — во всю ширину, пониже"
+    columns: 12
+    height: 420
 
 # !! БЛОК ПОКА НЕ ДЕЙСТВУЕТ (с 29.07.2026): сетку виджетов с главной убрали,
 # там теперь витрина инструментов по макету. Блок оставлен на случай, если
@@ -967,10 +997,14 @@ section_widgets_by_page:
   # обрывается на 2024-м), кнопка «Показать динамику» разворачивает до всех.
   # Ширину кнопка больше не меняет: график и так во всю линию.
   # Разбор — CODE_GUIDE, «Динамика по годам: свёрнутый вид».
-  see:years_output: [{chart: years_total, indicator: see_output,       size: large, recent_years: 5}]
-  see:years_jobs:   [{chart: years_total, indicator: see_jobs_created, size: large, recent_years: 5}]
-  see:years_tax:    [{chart: years_total, indicator: see_tax_revenue,  size: large, recent_years: 5}]
-  see:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: large, recent_years: 5}]
+  # !! Размер `wide`, а не `large` (11.08.2026, замечание пользователя):
+  # ширина та же — во всю линию, а высота 420 вместо 700. С 700 график
+  # не помещался на экран целиком вместе с липкой шапкой и карточкой-
+  # показателем, и было «не видно, где что».
+  see:years_output: [{chart: years_total, indicator: see_output,       size: wide, recent_years: 5}]
+  see:years_jobs:   [{chart: years_total, indicator: see_jobs_created, size: wide, recent_years: 5}]
+  see:years_tax:    [{chart: years_total, indicator: see_tax_revenue,  size: wide, recent_years: 5}]
+  see:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: wide, recent_years: 5}]
   guarantee:years:     [{chart: years_total, indicator: guarantees_issued, size: large}]
   credit:years:        [{chart: years_total, indicator: credits_issued, size: large}]
   subsidy:years:       [{chart: years_total, indicator: demo_fact, size: large}]
@@ -979,21 +1013,26 @@ section_widgets_by_page:
   # документ здесь называет и на которую есть данные: разбивка по областям.
   # ОКЭД (вторая половина смысла у большинства этих вкладок) — по-прежнему
   # макетная карточка `oked_card()` в pages/section.py, не виджет.
+  # !! Во всю ширину (`large`), по одной в ряд — и это следствие шрифта.
+  # Пользователь выбрал 11.08.2026 читаемость: подписи в диаграммах
+  # не мельче 16 px («сейчас глаза болят»). При 16 px строка просит около
+  # 20 px, двадцать областей — 400 px только под полосы. В сетке 2×2
+  # такое не помещается, поэтому от неё отказались осознанно: сначала
+  # читаемость, потом «всё на одном экране». Вернуть сетку можно, лишь
+  # вернув мелкий шрифт.
+  # !! Размер `medium` (2 в ряд), а не `large` (11.08.2026, просьба
+  # пользователя). Ранее стояло `large` из-за шрифта 16 px и длинных
+  # подписей регионов/отраслей, но пользователь предпочёл компактность.
   see:regions:
     - {chart: bar, indicator: see_output, size: medium}
     - {chart: bar, indicator: see_jobs_created, size: medium}
     - {chart: bar, indicator: see_tax_revenue, size: medium}
     - {chart: bar, indicator: see_jobs_saved, size: medium}
-  # Отрасли — во всю ширину (large), а не по две в ряд, и это не про красоту.
-  # Категорий девятнадцать, у каждой длинное название: в половинной колонке
-  # высотой 420 px на строку остаётся ~17 px, подписи налезают друг на друга,
-  # а часть их plotly просто прячет. Во всю ширину — 700 px на 19 строк
-  # (~31 px) и вдвое больше места под сами названия.
   see:industries:
-    - {chart: industries, indicator: see_output_industry, size: large}
-    - {chart: industries, indicator: see_jobs_created_industry, size: large}
-    - {chart: industries, indicator: see_tax_revenue_industry, size: large}
-    - {chart: industries, indicator: see_jobs_saved_industry, size: large}
+    - {chart: industries, indicator: see_output_industry, size: medium}
+    - {chart: industries, indicator: see_jobs_created_industry, size: medium}
+    - {chart: industries, indicator: see_tax_revenue_industry, size: medium}
+    - {chart: industries, indicator: see_jobs_saved_industry, size: medium}
   # !! Ключ «раздел:вкладка» должен встречаться в этом блоке РОВНО ОДИН РАЗ.
   # YAML на дубль не ругается — молча побеждает последний. Поймано
   # 07.08.2026: `orleu:terms` оказался объявлен дважды, и вкладка «Цели

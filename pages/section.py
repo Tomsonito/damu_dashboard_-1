@@ -233,8 +233,21 @@ def kpi_card(row: pd.Series, pace: float | None = None,
     unit = (data.get_indicator_meta(row["indicator"]) or {}).get("display_unit") or ""
     value = text[:-len(unit)].strip() if unit and text.endswith(unit) else text
 
+    # !! Год, за который карточка на самом деле посчитана, стоит В ПОДПИСИ
+    # сверху, а не отдельной строкой снизу (11.08.2026, просьба пользователя
+    # — карточка была высокой и вместе с графиком не помещалась в экран).
+    # Пишем его ТОЛЬКО когда он разошёлся с выбранным в шапке: у показателей
+    # данные кончаются в разные годы, и слой данных подставляет ближайший
+    # с числами (`data.resolve_year`). Молча показать 2024-й там, где выбран
+    # 2026-й, — худший вид ошибки: цифра выглядит свежей и ничем не помечена.
+    # Поэтому пометку не убрали совсем, а перенесли туда, где она не стоит
+    # своей строки.
+    label = row["short"]
+    if row.get("year") and row.get("year") != row.get("asked_year"):
+        label = f"{label} · {int(row['year'])}"
+
     body = [
-        html.Div(row["short"], className="damu-kpi2-label"),
+        html.Div(label, className="damu-kpi2-label"),
         html.Div([
             html.Span(value, className="damu-kpi2-value"),
             html.Span(unit, className="damu-kpi2-unit"),
@@ -249,15 +262,6 @@ def kpi_card(row: pd.Series, pace: float | None = None,
         ], className="damu-kpi2-track"))
     elif row.get("note"):
         body.append(html.Div(row["note"], className="small text-muted mt-2"))
-
-    # !! Год, за который карточка на самом деле посчитана. Пишем его ТОЛЬКО
-    # когда он разошёлся с выбранным в шапке: у показателей данные кончаются
-    # в разные годы, и слой данных подставляет ближайший с числами
-    # (`data.resolve_year`). Молча показать 2024-й там, где выбран 2026-й, —
-    # худший вид ошибки: цифра выглядит свежей и ничем не помечена
-    if row.get("year") and row.get("year") != row.get("asked_year"):
-        body.append(html.Div(f"данные за {int(row['year'])} год",
-                             className="damu-kpi2-year"))
 
     return html.Div(body, className="damu-kpi2 h-100"
                     + (" damu-kpi2--solo" if solo else ""))

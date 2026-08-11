@@ -35,7 +35,23 @@ _REGISTRY: dict[str, dict] = {}
 #: а заголовок собирает сервер: он не видит ни размера окна, ни шрифта,
 #: который выбрал админ. Ошибка на знак-два ничего не стоит — цена вопроса
 #: одна лишняя строка заголовка, а не обрезанный текст.
-TITLE_CHARS_PER_COLUMN = 5.5
+#: Размер шрифта внутри диаграмм — подписи категорий, числа у полос, оси.
+#:
+#: !! Не меньше 16 px (11.08.2026, просьба пользователя: «сейчас глаза
+#: болят»). Было 11. Число это не косметика, а решение с последствиями:
+#: при 16 px подписи требуют около 20 px на строку, поэтому двадцать
+#: областей просят ~500 px высоты, и диаграммы с разрезом по областям
+#: встали во всю ширину по одной в ряд. Сетка 2×2 на одном экране при таком
+#: шрифте невозможна — выбор сделан пользователем в пользу читаемости.
+CHART_FONT_PX = 16
+
+#: Заголовок — чуть крупнее содержимого, но без перебора: он занимает
+#: верхнее поле, а высота нужна самим данным.
+TITLE_FONT_PX = 17
+
+#: Знаков заголовка на колонку сетки. Пересчитано под 17 px: около 9,4 px
+#: на знак (замер 11.08.2026), колонка сетки ~56 px на экране 1024.
+TITLE_CHARS_PER_COLUMN = 5.8
 
 #: Ширина виджета по умолчанию — вся сетка. Так его строят «Разбор»
 #: и главная: у них график один на экран, пресета размера нет.
@@ -48,8 +64,8 @@ TITLE_MAX_LINES = 3
 
 #: Поля сверху под заголовок: базовые плюс по строке. Однострочному хватало
 #: 60 px и раньше; многострочный без добавки наезжал бы на область графика.
-TITLE_LINE_H = 26
-TITLE_MARGIN_BASE = 34
+TITLE_LINE_H = 25
+TITLE_MARGIN_BASE = 40
 
 #: Запасные цвета для рядов после первого. Первым идёт цвет темы —
 #: у большинства наших видов ряд всего один, и он окрашивается им.
@@ -95,6 +111,21 @@ class Ctx:
         return self.meta["display_unit"] or self.meta["unit"]
 
     @property
+    def title_parts(self) -> tuple[str, str]:
+        import re
+        head = self.meta["title"]
+        annotation = ""
+        
+        m = re.search(r'\((.*?)\)', head)
+        if m:
+            annotation = m.group(1)
+            head = re.sub(r'\s*\(.*?\)', '', head)
+                
+        if self.cut:
+            head += f" {self.cut}"
+        return head, annotation
+
+    @property
     def title(self) -> str:
         # !! Разрез в заголовке обязателен, когда на одной вкладке лежат
         # несколько видов одного показателя. У Өрлеу так и было: четыре
@@ -104,9 +135,24 @@ class Ctx:
         # там, где вид объявлен, а не переписывается в config.yaml: реестр
         # уже знает, по какой колонке режет, и дублировать это словами
         # значило бы завести второй источник правды.
-        head = self.meta["title"]
-        if self.cut:
-            head += f" {self.cut}"
+        head, _ = self.title_parts
+        # !! СЭЭ — короткие заголовки без года (11.08.2026, просьба
+        # пользователя): «Сохранено раб. мест по регионам» вместо
+        # «Количество сохраненных рабочих мест по регионам — 2024 год ·
+        # за 2026 данных нет». Короткое имя берётся из того же поля
+        # `short`, что и подпись карточки-показателя — второго названия
+        # заводить не пришлось. Год из заголовка убран целиком, включая
+        # пометку о подстановке: для показателей СЭЭ это устный уговор
+        # с пользователем, а не общее правило проекта — у остальных
+        # разделов пометка остаётся (см. инвариант в CLAUDE.md, «Тихо
+        # подставить 2024-й… худший вид ошибки»). Ограничено программой,
+        # а не индикатором, чтобы не разошлось при новых показателях СЭЭ.
+        if self.program == "СЭЭ":
+            # !! Фолбэк — `meta["title"]` СЫРЬЁМ, не `head`: тот уже несёт
+            # приклеенный `cut` (см. `title_parts` выше), и наклеить его
+            # второй раз значило бы получить «по регионам по регионам».
+            short = self.meta.get("short") or self.meta["title"]
+            return f"{short} {self.cut}".strip() if self.cut else short
         tail = f"{self.year} год"
         if self.asked_year and self.asked_year != self.year:
             # !! Пометка обязательна. Тихо подставить 2024-й там, где человек
@@ -208,6 +254,27 @@ GRID_DASH = "dot"
 GRID_COLOR = "rgba(128,124,122,0.34)"
 
 
+#: Ось категорий: подписывать КАЖДУЮ, не спрашивая Plotly.
+#:
+#: !! Это правка от одной и той же поломки, случившейся трижды (07.08.2026 —
+#: банки Гар. выдачи, 11.08.2026 — регионы СЭЭ и ещё три раздела). В тесноте
+#: Plotly не сжимает шрифт и не поворачивает текст, а **прячет часть
+#: подписей**, чтобы оставшиеся не наложились. Ошибки нет ни в консоли,
+#: ни в логе: график рисуется целиком, столбцы все на месте — врёт только
+#: подпись. Пользователь каждый раз находил это глазами.
+#:
+#: `tickmode="linear"` + `dtick=1` на категориальной оси означает «подпись
+#: у каждой категории». Решение принимаем мы, а не библиотека: пусть лучше
+#: подписи встанут теснее, чем часть исчезнет молча.
+#:
+#: Шрифт 11 px вместо умолчания — чтобы при 15–17 px на строку подписи
+#: стояли свободно. Столько места остаётся у четырёх диаграмм на одном
+#: экране; в оригинальном портале, с которого срисован дашборд, ровно так
+#: же — около 15 px на строку.
+CATEGORY_TICKS = dict(tickmode="linear", dtick=1,
+                      tickfont=dict(size=CHART_FONT_PX))
+
+
 def _grid_across_bars(fig: go.Figure) -> None:
     """Оставляет сетку только ПОПЕРЁК полос, вдоль — убирает.
 
@@ -232,6 +299,30 @@ def _grid_across_bars(fig: go.Figure) -> None:
         fig.update_yaxes(showgrid=False)
     elif all(getattr(t, "orientation", None) != "h" for t in bars):
         fig.update_xaxes(showgrid=False)
+
+
+#: Тон показателя -> какой цвет темы берёт его диаграмма.
+#:
+#: Цветов три, и они те же, что на главной: зелёный (`accent`), золотой
+#: (`accent_2`), бирюзовый (`accent_3`). Раздаются ПО ПОКАЗАТЕЛЮ, а не по
+#: месту в сетке (решено с пользователем 11.08.2026): цвет тогда работает
+#: подсказкой — выпуск продукции всегда зелёный, рабочие места золотые,
+#: и график узнаёшь, не читая заголовок.
+#:
+#: !! Сам тон живёт в `config.yaml` у показателя (`tone: 1|2|3`), а не
+#: в коде — по общему правилу проекта: показатели описываются в реестре.
+#: Не задан — берётся первый цвет, как было раньше.
+TONE_KEYS = {1: "accent", 2: "accent_2", 3: "accent_3"}
+
+
+def _tone_color(indicator: str, settings: dict) -> str:
+    """Цвет диаграммы показателя: из темы по номеру тона."""
+    try:
+        meta = data.get_indicator_meta(indicator)
+    except KeyError:                       # показателя нет в реестре
+        return settings["accent"]
+    key = TONE_KEYS.get(meta.get("tone"), "accent")
+    return settings.get(key) or settings["accent"]
 
 
 def _title_lines(fig: go.Figure) -> int:
@@ -277,7 +368,7 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
     # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
     # здесь, в единственном общем месте, а не в каждой из 17 функций.
     settings = theme.get_theme()
-    palette = [settings["accent"], *_PALETTE_TAIL]
+    palette = [_tone_color(indicator, settings), *_PALETTE_TAIL]
 
     # !! Цвет приходится задавать ДО постройки, и вот почему: plotly express
     # вписывает цвет прямо в ряд данных, а не берёт его из разметки в момент
@@ -289,7 +380,14 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
 
     fig = entry["builder"](ctx)
     fig.update_layout(
-        font=dict(family=theme.font_stack(settings), color=NEUTRAL_INK),
+        # !! Цвет текста здесь — ЗАПАСНОЙ. Настоящий ставит CSS в браузере
+        # (`assets/custom.css`, блок «Текст внутри диаграмм»), потому что
+        # только браузер знает выбранную тему. Одним нейтральным серым
+        # обойтись нельзя: замер 11.08.2026 показал, что ни один оттенок
+        # не даёт 4,5 : 1 разом на светлой поверхности (#eae9e9) и тёмной
+        # (#1c1a19) — лучшее, что выходит, это 3,9 / 3,7.
+        font=dict(family=theme.font_stack(settings), color=NEUTRAL_INK,
+                  size=CHART_FONT_PX),
         # Для видов, собранных не через express, а руками на go.Figure:
         # у них цвет ряда не задан, и они берут его отсюда
         colorway=palette,
@@ -298,7 +396,20 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         # на одну наезжают на область графика. Читаем готовый текст фигуры,
         # поэтому правило работает и для видов, которые пишут заголовок
         # сами («— по месяцам 2026 года»), а не берут `Ctx.title`.
-        margin=dict(l=10, r=120, b=40,
+        # Заголовок помельче умолчания (17 px): он занимает верхнее поле,
+        # а в тесном виджете каждый десяток пикселей идёт подписям категорий.
+        # В оригинальном портале заголовок тоже мелкий.
+        title_font=dict(size=TITLE_FONT_PX),
+        # !! Поле снизу зависит от того, показана ли ось значений. У видов,
+        # где число подписано у самой полосы, ось скрыта — держать под неё
+        # 40 px значило бы отнимать их у подписей категорий.
+        # !! Правое поле — под числа у концов полос, и оно ТОЖЕ зависит
+        # от ширины виджета. Фиксированные 120 px подбирались под диаграмму
+        # во всю ширину; на половинной карточке (464 px) они съедали
+        # четверть, а вместе с подписями отраслей не оставляли полосам
+        # и сотни пикселей (замерено 11.08.2026).
+        margin=dict(l=10, r=int((columns or TITLE_FULL_COLUMNS) * 10),
+                    b=40 if fig.layout.xaxis.visible is not False else 16,
                     t=TITLE_MARGIN_BASE + TITLE_LINE_H * _title_lines(fig)),
         # !! Фон прозрачный, а не белый, и это про тёмную тему. Тему человек
         # выбирает в браузере (localStorage), сервер о ней не знает и одну
@@ -331,6 +442,41 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
                      zerolinecolor=NEUTRAL_GRID)
     fig.update_yaxes(gridcolor=GRID_COLOR, griddash=GRID_DASH,
                      zerolinecolor=NEUTRAL_GRID)
+                     
+    # !! Подпись единиц измерения в правом верхнем углу — НЕ для СЭЭ
+    # (11.08.2026, вторая часть той же просьбы: «убери года и ед.
+    # измерения»). Для остальных разделов поведение прежнее: раньше
+    # «(в сумме, млрд тенге)» висело в заголовке, удлиняя его и заставляя
+    # переноситься — доставали из скобок и вешали над правым краем графика.
+    if ctx.program != "СЭЭ":
+        _, annotation = ctx.title_parts
+        if annotation:
+            fig.add_annotation(
+                text=annotation,
+                xref="paper", yref="paper",
+                x=1.0, y=1.0,
+                xanchor="right", yanchor="bottom",
+                yshift=15,
+                showarrow=False,
+                font=dict(size=11, color=NEUTRAL_INK)
+            )
+    else:
+        # !! Заодно убирает и заголовок самой оси значений («ед.»,
+        # «млрд ₸»), который вид кладёт через `labels={"shown": ctx.unit}`.
+        # У полос (bar/industries) ось скрыта (`visible=False`), но
+        # ЗАГОЛОВОК всё равно рендерится отдельной надписью — это не
+        # общий баг Plotly в других видах проекта, а особенность именно
+        # скрытой оси: `visible=False` прячет линию, деления и подписи
+        # делений, но не сам `title` (замерено 11.08.2026 — «ед.» висело
+        # в правом верхнем углу графика регионов сверху заголовка).
+        # У «Динамики по годам» ось, наоборот, ВИДНА, и там та же подпись
+        # («млрд ₸») налезала на цифры шкалы, потому что automargin
+        # для этой оси не задан. Both лечится одной строкой: подписи
+        # оси у показателей СЭЭ не нужны — сами числа подписаны у полос
+        # или над столбцами.
+        fig.update_xaxes(title_text="")
+        fig.update_yaxes(title_text="")
+
     _grid_across_bars(fig)
 
     if height:
@@ -546,12 +692,19 @@ def _message(text: str) -> go.Figure:
 
 
 
-#: Сколько знаков названия отрасли влезает в подпись, не сжимая сам график.
+#: Сколько знаков названия отрасли влезает в подпись, НА КОЛОНКУ сетки.
 #: Полное название остаётся в подсказке при наведении.
-INDUSTRY_LABEL_MAX = 32
+#:
+#: !! Зависит от ширины виджета, а не одно число на всех (11.08.2026).
+#: Прежние 32 знака подбирались под диаграмму во всю ширину. Когда
+#: «Отрасли» встали по две в ряд, замер показал беду: подпись занимала
+#: 232 px из 464, справа ещё 120 px под числа — самим полосам оставалось
+#: 102 px, то есть меньше четверти. На экране 1024 бюджет и вовсе уходил
+#: в минус. Теперь 12 колонок дают прежние 32 знака, 6 — шестнадцать.
+INDUSTRY_LABEL_CHARS_PER_COLUMN = 2.7
 
 
-def _industry_label(name: str) -> str:
+def _industry_label(name: str, columns: int | None = None) -> str:
     """Короткая подпись отрасли: буква секции ОКЭД и урезанное название.
 
     В источнике названия длиной до 78 знаков («E-Водоснабжение;
@@ -563,12 +716,13 @@ def _industry_label(name: str) -> str:
     Буква секции остаётся всегда: она короткая, стоит в начале и по ней
     отрасль узнают те, кто работает с ОКЭД каждый день.
     """
+    limit = int((columns or TITLE_FULL_COLUMNS) * INDUSTRY_LABEL_CHARS_PER_COLUMN)
     code, _, rest = str(name).partition("-")
     if len(code) > 2 or not rest.strip():      # не вида «C-…» — берём как есть
         code, rest = "", str(name)
     rest = rest.strip()
-    if len(rest) > INDUSTRY_LABEL_MAX:
-        rest = rest[:INDUSTRY_LABEL_MAX - 1].rstrip(" ,;.") + "…"
+    if len(rest) > limit:
+        rest = rest[:limit - 1].rstrip(" ,;.") + "…"
     return f"{code} · {rest}" if code else rest
 
 
@@ -595,7 +749,8 @@ def _breakdown(column: str, shorten=None):
             return _message(NO_DATA)
 
         df = ctx.scaled(df)
-        df["label"] = ([shorten(v) for v in df[column]] if shorten
+        # Сокращение зависит от ширины виджета — она известна из пресета
+        df["label"] = ([shorten(v, ctx.columns) for v in df[column]] if shorten
                        else df[column].astype(str))
         return _breakdown_figure(df, ctx, column)
 
@@ -630,7 +785,7 @@ def _breakdown_figure(df, ctx: Ctx, column: str) -> go.Figure:
     # и всё, что мы напишем в `margin`, будет затёрто. Автополя оси
     # переживают это — они прибавляются к заданным, а не заменяют их
     fig.update_yaxes(categoryorder="total ascending", showgrid=False,
-                     automargin=True, ticksuffix="  ")
+                     automargin=True, ticksuffix="  ", **CATEGORY_TICKS)
     fig.update_layout(bargap=0.34)
     return fig
 
@@ -666,7 +821,20 @@ def _bar(ctx: Ctx) -> go.Figure:
         labels={"shown": ctx.unit, "region": ""}, title=ctx.title,
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
-    fig.update_yaxes(categoryorder="total ascending")
+    # Ось значений скрыта — ровно по той же причине, что у видов-разрезов
+    # («Отрасли», «Банки»): число подписано у каждой полосы, и ось внизу
+    # повторяла бы ту же информацию второй раз. До 11.08.2026 полосы
+    # по регионам этого правила не унаследовали и тратили на ось 40 px
+    # высоты — те самые, которых не хватало подписям. Так же сделано
+    # и в оригинальном портале, с которого срисован дашборд.
+    top = float(df["shown"].max() or 0)
+    fig.update_xaxes(visible=False, range=[0, top * 1.22 if top else 1])
+    # !! automargin обязателен: общее левое поле — 10 px (`build`), а названия
+    # областей занимают около сотни. Без него Plotly СРЕЗАЕТ подписи молча,
+    # и график выглядит так, будто у полос нет названий вовсе (поймано
+    # пользователем 11.08.2026 на разделе СЭЭ, вкладка «Регионы»).
+    fig.update_yaxes(categoryorder="total ascending", automargin=True,
+                     **CATEGORY_TICKS)
     return fig
 
 
@@ -686,7 +854,9 @@ def _dot(ctx: Ctx) -> go.Figure:
         title=ctx.title + (" — логарифмическая шкала" if ctx.log else ""),
     )
     fig.update_traces(marker=dict(size=11), textposition="middle right")
-    fig.update_yaxes(categoryorder="total ascending")
+    # automargin — по той же причине, что у полос: подписи областей длиннее
+    # общего левого поля в 10 px и без просьбы места оказались бы срезаны
+    fig.update_yaxes(categoryorder="total ascending", automargin=True)
     fig.update_xaxes(showgrid=True, gridcolor="#eee")
     if ctx.log:
         fig.update_xaxes(type="log")
@@ -713,7 +883,9 @@ def _facets(ctx: Ctx) -> go.Figure:
     )
     # Вот ради этой строки всё и затевалось: оси не общие
     fig.update_xaxes(matches=None, showticklabels=True)
-    fig.update_yaxes(matches=None, showticklabels=True)
+    # automargin — та же беда, что у полос и точек: здесь она даже заметнее,
+    # потому что панелей три в ряд и места под подписи ещё меньше
+    fig.update_yaxes(matches=None, showticklabels=True, automargin=True)
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     fig.update_traces(textposition="outside", cliponaxis=False)
     fig.update_layout(height=900)
@@ -727,7 +899,9 @@ def _funnel(ctx: Ctx) -> go.Figure:
         df, x="shown", y="region",
         labels={"shown": ctx.unit, "region": ""}, title=ctx.title,
     )
-    fig.update_layout(yaxis=dict(autorange="reversed"))
+    # autorange reversed — крупные сверху, как и положено воронке;
+    # automargin — чтобы названия областей не срезало общим полем в 10 px
+    fig.update_layout(yaxis=dict(autorange="reversed", automargin=True))
     return fig
 
 
@@ -859,7 +1033,8 @@ def _years(ctx: Ctx) -> go.Figure:
         labels={"shown": ctx.unit, "region": ""},
         title=f"{ctx.meta['title']} — сравнение лет",
     )
-    fig.update_yaxes(categoryorder="max ascending")
+    # automargin — см. `_bar`: подписи областей длиннее общего левого поля
+    fig.update_yaxes(categoryorder="max ascending", automargin=True)
     return fig
 
 
@@ -1154,7 +1329,7 @@ def _years_total(ctx: Ctx) -> go.Figure:
     fig = px.bar(
         df, x="report_year", y="shown", text="текст",
         labels={"shown": ctx.unit, "report_year": ""},
-        title=f"{ctx.meta['title']} — по годам",
+        title=ctx.title,
     )
     fig.update_traces(textposition="outside")
     # Год — подпись, а не число на шкале: 2 022,5 года не бывает

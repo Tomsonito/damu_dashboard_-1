@@ -99,6 +99,47 @@
     var targetKey = null;
     var releaseTimer = null;
 
+    /* Куда именно прокручивать по нажатию на вкладку или «пилюлю».
+
+       Правило простое, но считается, а не задано числом: человек должен
+       увидеть СОДЕРЖИМОЕ секции целиком и не крутить дальше сам.
+
+       Раньше сюда приезжал верх всего блока — а первым в блоке стоит его
+       подпись («ВЫПУСК ПРОДУКЦИИ»). Она занимала верх экрана, и ровно
+       на её высоту не помещался низ графика: приходилось докручивать
+       (замечено пользователем 11.08.2026). Подпись при этом ничего нового
+       не сообщает — то же название подсвечено в «пилюле» выше и написано
+       на карточке-показателе.
+
+       Поэтому едем НЕ к верху блока, а к точке сразу под подписью — это
+       и есть «скролл ниже» из просьбы: прокрутка становится немного
+       ГЛУБЖЕ прежней (на высоту подписи), а не мельче. Подпись при этом
+       уезжает под липкую полосу вкладок, а не пропадает — просто её не
+       видно поверх контента, как «Регионы»/«Отрасли» не видно на скрине.
+
+       !! Двух формул с одинаковым знаком неравенства НЕ применяем.
+       В первой версии здесь стоял `if (bottomLimit < top) top = bottomLimit`
+       — он должен был не пускать прокрутку ЗА пределы блока, а на деле
+       откатывал её НАЗАД до того же места, что и раньше, отменяя
+       весь смысл правки (проверено арифметикой: 1432 против 1349 —
+       меньшее число отменяло пропуск подписи). Верно наоборот: если блок
+       короче, чем свободное место, `bottomLimit` сам получится МЕНЬШЕ
+       `top`, и большего (`top`) достаточно — оно не даёт съехать дальше
+       конца блока. Проверять надо через `Math.max`, а не `if <`. */
+    function scrollTargetFor(block) {
+        var rect = block.getBoundingClientRect();
+        var top = window.scrollY + rect.top - stickyHeight() - TAB_GAP;
+
+        /* Пропускаем подпись блока — вместе с её нижним отступом. */
+        var head = block.querySelector('.damu-sec-block-title');
+        if (head) {
+            var style = window.getComputedStyle(head);
+            top += head.offsetHeight + (parseFloat(style.marginBottom) || 0);
+        }
+
+        return Math.max(0, top);
+    }
+
     /* Высота всего, что липнет к верху окна: шапка сайта плюс полоса вкладок
        раздела. От неё зависят и линия чтения, и место, куда прокручивать. */
     function stickyHeight() {
@@ -306,9 +347,7 @@
         targetKey = tab.getAttribute('data-target-key');
         highlight();
 
-        var top = window.scrollY + target.getBoundingClientRect().top
-                  - stickyHeight() - TAB_GAP;
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        window.scrollTo({ top: scrollTargetFor(target), behavior: 'smooth' });
 
         /* Отпускаем цель, когда доехали. Точного события об окончании
            плавной прокрутки в старых браузерах нет, поэтому по таймеру;
@@ -510,6 +549,71 @@
             });
         }
     });
+
+    /* ── Подписи на оси Y: выравнивание по левому краю (11.08.2026) ──
+
+       По умолчанию Plotly выравнивает подписи категорий (названия регионов,
+       отраслей, банков) по правому краю: текст «прижат» к оси и растёт влево.
+       Пользователь попросил обратное: все подписи начинаются от одного левого
+       края, читаются как список.
+
+       Реализация: после каждой отрисовки графика перебираем `.ytick text`,
+       находим самое левое начало текста (самый маленький x минус ширина самого
+       длинного текста — при text-anchor:end x стоит у правого края подписи)
+       и ставим все подписи на этот x с `text-anchor: start`.
+
+       !! Plotly перерисовывает SVG заново при relayout / restyle, поэтому
+       одноразовой правки недостаточно — нужен наблюдатель на изменения DOM.
+       MutationObserver следит за plotly-контейнерами и вызывает перевыравнивание
+       при каждом обновлении. */
+    function leftAlignYTicks(plotEl) {
+        var ticks = plotEl.querySelectorAll('.ytick text');
+        if (!ticks.length) return;
+
+        /* Все подписи при text-anchor:end имеют один и тот же x — это координата
+           оси (правый край области подписей). Вычисляем ширину самого длинного
+           текста: при text-anchor:start все подписи начнутся от (axisX - maxWidth),
+           и самая длинная как раз дотянется до оси, остальные — короче.
+           Ограничиваем левую границу 8 px, чтобы подписи не уезжали за край SVG. */
+        var axisX = parseFloat(ticks[0].getAttribute('x'));
+        var maxWidth = 0;
+        ticks.forEach(function (t) {
+            var w = t.getBBox().width;
+            if (w > maxWidth) maxWidth = w;
+        });
+
+        var leftX = Math.max(8, axisX - maxWidth);
+
+        ticks.forEach(function (t) {
+            t.setAttribute('x', leftX);
+            t.setAttribute('text-anchor', 'start');
+        });
+    }
+
+    function leftAlignAllPlots() {
+        document.querySelectorAll('.js-plotly-plot').forEach(leftAlignYTicks);
+    }
+
+    /* Наблюдатель: Dash / Plotly перестраивает содержимое .js-plotly-plot
+       при каждом коллбэке. MutationObserver ловит эти перестройки и
+       переправляет выравнивание заново. Чтобы текст не «прыгал»
+       на долю секунды при смене темы (как было с setTimeout),
+       делаем перевыравнивание перед следующей отрисовкой кадра
+       с помощью requestAnimationFrame. */
+    var alignPending = false;
+    var observer = new MutationObserver(function () {
+        if (!alignPending) {
+            alignPending = true;
+            requestAnimationFrame(function () {
+                leftAlignAllPlots();
+                alignPending = false;
+            });
+        }
+    });
+    observer.observe(document.body, {childList: true, subtree: true});
+    /* Первый проход — на случай, если графики уже отрисованы к моменту
+       загрузки скрипта. */
+    setTimeout(leftAlignAllPlots, 500);
 
     schedule();
     restoreSidebar();

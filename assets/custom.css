@@ -365,10 +365,13 @@ a:hover {
     box-shadow: 0 0 0 0.2rem var(--damu-accent-soft, rgba(31, 122, 77, 0.25));
 }
 
-/* Карточка: плоская поверхность без рамки — тень и тон делают всю работу */
+/* Карточка: плоская поверхность. Тень отключена, но оставлена тонкая рамка,
+   чтобы на светлой теме карточки не сливались с фоном при компоновке "2 в ряд"
+   (просьба пользователя 11.08.2026). */
 .card {
     --bs-card-bg: var(--damu-surface);
-    --bs-card-border-width: 0;
+    --bs-card-border-width: 1px;
+    --bs-card-border-color: var(--damu-hairline);
     --bs-card-border-radius: 0;
     --bs-card-inner-border-radius: 0;
 }
@@ -567,32 +570,42 @@ a:hover {
 
 /* Свежесть данных: прижата к правому краю, с пульсирующей точкой —
    она и есть весь «живой» акцент страницы */
+/* Блок «Данные обновлены» — две строки вместо трёх (11.08.2026).
+   Ширину шапки забирают диаграммы разделов, поэтому блоку задан потолок:
+   без него длинная дата растягивала его сильнее, чем нужно. */
 .damu-updated {
     margin-left: auto;
     text-align: right;
-    line-height: 1.25;
+    line-height: 1.2;
+    max-width: 11rem;
 }
 .damu-updated-label {
-    font-size: 0.7rem;
+    font-size: 0.62rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     color: var(--damu-muted);
+    white-space: nowrap;
 }
 .damu-updated-value {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     justify-content: flex-end;
-    gap: 0.4rem;
+    gap: 0.35rem;
     font-weight: 600;
-    font-size: 1.05rem;
+    font-size: 0.95rem;
+    white-space: nowrap;
 }
-/* Время — строкой ниже даты, мельче и приглушённое: точный час нужен
-   редко, а тёмным и в один размер с датой он оттягивал внимание */
+/* Время — рядом с датой, но мельче и приглушённое: точный час нужен
+   редко, и в один размер с датой он оттягивал бы внимание на себя */
 .damu-updated-time {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     color: var(--damu-muted);
 }
 .damu-live-dot {
+    /* Строка выровнена по базовой линии текста (дата и время разного
+       размера), а кружок к базовой линии не относится — центрируем его
+       отдельно, иначе он висел бы на уровне низа букв */
+    align-self: center;
     width: 7px;
     height: 7px;
     border-radius: 50%;
@@ -1533,15 +1546,11 @@ a:hover {
 }
 .damu-kpi2-unit { font-size: 0.75rem; color: var(--damu-muted); }
 
-/* Подставленный год — виден, но не спорит с числом. Появляется только
-   когда год карточки разошёлся с выбранным в шапке (см. kpi_card). */
-.damu-kpi2-year {
-    margin-top: 0.5rem;
-    font-size: 0.66rem;
-    color: var(--damu-muted);
-    border-top: 1px solid var(--damu-hairline);
-    padding-top: 0.35rem;
-}
+/* Подставленный год больше НЕ отдельной строкой снизу: с 11.08.2026
+   он приписан к подписи сверху («ВЫПУСК ПРОДУКЦИИ · 2024»). Карточка
+   от этого ниже на две строки — она стоит над графиком, и вместе они
+   должны помещаться в экран без прокрутки. Класс `.damu-kpi2-year`
+   и его правила удалены, разметка его больше не ставит. */
 /* Приближение мышью выключено на сервере (core/charts.py, `dragmode=False`),
    но plotly всё равно кладёт поверх поля графика прозрачный слой с курсором-
    прицелом. Прицел обещает выделение рамкой, которого больше нет, — возвращаем
@@ -1569,11 +1578,14 @@ a:hover {
    теме `--damu-accent` подменяется на светлый #4fb37f, и карточка едет
    за темой сама. Вписанный сюда #1f7a4d стал бы тёмно-зелёным числом
    на почти чёрном фоне. */
+/* Одиночная карточка над графиком. Отступы ужаты 11.08.2026: карточка
+   и её график обязаны помещаться в экран сразу, без прокрутки, а высота
+   набиралась именно полями — сверху и снизу было по 1,25–1,3rem. */
 .damu-kpi2--solo {
     text-align: center;
     border-top: 3px solid var(--damu-accent);
     border-radius: 6px;
-    padding: 1.25rem 1.4rem 1.3rem;
+    padding: 0.7rem 1.4rem 0.8rem;
     background: linear-gradient(
         180deg,
         rgba(31, 122, 77, 0.06) 0%,
@@ -1629,7 +1641,7 @@ a:hover {
 }
 .damu-kpi2--solo .damu-kpi2-figure { justify-content: center; }
 .damu-kpi2--solo .damu-kpi2-value {
-    font-size: 2.4rem;
+    font-size: 2rem;
     line-height: 1.1;
     color: var(--damu-accent);
 }
@@ -1644,14 +1656,6 @@ a:hover {
     color: var(--damu-muted);
     font-size: 0.62rem;
 }
-/* Строка про подставленный год: во всю ширину она тянула бы черту
-   от края до края карточки — прижимаем черту к самому тексту */
-.damu-kpi2--solo .damu-kpi2-year {
-    display: inline-block;
-    margin-top: 0.65rem;
-    padding: 0.35rem 0.9rem 0;
-}
-
 .damu-kpi2-track {
     position: relative;
     height: 7px;
@@ -1853,9 +1857,14 @@ a:hover {
    ПОД них, а не наоборот. Фон обязателен — иначе содержимое секции
    просвечивало бы сквозь текст подписи при прокрутке. */
 .damu-sec-block-title {
-    position: sticky;
-    top: var(--damu-sticky-h, 8rem);
-    z-index: 4;
+    /* !! БОЛЬШЕ НЕ ЛИПКАЯ (11.08.2026, просьба пользователя: «пусть
+       не идёт за пользователем»). Была `position: sticky` — подпись секции
+       ехала следом при прокрутке вместе со своей чертой и мельтешила
+       на длинной ленте. Смысл в ней был — понимать, где ты, — но эту же
+       работу делает полоса вкладок выше: она осталась липкой и подсвечивает
+       текущую секцию.
+       Переменная `--damu-sticky-h` при этом нужна по-прежнему: по ней
+       считается прокрутка к секции (assets/dashboard.js). */
     background-color: var(--damu-bg);
     padding: 0.5rem 0 0.45rem;
     font-size: 0.8rem;
@@ -2267,4 +2276,45 @@ a:hover {
 @media (prefers-reduced-motion: reduce) {
     .damu-ex6-slot { transition: none; }
     .damu-ex6[data-mode="full"] .damu-ex6-rise { animation: none; }
+}
+
+/* ══ Текст внутри диаграмм ═══════════════════════════════════════════════
+   Подписи категорий, числа у полос, заголовки и деления осей.
+
+   !! Цвет задаётся ЗДЕСЬ, а не на сервере, и это исключение из общего
+   правила проекта — обычно цвет решает Python. Причина замерена
+   11.08.2026: фигуры строит сервер, а тему человек выбирает в браузере,
+   поэтому раньше текст красился одним нейтральным серым на обе темы.
+   Ни один серый не даёт норму 4,5 : 1 разом на светлой поверхности
+   (#eae9e9) и тёмной (#1c1a19) — лучший компромисс это 3,88 / 3,70,
+   то есть ниже нормы в обеих. Отсюда и жалоба «глаза болят».
+
+   CSS про тему знает. Поэтому серверный цвет остаётся запасным (если
+   стили не загрузились), а настоящий приходит переменной темы.
+
+   !! `!important` здесь оправдан и снимать его нельзя: plotly пишет цвет
+   ИНЛАЙНОМ в каждый <text>, а инлайн сильнее любого селектора. Это тот
+   редкий случай, когда борьба идёт не со своими правилами, а с чужой
+   библиотекой. */
+.js-plotly-plot .gtitle,
+.js-plotly-plot .xtick text,
+.js-plotly-plot .ytick text,
+.js-plotly-plot .xtitle,
+.js-plotly-plot .ytitle,
+.js-plotly-plot .legendtext,
+.js-plotly-plot .annotation-text {
+    fill: var(--damu-ink) !important;
+}
+
+/* Числа у концов полос — тем же цветом, что и подписи: это данные,
+   а не украшение. Класс `.textpoint` plotly вешает на подписи значений. */
+.js-plotly-plot .textpoint text,
+.js-plotly-plot .bartext {
+    fill: var(--damu-ink) !important;
+}
+
+/* Заголовок диаграммы — самый заметный текст на карточке, ему полный
+   контраст нужен в первую очередь */
+.js-plotly-plot .gtitle {
+    font-weight: 700 !important;
 }

@@ -12,6 +12,9 @@ venv/
 __pycache__/
 *.py[cod]
 
+# --- Локальные черновики Superdesign ---
+.superdesign/tmp/
+
 # --- Служебные файлы ОС и редакторов ---
 Thumbs.db
 .DS_Store

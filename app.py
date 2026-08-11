@@ -225,12 +225,17 @@ def navbar():
     items.append(
         html.Div([
             html.Div("Данные обновлены", className="damu-updated-label"),
+            # Дата и время — ОДНОЙ строкой (11.08.2026, просьба пользователя):
+            # блок занимал три строки и заметную ширину шапки, а ширина нужна
+            # диаграммам разделов. Время осталось мельче и приглушённее даты:
+            # точный час нужен редко, и в один размер с датой он оттягивал бы
+            # внимание на себя.
             html.Div([
                 html.Span(className="damu-live-dot"),
                 html.Span(updated_date, id="data-updated"),
+                html.Span(updated_time, id="data-updated-time",
+                          className="damu-updated-time"),
             ], className="damu-updated-value"),
-            html.Div(updated_time, id="data-updated-time",
-                     className="damu-updated-time"),
         ], className="damu-updated")
     )
 
