@@ -42,13 +42,41 @@ dash.register_page(__name__, path="/", name="Главная", title="Дашбо�
 #: Показатель, по которому раскрашивается карта. Настоящий, из боевых данных.
 MAP_INDICATOR = "budget_spent"
 
-#: Годы витрины: текущий и прошлый. Настоящие годы придут из хранилища
-#: вместе с разрезами — тогда список станет динамическим.
-YEAR_NOW = 2026
-YEAR_PREV = 2025
+#: Запасные годы: только если хранилище недоступно и спросить не у кого.
+#: Обычные годы витрины даёт `showcase_years()` — из данных, а не числом.
+YEAR_FALLBACK = 2026
 
 #: Высота области столбиков в полосе-итоге и в карточке, в пикселях.
 BAND_CHART_H, CARD_CHART_H = 44, 52
+
+
+def showcase_years() -> tuple[int, int]:
+    """Годы витрины: последний, по которому есть данные, и предыдущий.
+
+    До 11.08.2026 здесь стояли числа 2026 и 2025 (просьба пользователя —
+    показывать последний год с данными). Вписанный год плох двумя способами
+    сразу: наступит 2027-й — витрина останется в 2026-м; а если выгрузки
+    оборвутся на 2025-м, она предложит год, которого в данных нет.
+    Спросить хранилище дешевле, чем помнить об этом.
+
+    Годы берутся у **хранилища целиком** (`data.get_years()`), а не у одного
+    показателя: витрина макетная, своего показателя у неё нет. Когда придут
+    настоящие разрезы по инструментам, спрашивать надо будет уже их —
+    `data.indicator_years()`, как это делают разделы.
+
+    Чтения не боимся: факты за запрос читаются один раз (`_request_memo`),
+    поэтому вызов внутри отрисовки почти бесплатен.
+    """
+    try:
+        years = data.get_years()
+    except Exception as e:                      # хранилища нет — не падаем
+        log.warning("годы витрины: хранилище недоступно (%s)", e)
+        years = []
+    if not years:
+        return YEAR_FALLBACK, YEAR_FALLBACK - 1
+    # Второй год — тоже из данных, а не «первый минус один»: если выгрузки
+    # идут через год, соседняя кнопка вела бы в пустоту
+    return years[0], years[1] if len(years) > 1 else years[0] - 1
 
 
 def num(value: float, decimals: int = 0) -> str:
@@ -434,9 +462,10 @@ def title_row(year: int, expanded: bool) -> html.Div:
         n_clicks=0,
     )
 
+    year_now, year_prev = showcase_years()
     children = [
         html.H1("Освоение плана", className="h4 mb-0"),
-        html.Div([year_button(YEAR_NOW), year_button(YEAR_PREV)],
+        html.Div([year_button(year_now), year_button(year_prev)],
                  className="damu-year"),
         html.Span("Макетные числа", className="damu-mock-badge",
                   title="Разрезов по инструментам в хранилище пока нет — "
@@ -466,12 +495,13 @@ def layout(**kwargs):
     except FileNotFoundError as e:
         return dbc.Alert(str(e), color="warning", className="m-4")
 
+    year_now, _ = showcase_years()
     return dbc.Container(
         [
             # Состояние витрины держим на странице: коллбэк читает его отсюда,
             # а не восстанавливает по подсветке кнопок
-            dcc.Store(id="main-view", data={"year": YEAR_NOW, "expanded": False}),
-            html.Div(showcase(YEAR_NOW, False), id="main-showcase",
+            dcc.Store(id="main-view", data={"year": year_now, "expanded": False}),
+            html.Div(showcase(year_now, False), id="main-showcase",
                      className="d-flex flex-column gap-3"),
             dbc.Card(
                 dbc.CardBody([
@@ -528,7 +558,7 @@ def switch_view(_years, _expand, view):
     prevent_initial_call=True,
 )
 def render_showcase(view):
-    return showcase(int(view.get("year", YEAR_NOW)),
+    return showcase(int(view.get("year") or showcase_years()[0]),
                     bool(view.get("expanded", False)))
 
 

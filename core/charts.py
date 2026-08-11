@@ -11,6 +11,7 @@ plotly. Общее оформление — высота, поля, фон — �
 
 import json
 import math
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,6 +24,32 @@ from core import data, theme
 
 # Реестр заполняется декоратором при импорте модуля
 _REGISTRY: dict[str, dict] = {}
+
+#: Сколько знаков заголовка помещается в одну строку НА КОЛОНКУ сетки.
+#: Замер 11.08.2026: средний виджет (6 колонок из 12) на экране 1024 —
+#: 336 px, шрифт заголовка 17 px, то есть ~9,4 px на знак и ~36 знаков.
+#: Отсюда 6 знаков на колонку; на большом виджете (12 колонок) выходит 72,
+#: и это сходится с замером — 705 px, ~75 знаков.
+#:
+#: !! Оценка приблизительная намеренно. Точную ширину знает только браузер,
+#: а заголовок собирает сервер: он не видит ни размера окна, ни шрифта,
+#: который выбрал админ. Ошибка на знак-два ничего не стоит — цена вопроса
+#: одна лишняя строка заголовка, а не обрезанный текст.
+TITLE_CHARS_PER_COLUMN = 5.5
+
+#: Ширина виджета по умолчанию — вся сетка. Так его строят «Разбор»
+#: и главная: у них график один на экран, пресета размера нет.
+TITLE_FULL_COLUMNS = 12
+
+#: Больше трёх строк заголовок не занимает: дальше он съедает сам график.
+#: Хвост при этом теряется — но теряется у САМЫХ длинных названий и только
+#: в самом узком виджете, а до 11.08.2026 там обрезалась даже первая строка.
+TITLE_MAX_LINES = 3
+
+#: Поля сверху под заголовок: базовые плюс по строке. Однострочному хватало
+#: 60 px и раньше; многострочный без добавки наезжал бы на область графика.
+TITLE_LINE_H = 26
+TITLE_MARGIN_BASE = 34
 
 #: Запасные цвета для рядов после первого. Первым идёт цвет темы —
 #: у большинства наших видов ряд всего один, и он окрашивается им.
@@ -49,6 +76,15 @@ class Ctx:
     #: года, как было раньше. Читает только `_years_total`, остальные
     #: 24 вида это поле не видят.
     recent_years: int | None = None
+    #: Ширина виджета в колонках сетки (4 / 6 / 12) — из пресета размера.
+    #: Нужна только заголовку: по ней он решает, поместится ли строка
+    #: целиком или год пора переносить. `None` — виджет во всю ширину.
+    columns: int | None = None
+    #: Разрез вида — «по банкам», «по отраслям (ОКЭД)» и подобное. Кладёт
+    #: его `build()` из реестра, а не страница: разрез — свойство вида,
+    #: и вид знает его сам. Пусто — вид не режет данные (итог, шкала)
+    #: или пишет заголовок сам (месяцы, сравнение лет).
+    cut: str = ""
 
     @property
     def meta(self) -> dict:
@@ -60,13 +96,49 @@ class Ctx:
 
     @property
     def title(self) -> str:
-        head = f"{self.meta['title']} — {self.year} год"
+        # !! Разрез в заголовке обязателен, когда на одной вкладке лежат
+        # несколько видов одного показателя. У Өрлеу так и было: четыре
+        # диаграммы подряд назывались «Выдано кредитов — 2026 год», и чем
+        # они отличаются, приходилось угадывать по картинке (замечено
+        # пользователем 11.08.2026). Слово берётся из реестра диаграмм —
+        # там, где вид объявлен, а не переписывается в config.yaml: реестр
+        # уже знает, по какой колонке режет, и дублировать это словами
+        # значило бы завести второй источник правды.
+        head = self.meta["title"]
+        if self.cut:
+            head += f" {self.cut}"
+        tail = f"{self.year} год"
         if self.asked_year and self.asked_year != self.year:
             # !! Пометка обязательна. Тихо подставить 2024-й там, где человек
             # выбрал 2026-й, — худший вид ошибки: цифры выглядят свежими,
             # график не пустой, и заметить подмену нечем
-            head += f" · за {self.asked_year} данных нет"
-        return head
+            tail += f" · за {self.asked_year} данных нет"
+        # !! Длинный заголовок переносится, а не обрезается. Разрез добавил
+        # к строке 15–20 знаков, и в среднем виджете (336 px на экране
+        # 1024) она перестала помещаться: «Выдано кредитов по субъектности
+        # — 2026 год» это 385 px против 336 — хвост уезжал за край молча,
+        # без всякой ошибки. Замерено в браузере 11.08.2026; перенос года
+        # на вторую строку даёт 291 px и запас 28.
+        budget = int((self.columns or TITLE_FULL_COLUMNS) * TITLE_CHARS_PER_COLUMN)
+        whole = f"{head} — {tail}"
+        if len(whole) <= budget:
+            return whole
+        # Переносим по словам, а не только перед годом: у СЭЭ названия
+        # показателей длинные («Налоговые поступления (в сумме, млрд
+        # тенге)»), и одной точки разрыва не хватает — первая строка сама
+        # не помещалась. Это не регрессия от разреза: до него заголовок
+        # был не короче и обрезался ровно так же, просто молча
+        # (замерено 11.08.2026: 501 px текста в виджете 335 px).
+        #
+        # Год переносится ЦЕЛИКОМ, отдельной строкой. Перенос всей строки
+        # разом рвал его пополам («Выдано кредитов — 2026 / год»), а год —
+        # то, ради чего заголовок и читают вторым делом.
+        head_lines = textwrap.wrap(head, width=budget,
+                                   break_long_words=False) or [head]
+        tail_lines = textwrap.wrap(tail, width=budget,
+                                   break_long_words=False) or [tail]
+        keep = max(1, TITLE_MAX_LINES - len(tail_lines))
+        return "<br>".join(head_lines[:keep] + tail_lines)
 
     def scaled(self, df: pd.DataFrame, column: str = "value") -> pd.DataFrame:
         """Готовит колонки для показа.
@@ -80,17 +152,23 @@ class Ctx:
         return out
 
 
-def chart(value: str, label: str, log_ok: bool = False):
+def chart(value: str, label: str, log_ok: bool = False, cut: str = ""):
     """Регистрирует функцию как вид диаграммы.
 
     log_ok=True — вид умеет логарифмическую шкалу. Отмечен он только там,
     где логарифм честен: на точках, ящиках и подобном. На столбцах и площадях
     логарифм врёт, потому что длина столбца обязана быть пропорциональна
     значению и отсчитываться от нуля.
+
+    cut — разрез словами («по банкам»), он попадает в заголовок диаграммы
+    через `Ctx.title`. Пусто у видов, которые ничего не режут (итог по
+    стране, шкала) и у тех, что пишут заголовок сами (месяцы, сравнение
+    лет): там разрез назван прямо в их строке заголовка.
     """
 
     def register(fn):
-        _REGISTRY[value] = {"label": label, "builder": fn, "log_ok": log_ok}
+        _REGISTRY[value] = {"label": label, "builder": fn, "log_ok": log_ok,
+                            "cut": cut}
         return fn
 
     return register
@@ -156,9 +234,16 @@ def _grid_across_bars(fig: go.Figure) -> None:
         fig.update_xaxes(showgrid=False)
 
 
+def _title_lines(fig: go.Figure) -> int:
+    """Сколько строк в заголовке готовой фигуры (минимум одна)."""
+    text = (fig.layout.title.text or "") if fig.layout.title else ""
+    return text.count("<br>") + 1
+
+
 def build(chart_type: str, indicator: str, year, regions, log: bool = False,
           height: int | None = None, program: str | None = None,
-          recent_years: int | None = None) -> go.Figure:
+          recent_years: int | None = None,
+          columns: int | None = None) -> go.Figure:
     """Собирает выбранную диаграмму и навешивает общее оформление.
 
     height — высота в пикселях. Задан (виджет на главной со своим пресетом
@@ -185,6 +270,8 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         program=program,
         asked_year=asked,
         recent_years=recent_years,
+        cut=entry.get("cut", ""),
+        columns=columns,
     )
     # Оформление сайта распространяется и на диаграммы: иначе страница была
     # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
@@ -206,7 +293,13 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         # Для видов, собранных не через express, а руками на go.Figure:
         # у них цвет ряда не задан, и они берут его отсюда
         colorway=palette,
-        margin=dict(l=10, r=120, t=60, b=40),
+        # !! Поле сверху считается по ЧИСЛУ СТРОК заголовка, а не числом.
+        # Заголовок рисуется внутри верхнего поля: две строки в поле
+        # на одну наезжают на область графика. Читаем готовый текст фигуры,
+        # поэтому правило работает и для видов, которые пишут заголовок
+        # сами («— по месяцам 2026 года»), а не берут `Ctx.title`.
+        margin=dict(l=10, r=120, b=40,
+                    t=TITLE_MARGIN_BASE + TITLE_LINE_H * _title_lines(fig)),
         # !! Фон прозрачный, а не белый, и это про тёмную тему. Тему человек
         # выбирает в браузере (localStorage), сервер о ней не знает и одну
         # и ту же фигуру отдаёт обоим. Белая подложка на тёмной странице
@@ -544,16 +637,27 @@ def _breakdown_figure(df, ctx: Ctx, column: str) -> go.Figure:
 
 #: Четыре разреза одним видом. Порядок регистрации = порядок в списке
 #: «Виды диаграмм» настройщика виджетов.
-chart("industries", "Полосы — отрасли (ОКЭД)")(_breakdown("industry", _industry_label))
-chart("banks", "Полосы — БВУ (банки)")(_breakdown("bank"))
-chart("subjects", "Полосы — субъектность")(_breakdown("subject_type"))
-chart("purposes", "Полосы — цели займа")(_breakdown("loan_purpose"))
+#:
+#: `cut` — тот же разрез, но словами для заголовка. Он повторяет часть
+#: подписи вида, и это не дубль: подпись отвечает на «какой график
+#: выбрать» в настройщике («Полосы — БВУ (банки)»), а `cut` встраивается
+#: в предложение на самой диаграмме («Выдано кредитов по банкам (БВУ)»).
+#: Склеить из подписи нельзя — падежи разные.
+chart("industries", "Полосы — отрасли (ОКЭД)",
+      cut="по отраслям (ОКЭД)")(_breakdown("industry", _industry_label))
+chart("banks", "Полосы — БВУ (банки)",
+      cut="по банкам (БВУ)")(_breakdown("bank"))
+chart("subjects", "Полосы — субъектность",
+      cut="по субъектности")(_breakdown("subject_type"))
+chart("purposes", "Полосы — цели займа",
+      cut="по целям займа")(_breakdown("loan_purpose"))
 #: Программа из самой выгрузки, а не раздел сайта — они лежат в разных
 #: колонках намеренно (см. `program` и `source_program` в разборщике).
-chart("programs", "Полосы — программы")(_breakdown("source_program"))
+chart("programs", "Полосы — программы",
+      cut="по программам")(_breakdown("source_program"))
 
 
-@chart("bar", "Полосы — рейтинг")
+@chart("bar", "Полосы — рейтинг", cut="по регионам")
 def _bar(ctx: Ctx) -> go.Figure:
     df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.bar(
@@ -566,7 +670,7 @@ def _bar(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("dot", "Точки — рейтинг (умеет логарифм)", log_ok=True)
+@chart("dot", "Точки — рейтинг (умеет логарифм)", log_ok=True, cut="по регионам")
 def _dot(ctx: Ctx) -> go.Figure:
     """То же, что полосы, но точкой.
 
@@ -589,7 +693,7 @@ def _dot(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("facets", "Панели по макрорегионам — свой масштаб у каждой")
+@chart("facets", "Панели по макрорегионам — свой масштаб у каждой", cut="по макрорегионам")
 def _facets(ctx: Ctx) -> go.Figure:
     """Отдельная панель на макрорегион, оси независимы.
 
@@ -616,7 +720,7 @@ def _facets(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("funnel", "Воронка — убывание")
+@chart("funnel", "Воронка — убывание", cut="по регионам")
 def _funnel(ctx: Ctx) -> go.Figure:
     df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.funnel(
@@ -630,7 +734,7 @@ def _funnel(ctx: Ctx) -> go.Figure:
 # ─────────────────────────── Доли и структура ───────────────────────────
 
 
-@chart("pie", "Круговая — доли")
+@chart("pie", "Круговая — доли", cut="по регионам")
 def _pie(ctx: Ctx) -> go.Figure:
     df, raised = _flat_nodes(ctx)
     if df.empty:
@@ -650,7 +754,7 @@ def _pie(ctx: Ctx) -> go.Figure:
     return _hierarchy_style(fig)
 
 
-@chart("treemap", "Плитки — структура")
+@chart("treemap", "Плитки — структура", cut="по регионам")
 def _treemap(ctx: Ctx) -> go.Figure:
     df, raised = _flat_nodes(ctx)
     if df.empty:
@@ -669,7 +773,7 @@ def _treemap(ctx: Ctx) -> go.Figure:
     return _hierarchy_style(fig)
 
 
-@chart("sunburst", "Солнечные лучи — по макрорегионам")
+@chart("sunburst", "Солнечные лучи — по макрорегионам", cut="по макрорегионам")
 def _sunburst(ctx: Ctx) -> go.Figure:
     nodes, raised = _tree_nodes(ctx)
     if nodes.empty:
@@ -697,7 +801,7 @@ def _sunburst(ctx: Ctx) -> go.Figure:
     return _hierarchy_style(fig)
 
 
-@chart("icicle", "Сосульки — по макрорегионам")
+@chart("icicle", "Сосульки — по макрорегионам", cut="по макрорегионам")
 def _icicle(ctx: Ctx) -> go.Figure:
     nodes, raised = _tree_nodes(ctx)
     if nodes.empty:
@@ -863,7 +967,7 @@ def _parallel(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("table", "Таблица — данные по регионам")
+@chart("table", "Таблица — данные по регионам", cut="по регионам")
 def _table(ctx: Ctx) -> go.Figure:
     """Таблица: показатели раздела в столбцах, регионы в строках.
 
@@ -900,7 +1004,7 @@ def _table(ctx: Ctx) -> go.Figure:
     return fig
 
 
-@chart("box", "Ящик — разброс по макрорегионам", log_ok=True)
+@chart("box", "Ящик — разброс по макрорегионам", log_ok=True, cut="по макрорегионам")
 def _box(ctx: Ctx) -> go.Figure:
     """Ящик на каждый макрорегион.
 

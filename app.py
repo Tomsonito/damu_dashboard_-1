@@ -6,7 +6,7 @@ import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
 
 from core import auth, data, examples, publish, theme, widgets
-from core.cache import cache
+from core.cache import cache, sweep as sweep_cache
 
 # Без этой настройки log.info(...) со страниц молча пропадает: у Python
 # уровень по умолчанию WARNING. А след «опубликовано: версия данных N»
@@ -104,6 +104,15 @@ server = app.server
 # каждый клик заново читает диск. Проверять — по логу сервера: там были бы
 # строки «Exception possibly due to cache backend».
 cache.init_app(server)
+
+# Убрать накопившиеся записи кэша, пока не влезет в лимит. Здесь, при старте,
+# а не по таймеру: сайт поднимают и гасят, отдельного сторожа заводить не под
+# что. Удалять записи безопасно — кэш выводится из хранилища и наполняется
+# сам (см. `core/cache.py`, `sweep`).
+try:
+    sweep_cache()
+except Exception:
+    log.exception("чистка кэша при старте не удалась")
 
 # Хранилище могло остаться со схемы до этапа 4 — довести до текущей
 # (статусы версий, таблица plan). Повторный вызов ничего не меняет,

@@ -627,6 +627,9 @@ def render_widgets(year, regions, _version, key, ids):
                 item["chart"], item["indicator"], year, regions,
                 log=False, height=preset["height"], program=program,
                 recent_years=item.get("recent_years"),
+                # Ширина нужна заголовку: по ней он решает, переносить ли
+                # год на вторую строку (см. `Ctx.title` в core/charts.py)
+                columns=preset["columns"],
             )
         )
     return figures

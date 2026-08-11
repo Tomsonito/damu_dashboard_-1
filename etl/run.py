@@ -33,7 +33,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from core import db, publish
+from core import cache, db, publish
 from etl import load_budget
 
 DB_PATH = Path("data/analytics.duckdb")
@@ -219,6 +219,17 @@ def _run(con: duckdb.DuckDBPyConnection, force: bool, started: float) -> None:
         "опубликована сразу (первая)" if bootstrap
         else f"ждёт публикации {publish.describe_publish_time(publish.next_publish_time(now))}",
     )
+
+    # Новая версия — значит записи кэша со старым номером больше никто
+    # не спросит. Чистим здесь же: прогон ETL и есть тот момент, когда
+    # мусор появляется. Упавшая чистка прогон не роняет — данные уже легли.
+    try:
+        removed, left_mb = cache.sweep()
+        if removed:
+            log.info("кэш: убрано %d старых записей, осталось %.0f МБ",
+                     removed, left_mb)
+    except Exception:
+        log.exception("чистка кэша после прогона не удалась")
 
 
 def main() -> None:
