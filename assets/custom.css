@@ -626,12 +626,18 @@ a:hover {
    (minmax): полоса «план → факт» должна тянуться, остальное нет. На узком
    экране колонки сначала встают по две, потом в столбик. */
 
+/* !! Колонки выровнены ПО ВЕРХУ, а не по центру. При центрировании каждая
+   колонка вставала серединой на общую ось, а строк в них разное число —
+   и «Состав проектов» (четыре строки) всплывал выше соседа (три строки).
+   Ровнять центром можно только колонки одинаковой высоты; здесь верх —
+   единственная общая линия. Пара «проекты»/«состав» приведена к четырём
+   строкам обеим, поэтому у них совпадают и числа, и полосы. */
 .damu-band {
     background-color: var(--damu-band);
     color: #ffffff;
     display: grid;
     grid-template-columns: 250px minmax(180px, 1fr) 190px 132px 260px;
-    align-items: center;
+    align-items: start;
     gap: 1.5rem;
     padding: 1.25rem 1.5rem;
 }
@@ -731,6 +737,10 @@ a:hover {
     font-weight: 700;
     color: rgba(255, 255, 255, 0.8);
 }
+/* В развёрнутом виде месяцев вдвое больше, поэтому числа мельчают вместе
+   с зазором. Прятать их нельзя: разворачивают график как раз затем,
+   чтобы прочитать месяцы */
+.damu-band-months.damu-tight .damu-band-month-value { font-size: 0.55rem; }
 .damu-band-labels {
     display: flex;
     margin-top: 0.25rem;
@@ -945,6 +955,9 @@ a:hover {
     font-weight: 700;
     color: rgba(32, 30, 29, 0.75);
 }
+/* Колонка карточки узкая, а в развёрнутом виде месяцев двенадцать —
+   числа мельчают сильнее, чем в широкой полосе-итоге */
+.damu-inst2-months.damu-tight .damu-inst2-month-value { font-size: 0.5rem; }
 .damu-inst2-month-label { font-size: 0.62rem; color: var(--damu-muted); }
 
 /* Числа во всей витрине — моноширинные по цифрам: в столбик выстраиваются
@@ -1008,6 +1021,55 @@ a:hover {
 .damu-bar-fill {
     height: 6px;
     background-color: var(--damu-c, var(--damu-accent, #1f7a4d));
+}
+
+/* Заливка из двух кусков: сплошной — уникальные, штриховка — повторные.
+   Ширину задаёт Python (доля факта от плана), поэтому здесь только графика.
+
+   Штриховка, а не второй цвет: повторные — не отдельная категория,
+   а «остальное», и свой цвет придавал бы им лишний вес. Тот же приём,
+   что в полосе-итоге наверху страницы (`.damu-band-split`), только там
+   на тёмном фоне и белым, а здесь — цветом самой карточки.
+
+   !! Цвет берётся переменной `--damu-c`, а промежутки штриховки прозрачны:
+   так сквозь них видно дорожку, и полоса не ломается ни в тёмной теме,
+   ни при смене палитры админом. */
+.damu-bar-split { display: flex; height: 100%; }
+.damu-bar-split > .unique {
+    background-color: var(--damu-c, var(--damu-accent, #1f7a4d));
+}
+.damu-bar-split > .repeat {
+    flex: 1;
+    background: repeating-linear-gradient(135deg,
+        var(--damu-c, var(--damu-accent, #1f7a4d)) 0,
+        var(--damu-c, var(--damu-accent, #1f7a4d)) 2px,
+        transparent 2px, transparent 4px);
+}
+
+/* !! Полоса проектов ВЫШЕ обычной (10 px против 6). На шести пикселях
+   штриховка с шагом 4 px успевает лечь двумя-тремя штрихами и читается
+   не как штриховка, а как «полупрозрачный кусок» — то есть теряет смысл
+   «повторные». В полосе-итоге наверху хватает пяти пикселей, потому что
+   там белое по тёмному; здесь контраст ниже. */
+.damu-bar-proj { height: 10px; }
+
+/* Образцы к подписям: квадратик заливки и квадратик штриховки.
+   Без них подписи пришлось бы ставить по краям полосы, а правый край
+   дорожки — это остаток ПЛАНА, а не повторные проекты. */
+.damu-key { display: inline-flex; align-items: center; gap: 0.3rem; }
+.damu-key > i {
+    width: 9px;
+    height: 9px;
+    display: inline-block;
+    flex: none;
+}
+.damu-key-solid { background-color: var(--damu-c, var(--damu-accent, #1f7a4d)); }
+.damu-key-hatch {
+    background: repeating-linear-gradient(135deg,
+        var(--damu-c, var(--damu-accent, #1f7a4d)) 0,
+        var(--damu-c, var(--damu-accent, #1f7a4d)) 2px,
+        transparent 2px, transparent 4px);
+    outline: 1px solid var(--damu-track);
 }
 
 /* Мини-столбики «Динамика в отчетном году»: значение сверху, столбик,
@@ -1135,12 +1197,136 @@ a:hover {
    стояли в одну колонку */
 .damu-prog-row {
     display: grid;
-    grid-template-columns: minmax(4.5rem, 1fr) 3.2rem 2.2rem 0.5rem 2.6rem 1.8rem;
+    /* Пары «полоса + своё число» и пустая колонка-разделитель между ними.
+       Внутри пары зазор 0.3rem, между парами — 0.3 + 0.45 + 0.3 ≈ 1rem:
+       втрое больше, и группировка читается расстоянием, а не догадкой. */
+    grid-template-columns:
+        minmax(4.5rem, 1fr)      /* название программы */
+        minmax(3rem, 1fr)        /* полоса «освоено» */
+        1.75rem                  /* число «освоено» */
+        0.45rem                  /* разделитель пар */
+        minmax(2rem, 0.55fr)     /* полоса «проектов» */
+        1.6rem;                  /* число «проектов» */
     align-items: center;
-    gap: 0.35rem;
-    font-size: 0.75rem;
-    margin-bottom: 0.25rem;
+    column-gap: 0.3rem;
+    height: 23px;
+    font-size: 0.78rem;
 }
+/* Полоски внутри строки тоньше обычных: их тут по две на строку */
+.damu-prog-row .damu-bar,
+.damu-prog-row .damu-bar-fill { height: 7px; }
+
+/* @@ ВРЕМЕННО: три вида строки «Разбивки», по одному на колонку — выбрать
+   один и удалить остальные вместе с подписями «вариант N». */
+.damu-prog-variant {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+    margin: 0.4rem 0 0.55rem;
+}
+
+/* Вариант 1 — «бабочка»: ось посередине, деньги влево, проекты вправо.
+   Дорожки у полос нет намеренно: в расходящейся паре роль дорожки играет
+   сама ось, а две серые подложки навстречу друг другу читались бы как
+   ещё одна полоса. */
+.damu-prog-fly { grid-template-columns: minmax(3.5rem, 0.85fr) 1fr 1fr; }
+.damu-fly-left,
+.damu-fly-right {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+}
+/* row-reverse: полоса прижата к оси и растёт ВЛЕВО, число едет на её конце */
+.damu-fly-left { flex-direction: row-reverse; }
+.damu-fly-right {
+    border-left: 1px solid var(--damu-hairline);
+    padding-left: 0.35rem;
+}
+.damu-fly-bar {
+    height: 7px;
+    flex: none;
+    background-color: var(--damu-c, var(--damu-accent, #1f7a4d));
+}
+
+/* GLASSMORPHISM SHARED (Варианты 2 и 3) */
+.glass-track {
+    flex: 1;
+    height: 8px;
+    background: var(--damu-track);
+    border: 1px solid var(--damu-hairline);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+.glass-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* Светлая тема по умолчанию */
+.glass-glow-c {
+    background: var(--damu-c);
+}
+.glass-glow-muted {
+    background: var(--damu-ink); /* Идея 3: Строгий графитовый цвет в светлой теме */
+}
+.glow-text-c {
+    color: var(--damu-ink);
+    font-weight: 500;
+}
+.glass-val {
+    font-size: 0.65rem;
+    white-space: nowrap;
+}
+
+/* Тёмная тема (Свечение) */
+:root[data-theme="dark"] .glass-glow-c {
+    background: linear-gradient(90deg, rgba(255,255,255,0.1), var(--damu-c));
+    box-shadow: 0 0 8px var(--damu-c);
+}
+:root[data-theme="dark"] .glass-glow-muted {
+    background: #fff; /* Идея 3: Чистый белый цвет со свечением в тёмной теме */
+    box-shadow: 0 0 8px rgba(255,255,255,0.6);
+}
+:root[data-theme="dark"] .glow-text-c {
+    color: #fff;
+    text-shadow: 0 0 5px var(--damu-c);
+}
+
+/* Однострочная бабочка (Inline) */
+.damu-glass-inline-row {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 0;
+    height: auto !important;
+    border-bottom: 1px dashed rgba(255,255,255,0.1);
+}
+.glass-wing {
+    display: flex;
+    align-items: center;
+    flex: 1;
+}
+.glass-wing-left { justify-content: flex-end; }
+.glass-wing-right { justify-content: flex-start; }
+.glass-center-node {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 1px solid rgba(255,255,255,0.5);
+    margin: 0 8px;
+    box-shadow: 0 0 5px rgba(255,255,255,0.3);
+}
+/* Вторая метрика — приглушённая: проекты идут следом за деньгами,
+   а не наравне с ними */
+.damu-prog-row .damu-bar-soft { opacity: 0.45; }
 .damu-prog-row:last-child {
     margin-bottom: 0;
 }
@@ -2016,3 +2202,69 @@ a:hover {
 /* Своей дорожки у примера НЕТ — он берёт общую `--damu-track`.
    Была временная `--ex5-track`, пока общая переменная светлой темы
    оставалась невидимой; 04.08.2026 починили общую, и дубль убран. */
+
+/* ══ Пример 6 — разворот примера 5 в раскладку главной ═════════════════
+   !! ВРЕМЕННЫЙ БЛОК: удаляется вместе со страницами-примерами. Найти —
+   по `ex6`. Зависит от блока «Пример 5» выше: развёрнутые карточки берут
+   цвет из тех же `--ex5-k`.
+
+   Оба состояния лежат в разметке сразу, показ переключает атрибут
+   `data-mode` на `#damu-ex6` — его ставит браузер (`assets/dashboard.js`),
+   а не коллбэк. Перерисованный сервером узел анимировать нечем: браузеру
+   не с чем сравнивать прежнее состояние.
+
+   !! Высота НЕ измеряется и не подставляется числом: раскрытие сделано
+   на `grid-template-rows: 0fr -> 1fr`. Поэтому оно не ломается ни от числа
+   строк, ни от раскрытой динамики, ни от переключения года. Приём с
+   `max-height: 2000px` дал бы неверную скорость и рывок в конце. */
+.damu-ex6-slot {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: grid-template-rows .55s cubic-bezier(.4, 0, .2, 1),
+                opacity .3s ease;
+}
+/* min-height: 0 обязателен: без него содержимое не даёт строке сжаться
+   в ноль, и раскрытие превращается в мгновенный скачок */
+.damu-ex6-inner { min-height: 0; overflow: hidden; }
+
+.damu-ex6[data-mode="compact"] > .damu-ex6-full,
+.damu-ex6[data-mode="full"] > .damu-ex6-compact {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Проявление блоков друг за другом — сверху вниз, как читают.
+   Задержки маленькие: 0,09 с достаточно, чтобы порядок читался,
+   и мало, чтобы не превратиться в ожидание */
+@keyframes damu-ex6-rise {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: none; }
+}
+.damu-ex6[data-mode="full"] .damu-ex6-rise {
+    animation: damu-ex6-rise .45s cubic-bezier(.2, .7, .3, 1) both;
+}
+.damu-ex6[data-mode="full"] .damu-ex6-rise:nth-child(2) { animation-delay: .09s; }
+.damu-ex6[data-mode="full"] .damu-ex6-rise:nth-child(3) { animation-delay: .18s; }
+
+.damu-ex6-toggle {
+    margin-left: auto;
+    border: none;
+    background-color: var(--damu-accent, #1f7a4d);
+    color: var(--damu-on-accent, #ffffff);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    padding: 6px 14px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.damu-ex6-toggle:hover { filter: brightness(1.08); }
+
+/* Движение — украшение, а не смысл: кому оно мешает, тот получает
+   мгновенное переключение с тем же результатом */
+@media (prefers-reduced-motion: reduce) {
+    .damu-ex6-slot { transition: none; }
+    .damu-ex6[data-mode="full"] .damu-ex6-rise { animation: none; }
+}

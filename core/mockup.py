@@ -160,26 +160,26 @@ PROGRAMS = [
         "title": "Кредитование — программы",
         "tone": TONE_SECOND,
         "rows": [
-            ("Обработка", 142, 168),
-            ("Өрлеу", 118, 132),
-            ("ТРП", 95, 101),
+            ("Крупный биз.", 450, 20),
+            ("Обработка", 180, 150),
+            ("Өрлеу", 118, 1320),
             ("Ислам фин", 77, 84),
-            ("Лизинг", 58, 63),
-            ("Даму Регион", 42, 47),
-            ("Үміт", 29, 31),
-            ("Микро", 15, 17),
+            ("Лизинг", 58, 630),
+            ("Даму Регион", 42, 4700),
+            ("Үміт", 29, 310),
+            ("Микро", 15, 12500),
         ],
     },
     {
         "title": "Субсидирование — программы",
         "tone": TONE_THIRD,
         "rows": [
-            ("Факторинг", 88, 102),
-            ("Іскер Аймақ", 64, 71),
-            ("Даму-Көпір", 47, 52),
-            ("ИП Старт", 31, 34),
-            ("Сервис", 19, 22),
-            ("Кооперация", 9, 11),
+            ("Факторинг", 320, 15),
+            ("Іскер Аймақ", 150, 400),
+            ("Даму-Көпір", 47, 850),
+            ("ИП Старт", 31, 5200),
+            ("Сервис", 19, 820),
+            ("Кооперация", 9, 12),
         ],
     },
 ]
@@ -233,6 +233,12 @@ def for_year(year: int | None = None, expanded: bool = False,
                   else item["projects_by_month_full"])
         labels = MONTHS7 if current else MONTHS12
         months = [round(v * factor) for v in months]
+        # !! Итог за год считается ДО обрезки списка. Раньше страница
+        # складывала показанные месяцы и подписывала «за год»: в свёрнутом
+        # виде это была сумма шести месяцев, и при развороте число прыгало
+        # (поймано пользователем 10.08.2026). Год не зависит от того,
+        # сколько месяцев поместилось на экран.
+        months_total = sum(months)
         if not expanded and len(months) > MONTHS_COLLAPSED:
             months = months[-MONTHS_COLLAPSED:]
             labels = labels[-MONTHS_COLLAPSED:]
@@ -251,6 +257,7 @@ def for_year(year: int | None = None, expanded: bool = False,
             "fact": fact, "projects_fact": projects_fact, "unique": unique,
             "repeat": projects_fact - unique, "unique_share": unique_share,
             "months": months, "month_labels": tuple(labels),
+            "months_total": months_total,
             "percent": percent, "projects_percent": projects_percent,
             "pace": pace, "pace_day": day, "pace_days": days,
             "gap": gap, "on_track": gap >= 0,

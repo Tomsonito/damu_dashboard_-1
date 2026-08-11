@@ -1353,34 +1353,65 @@ def _ex5_legend() -> html.Div:
     )
 
 
-def _ex5_programs() -> html.Div:
+#: Сетка строки программ в примере 5 — как была.
+EX5_PROG_GRID = "1fr 50px 42px 38px 34px"
+
+#: Сетка той же строки в примере 6: как на главной после правок
+#: 10.08.2026 — пары «полоса + своё число» и пустая колонка-разделитель
+#: между ними. Ячейки под числа «в притык», чтобы правое выравнивание
+#: не отодвигало короткие числа от своей полосы.
+EX6_PROG_GRID = "minmax(0,1fr) minmax(48px,1fr) 30px 8px minmax(34px,0.55fr) 26px"
+
+
+def _ex5_programs(per_row: int = 2, with_all: bool = True,
+                  grid: str = EX5_PROG_GRID, gap: str = "8px",
+                  spacer: bool = False) -> html.Div:
     """Разбивка по программам — тот же состав и та же сетка 2×2.
 
     Собрана здесь, а не через общий `_programs_card`: тот вписывает цвета
     светлой темы значениями (`rgba(32,30,29,.8)` и подобные), и в тёмной
     теме текст остался бы тёмным на тёмном.
+
+    Разложить иначе просит пример 6: в развёрнутом виде карточка едет вниз
+    во всю ширину, и колонки встают в один ряд по три — без «Всех
+    инструментов», их числа там уже стоят в полосе-итоге.
     """
+    columns = list(zip(_programs([EX5_K] * 4), EX5_PROG_CLASS))
+    if not with_all:
+        columns = columns[1:]
+
+    def cells(row):
+        out = [
+            html.Span(row["name"], style={
+                "overflow": "hidden", "textOverflow": "ellipsis",
+                "whiteSpace": "nowrap"}),
+            _bar(row["amount_width"], EX5_K, height=6,
+                 track="var(--damu-track)"),
+            html.Span(row["amount"], style={
+                "fontWeight": 700, "textAlign": "right",
+                "fontVariantNumeric": "tabular-nums"}),
+        ]
+        # Пустая колонка между парами — она и делает группировку: зазор
+        # внутри пары втрое меньше, чем между парами, и число перестаёт
+        # висеть равноудалённо от двух полос
+        if spacer:
+            out.append(html.Span())
+        out += [
+            _bar(row["count_width"], EX5_K, height=6, opacity=".45",
+                 track="var(--damu-track)"),
+            html.Span(row["count"], style={
+                "textAlign": "right", "color": "var(--damu-muted)",
+                "fontVariantNumeric": "tabular-nums"}),
+        ]
+        return out
+
     body = []
-    for column, klass in zip(_programs([EX5_K] * 4), EX5_PROG_CLASS):
+    for column, klass in columns:
         rows = [
-            html.Div([
-                html.Span(row["name"], style={
-                    "overflow": "hidden", "textOverflow": "ellipsis",
-                    "whiteSpace": "nowrap"}),
-                _bar(row["amount_width"], EX5_K, height=6,
-                     track="var(--damu-track)"),
-                html.Span(row["amount"], style={
-                    "fontWeight": 700, "textAlign": "right",
-                    "fontVariantNumeric": "tabular-nums"}),
-                _bar(row["count_width"], EX5_K, height=6, opacity=".45",
-                     track="var(--damu-track)"),
-                html.Span(row["count"], style={
-                    "textAlign": "right", "color": "var(--damu-muted)",
-                    "fontVariantNumeric": "tabular-nums"}),
-            ], style={"display": "grid",
-                      "gridTemplateColumns": "1fr 50px 42px 38px 34px",
-                      "alignItems": "center", "gap": "8px", "height": "24px",
-                      "fontSize": "12.5px"})
+            html.Div(cells(row),
+                     style={"display": "grid", "gridTemplateColumns": grid,
+                            "alignItems": "center", "columnGap": gap,
+                            "height": "24px", "fontSize": "12.5px"})
             for row in column["rows"]
         ]
         body.append(html.Div([
@@ -1408,12 +1439,20 @@ def _ex5_programs() -> html.Div:
         ], style={"display": "flex", "alignItems": "center", "gap": "12px",
                   "padding": "14px 20px 10px",
                   "borderBottom": "1px solid var(--damu-divider)"}),
-        html.Div(body, style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
+        html.Div(body, style={"display": "grid",
+                              "gridTemplateColumns": f"repeat({per_row}, 1fr)",
                               "padding": "0 4px 14px"}),
     ], style={**EX5_CARD, "height": "100%"})
 
 
-def _example_5():
+def _ex5_body():
+    """Тело примера 5 без заголовка страницы.
+
+    Вынесено отдельно ради примера 6: там ровно этот же сжатый вид лежит
+    первым состоянием, а собственный заголовок у него один на оба
+    состояния. Копировать раскладку было нельзя — сравнивают именно её,
+    и две копии разъехались бы после первой же правки.
+    """
     head = html.Div(
         [
             html.Div("Инструмент · план → факт", style={"flex": 1}),
@@ -1453,13 +1492,320 @@ def _example_5():
                "flexDirection": "column", "minWidth": 0},
     )
 
+    return html.Div([instruments, _ex5_programs()],
+                    style={"display": "grid", "gridTemplateColumns": "1fr 640px",
+                           "gap": "14px", "marginTop": "14px"})
+
+
+def _example_5():
     return [
         # Заголовок общий с примерами 1, 3 и 4 (`_title_row`) — мелкий,
         # чтобы не спорить с раскладкой, которую и сравнивают
         _title_row(),
-        html.Div([instruments, _ex5_programs()],
-                 style={"display": "grid", "gridTemplateColumns": "1fr 640px",
+        _ex5_body(),
+    ]
+
+
+# ────────── Пример 6 · пример 5, разворачивающийся в главную ──────────
+#
+# Один экран в двух состояниях. Свёрнутое — ровно пример 5 (та же функция
+# `_ex5_body`, не копия). Развёрнутое — раскладка главной: полоса-итог,
+# три большие карточки, программы во всю ширину внизу.
+#
+# `!!` **Оба состояния лежат в разметке сразу, переключает их браузер**
+# по атрибуту `data-mode` на обёртке `#damu-ex6`. Коллбэком было бы проще
+# написать, но тогда каждое нажатие шло бы на сервер и возвращало новое
+# дерево — а перерисованный узел анимировать нечем: браузеру не с чем
+# сравнивать. Тот же довод, по которому в проекте вообще сделана подсветка
+# вкладок в JS.
+#
+# `!!` **Цвета взяты у примера 5** (`--ex5-k` через `EX5_CLASS`), а не
+# у главной. Так задумано: в анимации важно, чтобы глаз узнал те же данные
+# в новой раскладке, а смена цвета на полпути читалась бы как «показали
+# что-то другое».
+#
+# Анимация — CSS: `grid-template-rows: 0fr -> 1fr` плюс проявление
+# блоков друг за другом. Правила лежат в `custom.css`, блок «Пример 6»;
+# высоту никто не измеряет и не подставляет числом — потому и не ломается
+# от количества строк.
+
+
+def _ex6_toggle():
+    """Кнопка разворота. Текст переписывает JS — как у `_dyn_toggle`."""
+    return html.Button("Развернуть как на главной ▾", id="damu-ex6-toggle",
+                       className="damu-ex6-toggle", n_clicks=0)
+
+
+def _ex6_metric(kicker, value, extra_value=None, note=None, bar=None):
+    """Колонка полосы-итога: метка, число, полоса, примечание."""
+    children = [_kicker(kicker, color="rgba(255,255,255,.5)")]
+    children.append(html.Div(
+        [html.B(value, style={"fontSize": "20px", "fontWeight": 800,
+                              "letterSpacing": "-0.02em"}),
+         html.Span(extra_value, style={"fontSize": "12px",
+                                       "color": "rgba(255,255,255,.66)"})
+         if extra_value else None],
+        style={"display": "flex", "alignItems": "baseline", "gap": "6px",
+               "marginTop": "4px", "fontVariantNumeric": "tabular-nums"}))
+    if bar is not None:
+        children.append(html.Div(bar, style={"marginTop": "8px"}))
+    if note:
+        children.append(html.Div(note, style={"fontSize": "11px", "marginTop": "6px",
+                                              "color": "rgba(255,255,255,.62)"}))
+    return html.Div(children)
+
+
+def _ex6_band(item: dict) -> html.Div:
+    """Полоса-итог «Все инструменты» — как на главной.
+
+    Колонки выровнены ПО ВЕРХУ: строк в них разное число, и центрирование
+    поднимало бы короткие колонки над длинными (та же правка, что сделана
+    на главной 10.08.2026).
+    """
+    track = "rgba(255,255,255,.16)"
+    white = "#ffffff"
+    unique_share = item["unique"] / max(item["projects_fact"], 1) * 100
+    return html.Div(
+        [
+            html.Div([
+                _kicker("Все инструменты", color="#d9b871"),
+                html.Div([
+                    html.Span(num(item["percent"], 1), style={
+                        "fontSize": "44px", "fontWeight": 800,
+                        "letterSpacing": "-0.03em", "lineHeight": 1}),
+                    html.Span("%", style={"fontSize": "20px", "fontWeight": 600,
+                                          "color": "rgba(255,255,255,.6)"}),
+                ], style={"display": "flex", "alignItems": "baseline", "gap": "6px",
+                          "marginTop": "6px"}),
+                html.Div("от годового плана", style={
+                    "fontSize": "11px", "marginTop": "6px",
+                    "color": "rgba(255,255,255,.62)"}),
+            ]),
+            _ex6_metric("Освоено, млрд ₸", num(item["fact"]),
+                        f"из {num(item['plan'])} млрд ₸",
+                        bar=_paced_bar(f"{min(item['percent'], 100):.1f}%", white,
+                                       height=12, track=track)),
+            _ex6_metric("Проекты факт / план",
+                        f"{num(item['projects_fact'])} / {num(item['projects_plan'])}",
+                        note=f"выполнение {num(item['projects_percent'], 1)} %",
+                        bar=_bar(f"{item['projects_percent']:.1f}%", "#d9b871",
+                                 height=6, track=track)),
+            _ex6_metric("Состав проектов", num(item["unique"]), "уникальных",
+                        note=f"{num(item['repeat'])} повторных",
+                        bar=html.Div([
+                            html.Div(style={"width": f"{unique_share:.1f}%",
+                                            "background": white}),
+                            # Штриховка, а не второй цвет: повторные —
+                            # не отдельная категория, а «остальное»
+                            html.Div(style={
+                                "flex": 1,
+                                "background": "repeating-linear-gradient(135deg,"
+                                              "rgba(255,255,255,.5) 0,"
+                                              "rgba(255,255,255,.5) 2px,"
+                                              "transparent 2px,transparent 4px)"}),
+                        ], style={"display": "flex", "height": "6px", "gap": "2px"})),
+            html.Div([
+                html.Div([
+                    html.Span("Проектов за месяц, шт"),
+                    html.Span(f"за год {num(item['months_total'])}", style={
+                        "color": "rgba(255,255,255,.75)"}),
+                ], style={"display": "flex", "justifyContent": "space-between",
+                          "fontSize": "9.5px", "fontWeight": 700,
+                          "letterSpacing": ".09em", "textTransform": "uppercase",
+                          "color": "rgba(255,255,255,.5)", "marginBottom": "6px"}),
+                _month_bars(item["months"], item["month_labels"], "#d9b871",
+                            bar_h=40, font="9px"),
+            ]),
+        ],
+        style={"background": TOTAL, "color": "#ffffff", "display": "grid",
+               "gridTemplateColumns": "230px minmax(170px,1fr) 180px 150px 300px",
+               "alignItems": "start", "gap": "24px", "padding": "20px 24px",
+               "fontVariantNumeric": "tabular-nums"},
+    )
+
+
+def _ex6_card(item: dict) -> html.Div:
+    """Большая карточка инструмента — как на главной после правок 10.08.2026.
+
+    Проекты одной полосой: дорожка — план, заливка — факт, внутри сплошной
+    кусок уникальные и штриховка повторные. Два числа лежат на одной шкале,
+    поэтому «уникальных меньше факта» видно глазом.
+    """
+    unique_share = item["unique"] / max(item["projects_fact"], 1) * 100
+    fill = min(item["projects_percent"], 100)
+    # `mockup.for_year` даёт статус словом и признак `on_track`, а цвет
+    # плашки живёт в примерах (`_status` ждёт его готовым): тревога —
+    # тёплым золотом, а не третьим цветом инструментов
+    item = {**item, "status_color": GREEN if item["on_track"] else LATE}
+
+    def key(hatch: bool, text: str):
+        mark = {"width": "9px", "height": "9px", "display": "inline-block",
+                "flex": "none"}
+        mark["background"] = (
+            f"repeating-linear-gradient(135deg,{EX5_K} 0,{EX5_K} 2px,"
+            "transparent 2px,transparent 4px)" if hatch else EX5_K)
+        return html.Span([html.I(style=mark), text],
+                         style={"display": "inline-flex", "alignItems": "center",
+                                "gap": "5px"})
+
+    return html.Div([
+        html.Div([
+            html.Span(item["title"], style={"fontSize": "15px", "fontWeight": 800,
+                                            "letterSpacing": "-0.015em"}),
+            _status(item),
+        ], style={"display": "flex", "alignItems": "center", "gap": "10px",
+                  "borderBottom": f"1px solid {HAIRLINE}", "padding": "12px 16px"}),
+
+        html.Div([
+            html.Div([
+                html.Div([
+                    html.Div([
+                        html.Span(num(item["percent"], 1), style={
+                            "fontSize": "30px", "fontWeight": 800,
+                            "letterSpacing": "-0.03em", "lineHeight": 1}),
+                        html.Span("%", style={"fontSize": "15px", "fontWeight": 600,
+                                              "color": EX5_K, "opacity": .65}),
+                    ], style={"display": "flex", "alignItems": "baseline",
+                              "gap": "4px"}),
+                    html.Div("от плана", style={"fontSize": "11px",
+                                                "color": "var(--damu-muted)",
+                                                "marginTop": "4px"}),
+                ]),
+                html.Div([
+                    html.Div(num(item["fact"]), style={"fontSize": "20px",
+                                                       "fontWeight": 800}),
+                    html.Div(f"из {num(item['plan'])} млрд ₸", style={
+                        "fontSize": "11px", "color": "var(--damu-muted)"}),
+                ], style={"marginLeft": "auto", "textAlign": "right"}),
+            ], style={"display": "flex", "alignItems": "flex-end", "gap": "12px"}),
+
+            _paced_bar(f"{min(item['percent'], 100):.1f}%", EX5_K, height=12,
+                       track="var(--damu-track)"),
+
+            html.Div([
+                html.Div([
+                    _kicker("Проекты факт / план"),
+                    html.Div(f"{num(item['projects_fact'])} / "
+                             f"{num(item['projects_plan'])}",
+                             style={"fontSize": "15px", "fontWeight": 700,
+                                    "marginTop": "3px"}),
+                ]),
+                html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
+                         style={"fontSize": "11px", "color": "var(--damu-muted)"}),
+            ], style={"display": "flex", "alignItems": "baseline",
+                      "justifyContent": "space-between", "gap": "8px",
+                      "marginTop": "14px", "paddingTop": "12px",
+                      "borderTop": f"1px solid {HAIRLINE}"}),
+
+            html.Div(
+                html.Div([
+                    html.Div(style={"width": f"{unique_share:.1f}%",
+                                    "background": EX5_K}),
+                    html.Div(style={
+                        "flex": 1,
+                        "background": f"repeating-linear-gradient(135deg,{EX5_K} 0,"
+                                      f"{EX5_K} 2px,transparent 2px,transparent 4px)"}),
+                ], style={"display": "flex", "height": "100%",
+                          "width": f"{fill:.1f}%"}),
+                style={"height": "10px", "background": "var(--damu-track)",
+                       "marginTop": "6px"}),
+
+            html.Div([key(False, f"уникальных {num(item['unique'])}"),
+                      key(True, f"повторных {num(item['repeat'])}")],
+                     style={"display": "flex", "gap": "16px", "marginTop": "6px",
+                            "fontSize": "11px", "color": "var(--damu-muted)"}),
+
+            html.Div([
+                html.Div([
+                    html.Span("Проектов за месяц, шт"),
+                    html.Span(f"за год {num(item['months_total'])}",
+                              style={"color": "var(--damu-ink)"}),
+                ], style={"display": "flex", "justifyContent": "space-between",
+                          "fontSize": "9.5px", "fontWeight": 700,
+                          "letterSpacing": ".09em", "textTransform": "uppercase",
+                          "color": "var(--damu-muted)", "marginBottom": "8px"}),
+                _month_bars(item["months"], item["month_labels"], EX5_K,
+                            bar_h=44, font="9px"),
+            ], style={"marginTop": "14px", "paddingTop": "12px",
+                      "borderTop": f"1px solid {HAIRLINE}"}),
+        ], style={"padding": "14px 16px 16px"}),
+    ],
+        className=EX5_CLASS[item["key"]],
+        style={**EX5_CARD, "fontVariantNumeric": "tabular-nums"},
+    )
+
+
+def _ex6_map():
+    """Картограмма для развёрнутого вида — та же, что в примере 4.
+
+    `!!` Строится сразу, а лежит внутри свёрнутого блока нулевой высоты.
+    Plotly меряет место при первой отрисовке, поэтому в схлопнутом
+    контейнере он получит ноль и останется таким после разворота.
+    Лечится не здесь, а в браузере: `assets/dashboard.js` после разворота
+    зовёт `Plotly.Plots.resize` для графиков внутри. Строить карту
+    по нажатию нельзя — это был бы запрос на сервер, а он сбивает
+    анимацию (см. шапку блока).
+    """
+    return _map_block()
+
+
+def _ex6_full(items: list[dict]) -> list:
+    """Развёрнутый вид: полоса-итог, три карточки, программы внизу.
+
+    Класс `damu-ex6-rise` на каждом куске — точка входа для анимации:
+    блоки проявляются друг за другом сверху вниз, а не все разом.
+    """
+    return [
+        html.Div(_ex6_band(items[0]), className="damu-ex6-rise"),
+        html.Div([_ex6_card(it) for it in items[1:]],
+                 className="damu-ex6-rise",
+                 style={"display": "grid",
+                        "gridTemplateColumns": "repeat(3, minmax(0,1fr))",
                         "gap": "14px", "marginTop": "14px"}),
+        # Три колонки в ряд и без «Всех инструментов»: их числа стоят
+        # в полосе-итоге выше, и повторять их значило бы показать одно
+        # и то же дважды — то же решение, что на главной
+        html.Div(_ex5_programs(per_row=3, with_all=False,
+                               grid=EX6_PROG_GRID, gap="5px", spacer=True),
+                 className="damu-ex6-rise", style={"marginTop": "14px"}),
+        # Карта — четвёртый и последний блок главной. Числа в примере
+        # макетные, а карта настоящая: это единственное живое место,
+        # и плашка «Настоящие данные» стоит именно поэтому
+        html.Div([
+            html.Div([
+                html.H2("Освоение по регионам", style={
+                    "margin": 0, "fontSize": "15px", "fontWeight": 800,
+                    "letterSpacing": "-0.015em"}),
+                html.Span("картограмма по показателю «Освоено бюджета»",
+                          style={"fontSize": "12px", "color": MUTED}),
+                html.Span("Настоящие данные", className="damu-mock-badge",
+                          style={"color": "var(--damu-accent-dark)",
+                                 "borderColor": "var(--damu-accent)",
+                                 "marginLeft": "auto"}),
+            ], style={"display": "flex", "alignItems": "center", "gap": "12px",
+                      "padding": "14px 20px 10px",
+                      "borderBottom": "1px solid var(--damu-divider)"}),
+            html.Div(_ex6_map(), style={"padding": "6px 10px 12px"}),
+        ], className="damu-ex6-rise",
+            style={**EX5_CARD, "marginTop": "14px"}),
+    ]
+
+
+def _example_6():
+    items = mockup.for_year(None, expanded=True)
+    return [
+        _title_row(right=_ex6_toggle()),
+        html.Div(
+            [
+                html.Div(html.Div(_ex5_body(), className="damu-ex6-inner"),
+                         className="damu-ex6-slot damu-ex6-compact"),
+                html.Div(html.Div(_ex6_full(items), className="damu-ex6-inner"),
+                         className="damu-ex6-slot damu-ex6-full"),
+            ],
+            id="damu-ex6",
+            className="damu-ex6",
+            **{"data-mode": "compact"},
+        ),
     ]
 
 
@@ -1473,6 +1819,9 @@ BUILDERS = {
     "3": _example_3,
     "4": _example_4,
     "5": _example_5,
+    # !! Шестой построен НА пятом (`_ex5_body`, `_ex5_programs`): удалять
+    # пятый, оставив шестой, нельзя — сначала перенести эти две функции
+    "6": _example_6,
 }
 
 

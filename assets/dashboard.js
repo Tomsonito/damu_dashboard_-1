@@ -366,6 +366,35 @@
         subtree: true
     });
 
+    /* ── Example 6: разворот примера 5 в раскладку главной ──
+       Договор с Python: обёртка #damu-ex6 с атрибутом data-mode
+       ("compact" | "full"), внутри два слота .damu-ex6-compact
+       и .damu-ex6-full. Здесь только переключение атрибута — всё
+       движение делает CSS (блок «Пример 6» в custom.css).
+       Сервер не трогаем намеренно: перерисованное дерево анимировать
+       нечем, браузеру не с чем сравнивать прежнее состояние. */
+    document.addEventListener('click', function (e) {
+        var ex6Btn = e.target.closest('#damu-ex6-toggle');
+        if (!ex6Btn) return;
+        var ex6 = document.getElementById('damu-ex6');
+        if (!ex6) return;
+        var isFull = ex6.getAttribute('data-mode') === 'full';
+        ex6.setAttribute('data-mode', isFull ? 'compact' : 'full');
+        ex6Btn.textContent = isFull ? 'Развернуть как на главной ▾' : 'Свернуть ▴';
+
+        /* !! Карта строится сразу, но лежит в схлопнутом блоке нулевой
+           высоты, а Plotly меряет место при первой отрисовке — без этого
+           вызова она осталась бы полоской в ноль пикселей. Ждём конца
+           перехода (0,55 с в custom.css) плюс запас. */
+        if (!isFull && window.Plotly) {
+            setTimeout(function () {
+                ex6.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
+                    window.Plotly.Plots.resize(plot);
+                });
+            }, 620);
+        }
+    });
+
     /* ── Example 3: Global dynamics toggle ── */
     document.addEventListener('click', function (e) {
         var dynBtn = e.target.closest('#damu-dyn-toggle');

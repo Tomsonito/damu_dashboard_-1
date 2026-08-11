@@ -57,20 +57,22 @@ def num(value: float, decimals: int = 0) -> str:
     return text.replace(".", ",") if decimals else text
 
 
-def _months(item: dict, height: int, css: str, tight: bool, show_values: bool):
+def _months(item: dict, height: int, css: str, tight: bool):
     """Столбики «проектов за месяц»: значение сверху, месяц снизу.
 
-    В развёрнутом виде числа над столбиками прячутся, а зазор сжимается:
-    двенадцать подписей с числами в узкой колонке не читаются — проверено
-    в макете, оттуда же и решение.
+    !! Числа над столбиками стоят ВСЕГДА, в том числе в развёрнутом виде.
+    Раньше при развороте они пропадали — двенадцать подписей не помещались
+    рядом. Но график без чисел отвечает на «какой месяц больше» и не
+    отвечает на «сколько», а разворачивают его как раз чтобы посмотреть
+    месяцы (замечено пользователем 10.08.2026). Вместо того чтобы прятать,
+    в развёрнутом виде сжимается зазор и мельчает шрифт самих чисел —
+    класс `damu-tight` на ряду столбиков.
     """
     values = item["months"]
     top = max(values) or 1
     columns = []
     for label, value in zip(item["month_labels"], values):
-        column = []
-        if show_values:
-            column.append(html.Span(num(value), className=f"{css}-value"))
+        column = [html.Span(num(value), className=f"{css}-value")]
         column.append(html.I(style={
             "height": f"{max(3, round(value / top * height))}px",
             # Самый высокий столбик в полную силу, остальные приглушены —
@@ -128,6 +130,11 @@ def band(item: dict, expanded: bool) -> html.Div:
                 html.Div(html.Div(style={
                     "width": f"{min(item['projects_percent'], 100):.1f}%"}),
                     className="damu-band-bar mt-2"),
+                # Четвёртая строка здесь не только ради числа: у соседней
+                # колонки «Состав проектов» под полосой стоит «N повторных»,
+                # и без пары полосы двух колонок вставали на разной высоте
+                html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
+                         className="damu-band-note mt-1 text-nowrap"),
             ]),
 
             html.Div([
@@ -148,11 +155,10 @@ def band(item: dict, expanded: bool) -> html.Div:
             html.Div([
                 html.Div([
                     html.Span("Проектов за месяц, шт"),
-                    html.Span(f"за год {num(sum(item['months']))}",
+                    html.Span(f"за год {num(item['months_total'])}",
                               style={"color": "rgba(255,255,255,.75)"}),
                 ], className="damu-band-kicker d-flex justify-content-between mb-1"),
-                *_months(item, BAND_CHART_H, "damu-band-month",
-                         tight=expanded, show_values=not expanded),
+                *_months(item, BAND_CHART_H, "damu-band-month", tight=expanded),
             ]),
         ],
         className="damu-band",
@@ -203,14 +209,24 @@ def instrument_card(item: dict, expanded: bool) -> html.Div:
                              style={"left": f"{min(item['pace'], 100):.1f}%"}),
                 ], className="damu-inst2-track"),
 
-                # !! Обе колонки устроены ОДИНАКОВО: подпись, число, полоса,
-                # пояснение. Так было не всегда: до 10.08.2026 полоса стояла
-                # только у левой, а под правой («Уникальных») печаталось
-                # «выполнение 86,0 %» — процент ЛЕВОЙ колонки (430/500).
-                # То есть подпись описывала соседний столбец, а читалась как
-                # «выполнение уникальных». Правая при этом оставалась без
-                # полосы, отчего половина карточки выглядела пустой
-                # (замечено пользователем).
+                # !! Проекты — ОДНА полоса, а не две колонки: дорожка это
+                # план, заливка — факт, а внутри заливки сплошной кусок
+                # уникальные и штриховка повторные. Два числа лежат на одной
+                # шкале, поэтому «уникальных меньше факта» видно глазом,
+                # без сравнения двух процентов.
+                #
+                # Было хуже дважды. До 10.08.2026 полоса стояла только
+                # у левой колонки, а под правой («Уникальных») печаталось
+                # «выполнение 86,0 %» — процент ЛЕВОЙ (430/500). Потом обе
+                # колонки сделали одинаковыми, но у правой «выполнение»
+                # осталось враньём: плана по уникальным нет вовсе, там была
+                # доля от состоявшихся. Одна полоса снимает вопрос — процент
+                # теперь один и относится к паре факт/план.
+                #
+                # Ширины: у заливки — доля факта от плана, у сплошного куска
+                # внутри — доля уникальных от ФАКТА (штриховка добирает
+                # остаток сама, `flex: 1`). Тот же приём, что в полосе-итоге
+                # наверху страницы (`damu-band-split`).
                 html.Div([
                     html.Div([
                         html.Div("Проекты факт / план", className="damu-band-kicker",
@@ -218,23 +234,37 @@ def instrument_card(item: dict, expanded: bool) -> html.Div:
                         html.Div(f"{num(item['projects_fact'])} / "
                                  f"{num(item['projects_plan'])}",
                                  className="damu-inst2-num"),
-                        html.Div(html.Div(className="damu-bar-fill", style={
-                            "width": f"{min(item['projects_percent'], 100):.1f}%"}),
-                            className="damu-bar mt-1"),
-                        html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
-                                 className="small text-muted mt-1"),
                     ]),
+                    html.Div(f"выполнение {num(item['projects_percent'], 1)} %",
+                             className="small text-muted"),
+                ], className="damu-inst2-block d-flex align-items-baseline"
+                             " justify-content-between gap-2"),
+
+                html.Div(
                     html.Div([
-                        html.Div("Уникальных", className="damu-band-kicker",
-                                 style={"color": "var(--damu-muted)"}),
-                        html.Div(num(item["unique"]), className="damu-inst2-num"),
-                        html.Div(html.Div(className="damu-bar-fill", style={
-                            "width": f"{min(item['unique_share'], 100):.1f}%"}),
-                            className="damu-bar mt-1"),
-                        html.Div(f"выполнение {num(item['unique_share'], 1)} %",
-                                 className="small text-muted mt-1"),
-                    ]),
-                ], className="damu-inst2-block damu-inst2-pair"),
+                        html.Div(className="unique", style={"width":
+                            f"{item['unique'] / max(item['projects_fact'], 1) * 100:.1f}%"}),
+                        html.Div(className="repeat"),
+                    ], className="damu-bar-split",
+                        style={"width": f"{min(item['projects_percent'], 100):.1f}%"}),
+                    className="damu-bar damu-bar-proj mt-1"),
+
+                # Подписи — ЛЕГЕНДА с образцами, а не по краям полосы.
+                # По краям было бы враньём: «повторных» встало бы у правого
+                # края дорожки, то есть под НЕзаполненным остатком плана,
+                # хотя сама штриховка кончается на 86 %.
+                html.Div([
+                    # Процента у «уникальных» НЕТ намеренно: у «повторных»
+                    # его нет и быть не может (это остаток), а одинокий
+                    # процент у соседа читается как «здесь важнее».
+                    # Пара подписей должна быть в одних единицах.
+                    html.Span([html.I(className="damu-key-solid"),
+                               f"уникальных {num(item['unique'])}"],
+                              className="damu-key"),
+                    html.Span([html.I(className="damu-key-hatch"),
+                               f"повторных {num(item['repeat'])}"],
+                              className="damu-key"),
+                ], className="small text-muted mt-1 d-flex gap-3"),
 
                 html.Div([
                     html.Div([
@@ -242,17 +272,102 @@ def instrument_card(item: dict, expanded: bool) -> html.Div:
                         # Цвет переменной, а не значением: вписанный
                         # `rgba(32,30,29,.75)` в тёмной теме давал контраст
                         # 1.03 : 1 — текст сливался с фоном (замерено 04.08.2026)
-                        html.Span(f"за год {num(sum(item['months']))}",
+                        html.Span(f"за год {num(item['months_total'])}",
                                   style={"color": "var(--damu-ink)"}),
                     ], className="damu-band-kicker d-flex justify-content-between mb-2",
                         style={"color": "var(--damu-muted)"}),
                     *_months(item, CARD_CHART_H, "damu-inst2-month",
-                             tight=expanded, show_values=not expanded),
+                             tight=expanded),
                 ], className="damu-inst2-block"),
             ], className="damu-inst2-body"),
         ],
         className=f"damu-inst2 damu-c-{tone}",
     )
+
+
+# Место, которое «бабочка» держит под число на конце полосы: ширина трёх
+# знаков плюс зазор. Число едет вместе с полосой, поэтому место под него
+# вычитается из длины самой полосы, а не стоит отдельной колонкой.
+FLY_LABEL = "2.1rem"
+
+
+def _prog_muted(value: int):
+    """Число проектов: цвет текста, а не цвет данных.
+
+    Цвет несут полосы; подписи и значения везде носят `ink`/`muted`.
+    Светлый акцент (золото, бирюза) как текст на светлой поверхности
+    не читается — это правило вынесено из общего разбора диаграмм.
+    """
+    return html.Span(num(value), className="damu-prog-value",
+                     style={"fontWeight": 400, "color": "var(--damu-muted)"})
+
+
+def _prog_rows_fly(rows, top_amount, top_count):
+    """Вариант 1 — «бабочка»: ось посередине, деньги влево, проекты вправо.
+
+    По эскизу пользователя. Числа стоят НА КОНЦАХ своих полос и едут
+    вместе с ними: у расходящихся полос фиксированная колонка под число
+    оторвала бы его от данных тем сильнее, чем короче полоса.
+
+    Перекос виден сразу: длинное левое плечо при коротком правом —
+    «мало крупных сделок», наоборот — «много мелких».
+    """
+    return [
+        html.Div([
+            html.Span(name, className="damu-prog-name text-truncate"),
+            html.Div([
+                # !! Ширина полосы — доля от ОСТАТКА строки за вычетом места
+                # под число (`calc`). Иначе самая длинная полоса упёрлась бы
+                # в своё же число и сжалась одна: пропорции между строками
+                # разъехались бы молча.
+                html.Div(className="damu-fly-bar", style={
+                    "width": f"calc((100% - {FLY_LABEL}) * {amount / top_amount:.3f})"}),
+                html.Span(num(amount), className="damu-prog-value"),
+            ], className="damu-fly-left"),
+            html.Div([
+                html.Div(className="damu-fly-bar damu-bar-soft", style={
+                    "width": f"calc((100% - {FLY_LABEL}) * {count / top_count:.3f})"}),
+                _prog_muted(count),
+            ], className="damu-fly-right"),
+        ], className="damu-prog-row damu-prog-fly")
+        for name, amount, count in rows
+    ]
+
+
+def _prog_rows(rows, top_amount, top_count):
+    """Строки дашборда для программ (Стеклянная бабочка: Однострочная).
+    Название слева. Сама бабочка правее.
+    Это делает список более строгим и структурным, как классическая таблица.
+    Экономит вертикальное место.
+    """
+    out = []
+    for name, amount, count in rows:
+        a_pct = (amount / top_amount * 100) if top_amount else 0
+        c_pct = (count / top_count * 100) if top_count else 0
+        
+        out.append(html.Div([
+            html.Div(name, className="damu-prog-name text-truncate", style={"width": "30%", "paddingRight": "8px"}),
+            
+            html.Div([
+                html.Div([
+                    html.Div(f"{num(amount)} млрд", className="glass-val glow-text-c text-end", style={"marginRight": "6px", "minWidth": "55px"}),
+                    html.Div(className="glass-track", children=[
+                        html.Div(className="glass-fill glass-glow-c", style={"width": f"max(2%, {a_pct}%)", "marginLeft": "auto"})
+                    ]),
+                ], className="glass-wing glass-wing-left"),
+                
+                html.Div(className="glass-center-node", style={"margin": "0 6px"}),
+                
+                html.Div([
+                    html.Div(className="glass-track", children=[
+                        html.Div(className="glass-fill glass-glow-muted", style={"width": f"max(2%, {c_pct}%)", "marginRight": "auto"})
+                    ]),
+                    html.Div(f"{num(count)} шт", className="glass-val text-muted text-start", style={"marginLeft": "6px", "minWidth": "45px"})
+                ], className="glass-wing glass-wing-right"),
+                
+            ], style={"display": "flex", "alignItems": "center", "flex": "1"})
+        ], className="damu-prog-row damu-glass-inline-row"))
+    return out
 
 
 def programs_block() -> dbc.Card:
@@ -268,24 +383,6 @@ def programs_block() -> dbc.Card:
         short = column["title"].split(" — ")[0]
         top_amount = max(row[1] for row in column["rows"])
         top_count = max(row[2] for row in column["rows"])
-        rows = [
-            html.Div([
-                html.Span(name, className="damu-prog-name text-truncate"),
-                html.Div(html.Div(className="damu-bar-fill", style={
-                    "width": f"{amount / top_amount * 100:.0f}%", "height": "7px"}),
-                    className="damu-bar", style={"height": "7px"}),
-                html.Span(num(amount), className="damu-prog-value"),
-                html.Div(html.Div(className="damu-bar-fill", style={
-                    "width": f"{count / top_count * 100:.0f}%", "height": "7px",
-                    "opacity": .45}),
-                    className="damu-bar", style={"height": "7px"}),
-                html.Span(num(count), className="damu-prog-value",
-                          style={"fontWeight": 400, "color": "var(--damu-muted)"}),
-            ], className="damu-prog-row",
-                style={"gridTemplateColumns": "minmax(0,1fr) 90px 42px 60px 32px",
-                       "height": "23px", "fontSize": "0.78rem", "marginBottom": 0})
-            for name, amount, count in column["rows"]
-        ]
         columns.append(html.Div([
             html.Div([
                 html.Span(short, className="damu-prog-head flex-grow-1",
@@ -293,9 +390,9 @@ def programs_block() -> dbc.Card:
                 html.Span(num(sum(r[1] for r in column["rows"])), style={
                     "marginLeft": "auto", "fontSize": "0.81rem", "fontWeight": 800,
                     "color": "var(--damu-c)"}),
-            ], className="d-flex align-items-baseline gap-2 pb-2 mb-2",
+            ], className="d-flex align-items-baseline gap-2 pb-2",
                 style={"borderBottom": "2px solid var(--damu-c)"}),
-            *rows,
+            *_prog_rows(column["rows"], top_amount, top_count),
         ], className=f"damu-prog-col damu-c-{tones[short]}"))
 
     return dbc.Card(
