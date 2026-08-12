@@ -924,6 +924,15 @@ widget_sizes:
     label: "Широкий — во всю ширину, пониже"
     columns: 12
     height: 420
+  # Ширина как у среднего (2 в ряд), высота больше. Заведён 12.08.2026 для
+  # «Регионов»/«Отраслей» у СЭЭ: список из 20 областей при шрифте не мельче
+  # 16 px (правило пользователя — иначе подписи нечитаемы) в среднем
+  # пресете (420 px) даёт только 16,9 px на строку при пороге ~20 —
+  # строки касались друг друга. 500 px дают 20,9 px на строку с запасом.
+  medium_tall:
+    label: "Средний повыше — два в ряд, для длинных списков"
+    columns: 6
+    height: 500
 
 # !! БЛОК ПОКА НЕ ДЕЙСТВУЕТ (с 29.07.2026): сетку виджетов с главной убрали,
 # там теперь витрина инструментов по макету. Блок оставлен на случай, если
@@ -1024,15 +1033,15 @@ section_widgets_by_page:
   # пользователя). Ранее стояло `large` из-за шрифта 16 px и длинных
   # подписей регионов/отраслей, но пользователь предпочёл компактность.
   see:regions:
-    - {chart: bar, indicator: see_output, size: medium}
-    - {chart: bar, indicator: see_jobs_created, size: medium}
-    - {chart: bar, indicator: see_tax_revenue, size: medium}
-    - {chart: bar, indicator: see_jobs_saved, size: medium}
+    - {chart: bar, indicator: see_output, size: medium_tall}
+    - {chart: bar, indicator: see_jobs_created, size: medium_tall}
+    - {chart: bar, indicator: see_tax_revenue, size: medium_tall}
+    - {chart: bar, indicator: see_jobs_saved, size: medium_tall}
   see:industries:
-    - {chart: industries, indicator: see_output_industry, size: medium}
-    - {chart: industries, indicator: see_jobs_created_industry, size: medium}
-    - {chart: industries, indicator: see_tax_revenue_industry, size: medium}
-    - {chart: industries, indicator: see_jobs_saved_industry, size: medium}
+    - {chart: industries, indicator: see_output_industry, size: medium_tall}
+    - {chart: industries, indicator: see_jobs_created_industry, size: medium_tall}
+    - {chart: industries, indicator: see_tax_revenue_industry, size: medium_tall}
+    - {chart: industries, indicator: see_jobs_saved_industry, size: medium_tall}
   # !! Ключ «раздел:вкладка» должен встречаться в этом блоке РОВНО ОДИН РАЗ.
   # YAML на дубль не ругается — молча побеждает последний. Поймано
   # 07.08.2026: `orleu:terms` оказался объявлен дважды, и вкладка «Цели

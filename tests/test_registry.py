@@ -86,12 +86,24 @@ WITH_SIDE_LABELS = [
 @pytest.mark.needs_storage
 @pytest.mark.parametrize("chart_type,indicator,program", WITH_SIDE_LABELS)
 def test_подписи_сбоку_просят_себе_место(chart_type, indicator, program):
-    """Без `automargin` Plotly СРЕЗАЕТ подписи, и молча.
+    """Место под подписи обязано быть отведено — способом не важно каким.
 
-    Общее левое поле — 10 px (`build`), а «Карагандинская» это около сотни.
-    До 11.08.2026 просьба стояла только у видов, собранных через
-    `_breakdown_figure`; у полос, точек, воронки, панелей и сравнения лет
-    названия областей просто исчезали (поймано пользователем на разделе СЭЭ).
+    Два законных способа, и оба проверяются:
+
+    1. **`automargin`** — штатный путь Plotly. Без него Plotly СРЕЗАЕТ
+       подписи молча (общее левое поле — 10 px, «Карагандинская» это
+       около сотни). До 11.08.2026 просьба стояла только у видов,
+       собранных через `_breakdown_figure`; у полос, точек, воронки,
+       панелей и сравнения лет названия областей просто исчезали
+       (поймано пользователем на разделе СЭЭ).
+
+    2. **Свои `annotations`** — путь СЭЭ с 11.08.2026 (левое выравнивание,
+       `_left_align_categories`). Тут `automargin` НАМЕРЕННО выключен —
+       он меряет видимые тики, а тики спрятаны (`showticklabels=False`).
+       Взамен `build()` сам считает левое поле по длине подписей. Годится,
+       только если подписи ДЕЙСТВИТЕЛЬНО нарисованы аннотациями — иначе
+       спрятать тики и не нарисовать взамен ничего тоже прошло бы эту
+       проверку, а на экране подписей не было бы вовсе.
 
     Проверяем именно готовую фигуру, а не исходник: важно, что до неё
     настройка доехала, а не что строка написана.
@@ -99,7 +111,16 @@ def test_подписи_сбоку_просят_себе_место(chart_type, 
     fig = charts.build(chart_type, indicator, 2026, None,
                        program=program, height=420, columns=6)
     assert fig.data, f"у {chart_type} нет данных — проверка бессмысленна"
+    categories = len(fig.data[0].y) if hasattr(fig.data[0], "y") and fig.data[0].y is not None else 0
+
     axes = [name for name in dir(fig.layout) if name.startswith("yaxis")]
     for name in axes:
-        assert getattr(fig.layout, name).automargin, \
-            f"{chart_type}: у оси {name} нет automargin — подписи срежет"
+        axis = getattr(fig.layout, name)
+        if axis.automargin:
+            continue
+        left_aligned = (axis.showticklabels is False
+                        and len(fig.layout.annotations or []) >= categories > 0
+                        and fig.layout.margin.l > 10)
+        assert left_aligned, (
+            f"{chart_type}: у оси {name} нет ни automargin, ни своих "
+            f"annotations с широким полем — подписи срежет или потеряет")

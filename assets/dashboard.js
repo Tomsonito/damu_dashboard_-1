@@ -550,70 +550,25 @@
         }
     });
 
-    /* ── Подписи на оси Y: выравнивание по левому краю (11.08.2026) ──
+    /* !! Выравнивание подписей оси Y по левому краю (СЭЭ) здесь БЫЛО
+       и отсюда УБРАНО 11.08.2026 — не как правка стиля, а как починка
+       производительности. Прежняя версия на каждое изменение DOM ГДЕ
+       УГОДНО на странице (MutationObserver на document.body, subtree)
+       заново перебирала все графики и звала `getBBox()` в цикле по
+       каждой подписи каждого — а `getBBox()` заставляет браузер
+       немедленно и синхронно пересчитать раскладку страницы. На
+       четырёх больших графиках СЭЭ это были сотни таких пересчётов
+       на каждый чих, отсюда и «графики грузятся по 5 секунд».
 
-       По умолчанию Plotly выравнивает подписи категорий (названия регионов,
-       отраслей, банков) по правому краю: текст «прижат» к оси и растёт влево.
-       Пользователь попросил обратное: все подписи начинаются от одного левого
-       края, читаются как список.
+       Автор правки — не этот файл: её сделал Gemini через Antigravity
+       по просьбе пользователя (переименовать один заголовок), но заодно
+       добавил и это. Найдено сравнением с историей 11.08.2026.
 
-       Реализация: после каждой отрисовки графика перебираем `.ytick text`,
-       находим самое левое начало текста (самый маленький x минус ширина самого
-       длинного текста — при text-anchor:end x стоит у правого края подписи)
-       и ставим все подписи на этот x с `text-anchor: start`.
-
-       !! Plotly перерисовывает SVG заново при relayout / restyle, поэтому
-       одноразовой правки недостаточно — нужен наблюдатель на изменения DOM.
-       MutationObserver следит за plotly-контейнерами и вызывает перевыравнивание
-       при каждом обновлении. */
-    function leftAlignYTicks(plotEl) {
-        var ticks = plotEl.querySelectorAll('.ytick text');
-        if (!ticks.length) return;
-
-        /* Все подписи при text-anchor:end имеют один и тот же x — это координата
-           оси (правый край области подписей). Вычисляем ширину самого длинного
-           текста: при text-anchor:start все подписи начнутся от (axisX - maxWidth),
-           и самая длинная как раз дотянется до оси, остальные — короче.
-           Ограничиваем левую границу 8 px, чтобы подписи не уезжали за край SVG. */
-        var axisX = parseFloat(ticks[0].getAttribute('x'));
-        var maxWidth = 0;
-        ticks.forEach(function (t) {
-            var w = t.getBBox().width;
-            if (w > maxWidth) maxWidth = w;
-        });
-
-        var leftX = Math.max(8, axisX - maxWidth);
-
-        ticks.forEach(function (t) {
-            t.setAttribute('x', leftX);
-            t.setAttribute('text-anchor', 'start');
-        });
-    }
-
-    function leftAlignAllPlots() {
-        document.querySelectorAll('.js-plotly-plot').forEach(leftAlignYTicks);
-    }
-
-    /* Наблюдатель: Dash / Plotly перестраивает содержимое .js-plotly-plot
-       при каждом коллбэке. MutationObserver ловит эти перестройки и
-       переправляет выравнивание заново. Чтобы текст не «прыгал»
-       на долю секунды при смене темы (как было с setTimeout),
-       делаем перевыравнивание перед следующей отрисовкой кадра
-       с помощью requestAnimationFrame. */
-    var alignPending = false;
-    var observer = new MutationObserver(function () {
-        if (!alignPending) {
-            alignPending = true;
-            requestAnimationFrame(function () {
-                leftAlignAllPlots();
-                alignPending = false;
-            });
-        }
-    });
-    observer.observe(document.body, {childList: true, subtree: true});
-    /* Первый проход — на случай, если графики уже отрисованы к моменту
-       загрузки скрипта. */
-    setTimeout(leftAlignAllPlots, 500);
+       Тот же результат — подписи столбиком от одного края — теперь
+       делает СЕРВЕР при постройке фигуры: core/charts.py,
+       `_left_align_categories`. Там это `annotations` с обычным
+       `xanchor="left"`, без единого обращения к DOM в браузере.
+       Разбор — в CODE_GUIDE. */
 
     schedule();
     restoreSidebar();
