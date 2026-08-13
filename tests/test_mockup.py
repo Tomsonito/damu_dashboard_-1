@@ -90,13 +90,3 @@ def test_текущий_год_показывает_только_прошедш�
     assert len(items[0]["months"]) <= today.month
 
 
-def test_статус_отвечает_проценту(today):
-    """«Выполнено» отделено от «По графику» намеренно: перевыполненный
-    план — это не «идём по графику»."""
-    for item in mockup.for_year(None, today=today):
-        if item["percent"] >= 100:
-            assert item["status"] == "Выполнено"
-        elif item["gap"] >= 0:
-            assert item["status"] == "По графику"
-        else:
-            assert item["status"] == "Отставание"

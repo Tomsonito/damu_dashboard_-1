@@ -196,18 +196,11 @@ def band(item: dict, expanded: bool) -> html.Div:
 def instrument_card(item: dict, expanded: bool) -> html.Div:
     """Карточка одного инструмента: процент, полоса, проекты, месяцы."""
     tone = {"guarantee": 1, "credit": 2, "subsidy": 3}[item["key"]]
-    ok = item["status"] != "Отставание"
-    status_color = ("var(--damu-accent, #1f7a4d)" if ok
-                    else "var(--damu-accent-2-dark, #6a531c)")
 
     return html.Div(
         [
             html.Div([
                 html.Span(item["title"], className="damu-inst2-title"),
-                html.Span([html.I(style={"background": status_color}),
-                           item["status"]],
-                          className="damu-inst2-status",
-                          style={"color": status_color}),
             ], className="damu-inst2-head"),
 
             html.Div([

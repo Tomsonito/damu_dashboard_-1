@@ -80,6 +80,7 @@ def by_dict(series: pd.Series, mapping: dict) -> pd.Series:
 SECTION_OF_INSTRUMENT = {
     "Кредитование": "Кредит. выдача",
     "Гарантирование": "Гар. выдача",
+    "Субсидирование": "Суб. выдача",
 }
 
 #: Программы выгрузки, у которых на сайте есть СВОЙ раздел. Такие строки
@@ -302,13 +303,56 @@ def load_see() -> pd.DataFrame:
     out = pd.concat([out_ind, out_reg], ignore_index=True)
     return out[FACT_COLUMNS]
 
+
+def load_subsidies() -> pd.DataFrame:
+    path = DIR_PATH / "Субсидирование.xlsx"
+    print(f"Loading {path.name}...")
+    df = pd.read_excel(path)
+
+    out = pd.DataFrame()
+    # Список длиной в df, а не скаляр: скаляр, присвоенный ПУСТОМУ
+    # DataFrame первым, не размножается на строки следующих присвоений —
+    # весь столбец после уходит в NaN. Тот же приём, что в load_credits().
+    out["indicator"] = ["subsidy_project_amount"] * len(df)
+
+    dates = pd.to_datetime(df["DM_DATE"], errors='coerce')
+    out["report_year"] = dates.dt.year.fillna(datetime.now().year).astype(int)
+    out["date"] = dates.dt.to_period("M").dt.to_timestamp().dt.strftime("%Y-%m-%d").fillna("2026-07-01")
+    out["period"] = "month"
+    out["region"] = clean_text(df["REGION_NAME"])
+    out["instrument"] = "Субсидирование"
+    # PROGRAM_NAME.1 — сгруппированное название (7 значений: ЕКП, Іскер аймақ,
+    # МТИ, Нурлы Жер, ПРООН, ПС, ПСЭ); PROGRAM_NAME — сырое из выгрузки
+    # (28 формулировок). Берём сгруппированное — тем же правилом, что и
+    # в «Гарантировании» (см. шапку файла).
+    out["source_program"] = clean_text(df["PROGRAM_NAME.1"])
+    out["program"] = section_for(out["instrument"], out["source_program"])
+    out["industry"] = clean_text(df["INDUSTRY_VAL.1"])
+    out["bank"] = clean_text(df["BENEFICIARY_NAME"])
+    out["subject_type"] = by_dict(df["BUSINESS_TYPE"], SUBJECT_TYPE)
+    out["loan_purpose"] = by_dict(df["PURPOSE"], LOAN_PURPOSE)
+    out["is_total"] = False
+    # PROJECT_AMOUNT — сумма профинансированного проекта, получившего
+    # субсидирование ставки; не сумма самой субсидии (её в выгрузке нет).
+    # Тот же смысл, что у credits_issued/guarantees_issued — объём, а не
+    # плата за инструмент, поэтому показатель отдельный от боевого
+    # `subsidies_issued` (тот едет из бюджета БД, см. etl/load_budget.py) —
+    # смешивать в одну сумму объём кредита и сумму субсидии было бы неверно.
+    out["value"] = pd.to_numeric(df["PROJECT_AMOUNT"], errors='coerce').fillna(0)
+    out["source_file"] = path.name
+    out["loaded_at"] = datetime.now().isoformat(timespec="seconds")
+
+    return out[FACT_COLUMNS]
+
+
 def run():
     print("Parsing files...")
     df1 = load_credits()
     df2 = load_guarantees()
     df3 = load_see()
-    
-    all_facts = pd.concat([df1, df2, df3], ignore_index=True)
+    df4 = load_subsidies()
+
+    all_facts = pd.concat([df1, df2, df3, df4], ignore_index=True)
     print(f"Total raw rows parsed: {len(all_facts)}")
     
     # Aggregate data to avoid passing massive transactional data into the dashboard's memory

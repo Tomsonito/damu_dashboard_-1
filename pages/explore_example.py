@@ -42,7 +42,7 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 from core import charts, data, examples, mockup
-from core.examples import (DIVIDER, GOLD, GREEN, HAIRLINE, INK, LATE, MUTED,
+from core.examples import (DIVIDER, GOLD, GREEN, HAIRLINE, INK, MUTED,
                            PALE, SHADOW, SURFACE, TEAL, TOTAL, TRACK, num)
 
 log = logging.getLogger(__name__)
@@ -69,8 +69,6 @@ def _instruments() -> list[dict]:
         out.append({
             **item, **n,
             "color": color,
-            "status_color": GREEN if n["on_track"] else LATE,
-            "status": "В графике" if n["on_track"] else "Отставание",
             "gap_short": ("+" if n["on_track"] else "−") + num(abs(n["gap"]), 1) + " п.п.",
             # Словами, а не знаком «+»: в прежней карточке стояло
             # «от плана +27,1 п.п.» — плюс к чему и от чего, приходилось
@@ -146,20 +144,6 @@ def _paced_bar(percent_width, color, height=12, track=TRACK):
         ],
         style={"position": "relative", "height": f"{height}px", "background": track,
                "borderRadius": "4px", "boxShadow": "inset 0 0 0 1px rgba(0,0,0,0.06)"},
-    )
-
-
-def _status(item, size="11px", dot=7):
-    """Плашка статуса: квадратик цветом и подпись."""
-    return html.Span(
-        [
-            html.Span(style={"width": f"{dot}px", "height": f"{dot}px",
-                             "background": item["status_color"], "flex": "none"}),
-            item["status"],
-        ],
-        style={"display": "inline-flex", "alignItems": "center", "gap": "6px",
-               "fontSize": size, "fontWeight": 700, "letterSpacing": ".05em",
-               "textTransform": "uppercase", "color": item["status_color"]},
     )
 
 
@@ -408,7 +392,7 @@ def _programs_card(columns, per_row, grid, row_height, font_size,
 # на карточку общий обработчик кнопки, а он живёт в браузере, не в Python.
 
 GRID_1 = ("minmax(130px,1.15fr) 112px 88px minmax(80px,1fr) "
-          "128px 84px var(--dyn-w,232px) 100px")
+          "128px 84px var(--dyn-w,232px)")
 
 
 def _spark_months(values, labels, color, font="10px", label_font="7.5px"):
@@ -483,7 +467,6 @@ def _example_1():
             ]],
             html.Div([html.Span("Динамика"), _dyn_toggle({"marginLeft": "auto"})],
                      style={"display": "flex", "alignItems": "center", "gap": "8px"}),
-            html.Div("Статус", style={"textAlign": "right"}),
         ],
         style={"display": "grid", "gridTemplateColumns": GRID_1, "alignItems": "end",
                "gap": "0 16px", "padding": "12px 20px 8px", "fontSize": "9.5px",
@@ -546,7 +529,6 @@ def _example_1():
                         "whiteSpace": "nowrap"}),
                 ], style={"textAlign": "right"}),
                 _ex1_dynamics(it),
-                html.Div(_status(it), style={"textAlign": "right"}),
             ],
             style={"display": "grid", "gridTemplateColumns": GRID_1,
                    "alignItems": "center", "gap": "0 16px", "padding": "14px 20px",
@@ -681,7 +663,7 @@ def _example_3():
     rows_2025 = html.Div(make_rows(is_2025=True), id="damu-rows-2025", style={"display": "none"})
 
     columns = _programs([TOTAL, GREEN, GOLD, TEAL])
-    
+
     legend = html.Div([
         html.Span([html.I(style={"width": "24px", "height": "5px", "background": "#8f8b88", "display": "inline-block"}), "Освоено, млрд ₸"], style={"display": "flex", "alignItems": "center", "gap": "6px"}),
         html.Span([html.I(style={"width": "14px", "height": "5px", "background": "#8f8b88", "display": "inline-block"}), "Проектов, шт"], style={"display": "flex", "alignItems": "center", "gap": "6px"})
@@ -891,8 +873,13 @@ def _ex4_dyn(item, kind="bars"):
 
 
 def _ex4_pace(item, extra=None):
-    """Отставание или опережение — словами, а не знаком «+»."""
-    style = {"fontSize": "11px", "fontWeight": 600, "color": item["status_color"]}
+    """Отставание или опережение — словами, а не знаком «+».
+
+    Цвет — нейтральный `MUTED`, не статусный (зелёный/золото по «в графике»):
+    статусы убраны 13.08.2026, тёплое золото тревоги путалось с золотом
+    «Кредитования» — тем же цветом, но другим смыслом.
+    """
+    style = {"fontSize": "11px", "fontWeight": 600, "color": MUTED}
     style.update(extra or {})
     return html.Div(item["pace_phrase"], style=style)
 
@@ -1063,19 +1050,14 @@ EX4_VARIANTS = [
 
 
 def _ex4_card(item, number: int, name: str, body):
-    """Общая оболочка: цветная черта, номер варианта, название, статус."""
+    """Общая оболочка: цветная черта, номер варианта, название."""
     return html.Div(
         [
             html.Div([
                 _kicker(f"Вариант {number} · {name}"),
-                html.Div([
-                    html.Span(item["title"], style={
-                        "fontSize": "13.5px", "fontWeight": 800,
-                        "letterSpacing": "-0.01em"}),
-                    html.Span(_status(item, "10px", 6),
-                              style={"marginLeft": "auto"}),
-                ], style={"display": "flex", "alignItems": "center", "gap": "8px",
-                          "marginTop": "4px"}),
+                html.Div(item["title"], style={
+                    "fontSize": "13.5px", "fontWeight": 800,
+                    "letterSpacing": "-0.01em", "marginTop": "4px"}),
             ], style={"padding": "10px 16px 9px",
                       "borderBottom": f"1px solid {HAIRLINE}"}),
             html.Div(body, style={"padding": "12px 16px 14px", "flex": 1}),
@@ -1180,40 +1162,81 @@ EX5_CARD = {"background": "var(--damu-surface)", "color": "var(--damu-ink)",
             "border": "1px solid var(--damu-hairline)"}
 
 
+#: Римские номера кварталов для подписи под клеткой — рабочая цифра, а не
+#: буква месяца, раз клетка теперь держит три месяца сразу.
+_ROMAN_QUARTERS = ("I", "II", "III", "IV")
+
+
 def _ex5_cells(months: list[int]) -> html.Div:
-    """Год двенадцатью клетками: прошедшие месяцы цветом, будущие рамкой.
+    """Год кварталами: три прошедших месяца сворачиваются в одну клетку
+    с их суммой; хвост года короче трёх месяцев остаётся отдельными
+    месячными клетками — сворачивать там ещё нечего (тест по просьбе
+    пользователя 13.08.2026).
 
-    Плотность цвета — сколько проектов в месяце относительно самого сильного
-    месяца ЭТОГО инструмента. Масштаб у каждой строки свой: субсидирование
-    и кредитование несопоставимы по размеру, и общий масштаб превратил бы
-    первое в двенадцать одинаково бледных клеток.
+    Кварталы, которые ещё не начались, не рисуются вовсе — раньше на их
+    месте стояла пустая рамка, но для клетки-квартала это не подходит:
+    было бы неясно, рамка держит место под один будущий месяц или под
+    целый квартал.
 
-    Нижняя граница плотности 0.28, а не 0: клетка самого слабого месяца
-    должна остаться видимой клеткой, иначе «мало» и «ничего» выглядят
-    одинаково.
+    Плотность цвета — сколько клетка (квартал или отдельный месяц из
+    хвоста) даёт относительно самой сильной клетки ЭТОЙ строки; шкала
+    своя у каждого инструмента, как и раньше — квартал квартала
+    сопоставим по масштабу с кварталом другого инструмента, а
+    субсидирование и кредитование нет.
 
-    Будущие месяцы рисуются пустой рамкой, а не пропускаются: иначе
-    неполный год выглядел бы как полный, просто короче.
+    Нижняя граница плотности 0.28, а не 0: клетка самого слабого квартала
+    (или месяца из хвоста) должна остаться видимой клеткой, иначе «мало»
+    и «ничего» выглядят одинаково.
+
+    !! Квартал рисуется В ДВА РАЗА ШИРЕ месячной клетки (`flex: 2` против
+    `flex: 1`) — решено 13.08.2026; сначала стояло втрое, пользователь
+    попросил меньше.
+
+    !! Число внутри клетки — белым текстом с тенью, а не переменной темы
+    `--damu-ink`, как у остальных подписей на диаграммах. Причина: клетка
+    красится плотностью 0.28–1.0 от НЕПРОЗРАЧНОСТИ, то есть под текстом
+    в одной и той же клетке то яркий акцентный цвет, то полупрозрачный —
+    ни тёмный, ни светлый фиксированный цвет не читался бы одинаково
+    на обоих концах диапазона. Тень — то же решение, что берут карты
+    и фото под подписью: держит контраст независимо от прозрачности
+    низа, не проверено на глаз (сайт не запускался на момент правки).
     """
-    top = max(months) or 1
-    cells, letters = [], []
-    for i, name in enumerate(mockup.MONTHS12):
-        if i < len(months):
-            cells.append(html.Span(
-                title=f"{name} — {num(months[i])} проектов",
-                style={"flex": 1, "height": "17px", "background": EX5_K,
-                       "opacity": round(0.28 + 0.72 * months[i] / top, 2)},
-            ))
+    entries = []  # (подпись, значение, вес, подсказка)
+    i = 0
+    while i < len(months):
+        chunk = months[i:i + 3]
+        if len(chunk) == 3:
+            q = i // 3
+            label = f"{_ROMAN_QUARTERS[q]} кв"
+            total = sum(chunk)
+            entries.append((label, total, 2, f"{label} — {num(total)} проектов"))
         else:
-            cells.append(html.Span(style={
-                "flex": 1, "height": "17px",
-                "boxShadow": "inset 0 0 0 1px var(--damu-hairline)"}))
-        # Подписан каждый третий месяц: первая буква на всех давала бы
-        # «я ф м а м и и а с о н д» — где «м» и «и» встречаются дважды
+            # Хвост года короче квартала — по клетке на каждый месяц,
+            # без свёртки, ровно как просил пользователь (1–2 клетки)
+            for k, v in enumerate(chunk):
+                name = mockup.MONTHS12[i + k]
+                entries.append((name.lower(), v, 1, f"{name} — {num(v)} проектов"))
+        i += len(chunk)
+
+    top = max((v for _, v, _, _ in entries), default=0) or 1
+    cells, letters = [], []
+    for label, value, weight, tip in entries:
+        cells.append(html.Div(
+            num(value), title=tip,
+            style={"flex": weight, "height": "26px", "background": EX5_K,
+                   "opacity": round(0.28 + 0.72 * value / top, 2),
+                   "display": "flex", "alignItems": "center",
+                   "justifyContent": "center", "overflow": "hidden",
+                   "fontSize": "9.5px", "fontWeight": 800, "color": "#fff",
+                   "textShadow": "0 1px 2px rgba(0,0,0,.6)",
+                   "fontVariantNumeric": "tabular-nums", "whiteSpace": "nowrap"},
+        ))
+        # Клеток теперь максимум 4–5 (кварталы + хвост), а не 12 — подпись
+        # под каждой умещается, прежнее прореживание («каждый третий»)
+        # больше не нужно
         letters.append(html.Span(
-            name.lower() if i % 3 == 0 else "",
-            style={"flex": 1, "textAlign": "center", "fontSize": "8.5px",
-                   "fontWeight": 700, "color": "var(--damu-muted)"},
+            label, style={"flex": weight, "textAlign": "center", "fontSize": "8.5px",
+                          "fontWeight": 700, "color": "var(--damu-muted)"},
         ))
 
     return html.Div([
@@ -1492,7 +1515,18 @@ def _ex5_body():
                "flexDirection": "column", "minWidth": 0},
     )
 
-    return html.Div([instruments, _ex5_programs()],
+    # Колонка «Все инструменты» убрана 13.08.2026 (просьба пользователя):
+    # её три строки — это ровно те же числа, что стоят слева карточками
+    # инструментов, то есть один и тот же разрез показывался дважды
+    # на одном экране. Пример 6 избавился от неё раньше и по тому же
+    # доводу, теперь оба сжатых вида согласованы.
+    #
+    # !! `per_row` остаётся ДВА, хотя колонок стало три. Три в тот же
+    # ряд не помещаются: у строки 196 px занято числами и полосами
+    # (`EX5_PROG_GRID` плюс зазоры) при ширине панели 640 px — на имя
+    # программы осталось бы отрицательное место. Пустая четвёртая
+    # клетка внизу справа — плата за читаемые названия.
+    return html.Div([instruments, _ex5_programs(with_all=False)],
                     style={"display": "grid", "gridTemplateColumns": "1fr 640px",
                            "gap": "14px", "marginTop": "14px"})
 
@@ -1633,10 +1667,6 @@ def _ex6_card(item: dict) -> html.Div:
     """
     unique_share = item["unique"] / max(item["projects_fact"], 1) * 100
     fill = min(item["projects_percent"], 100)
-    # `mockup.for_year` даёт статус словом и признак `on_track`, а цвет
-    # плашки живёт в примерах (`_status` ждёт его готовым): тревога —
-    # тёплым золотом, а не третьим цветом инструментов
-    item = {**item, "status_color": GREEN if item["on_track"] else LATE}
 
     def key(hatch: bool, text: str):
         mark = {"width": "9px", "height": "9px", "display": "inline-block",
@@ -1652,7 +1682,6 @@ def _ex6_card(item: dict) -> html.Div:
         html.Div([
             html.Span(item["title"], style={"fontSize": "15px", "fontWeight": 800,
                                             "letterSpacing": "-0.015em"}),
-            _status(item),
         ], style={"display": "flex", "alignItems": "center", "gap": "10px",
                   "borderBottom": f"1px solid {HAIRLINE}", "padding": "12px 16px"}),
 

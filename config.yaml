@@ -214,6 +214,20 @@ indicators:
     decimals: 2
     agg: sum
 
+  # Объём кредитов/проектов, получивших субсидирование ставки — из
+  # тестовой выгрузки «Субсидирование.xlsx» (etl/load_test_data.py).
+  # !! Не то же самое, что боевой `subsidies_issued` ниже: там сумма
+  # самой субсидии из бюджета БД, здесь — объём субсидируемого кредита.
+  subsidy_project_amount:
+    title: "Объём просубсидированных кредитов"
+    short: "Субсидируемые кредиты"
+    unit: "тенге"
+    kind: flow
+    divisor: 1000000000
+    display_unit: "млрд ₸"
+    decimals: 2
+    agg: sum
+
   workplaces_created:
     title: "Создано рабочих мест"
     short: "Рабочих мест"
@@ -542,15 +556,19 @@ section_tabs_by_section:
   # (тот же приём, что ГФ1 у «Гар. выдача»).
   subsidy:
     - {key: years,    title: "Динамика по годам",    data: true,
-       kpi: [demo_plan, demo_fact, demo_rest, demo_execution]}
-       # 1 диаграмма (динамика по годам) + 2 показателя: проекты (ед.) ·
-       # сумма кредитов (млрд ₸)
-    - {key: programs, title: "Программы/Цели займа", data: false}
-       # 2 диаграммы (программы · цели займа) + те же 2 показателя
+       kpi: [subsidy_project_amount]}
+       # план по этому разделу пока не приехал (нет источника) — KPI
+       # только по факту, как у «Кредит. выдачи»
+    - {key: programs, title: "Программы/Цели займа", data: true}
+       # 2 диаграммы (программы · цели займа)
     - {key: regions,  title: "ОКЭД/Регионы",         data: true}
-       # 2 диаграммы (виды деятельности · регионы) + те же 2 показателя
-    - {key: banks,    title: "БВУ/Субъектность",     data: false}
-       # 2 диаграммы (финансовые институты · субъектность) + те же 2 показателя
+       # 2 диаграммы (виды деятельности · регионы)
+    - {key: banks,    title: "БВУ/Субъектность",     data: true}
+       # 2 диаграммы (финансовые институты · субъектность)
+       # Банков всего 55, но график всегда за ОДИН год (см. resolve_year) —
+       # максимум одновременно 32 (2025-й), сопоставимо с «Гар. выдачей»
+       # (28), для которой уже подобран size: large. Как это выглядит
+       # глазами — не проверено (сайт не запускался, правило 3)
     - {key: budget,   title: "Бюджет",                data: false}
        # 3 диаграммы: ППРК · Іскер Аймақ · МТИ
     - {key: plan,     title: "План освоения",         data: false, abbr: "ПО"}
@@ -1016,7 +1034,7 @@ section_widgets_by_page:
   see:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: wide, recent_years: 5}]
   guarantee:years:     [{chart: years_total, indicator: guarantees_issued, size: large}]
   credit:years:        [{chart: years_total, indicator: credits_issued, size: large}]
-  subsidy:years:       [{chart: years_total, indicator: demo_fact, size: large}]
+  subsidy:years:        [{chart: years_total, indicator: subsidy_project_amount, size: large}]
 
   # «Регионы»/«ОКЭД и регионы» — единственная настоящая диаграмма, которую
   # документ здесь называет и на которую есть данные: разбивка по областям.
@@ -1041,7 +1059,10 @@ section_widgets_by_page:
     - {chart: industries, indicator: see_output_industry, size: medium_tall}
     - {chart: industries, indicator: see_jobs_created_industry, size: medium_tall}
     - {chart: industries, indicator: see_tax_revenue_industry, size: medium_tall}
-    - {chart: industries, indicator: see_jobs_saved_industry, size: medium_tall}
+    # !! Один из четырёх — на алфавитный вид (`industries_alpha`), для
+    # сравнения рядом с обычным «по значению» (просьба пользователя
+    # 13.08.2026). Остальные три остались как были.
+    - {chart: industries_alpha, indicator: see_jobs_saved_industry, size: medium_tall}
   # !! Ключ «раздел:вкладка» должен встречаться в этом блоке РОВНО ОДИН РАЗ.
   # YAML на дубль не ругается — молча побеждает последний. Поймано
   # 07.08.2026: `orleu:terms` оказался объявлен дважды, и вкладка «Цели
@@ -1097,7 +1118,15 @@ section_widgets_by_page:
   orleu:regions:
     - {chart: bar,        indicator: credits_issued, size: medium}
     - {chart: industries, indicator: credits_issued, size: large}
-  subsidy:regions:      [{chart: bar, indicator: demo_fact, size: large}]
+  subsidy:regions:
+    - {chart: bar,        indicator: subsidy_project_amount, size: medium}
+    - {chart: industries, indicator: subsidy_project_amount, size: large}
+  subsidy:programs:
+    - {chart: programs,   indicator: subsidy_project_amount, size: medium}
+    - {chart: purposes,   indicator: subsidy_project_amount, size: medium}
+  subsidy:banks:
+    - {chart: banks,      indicator: subsidy_project_amount, size: large}
+    - {chart: subjects,   indicator: subsidy_project_amount, size: medium}
   subsidy_debt:regions: [{chart: bar, indicator: demo_fact, size: large}]
   subsidy_pay:regions:  [{chart: bar, indicator: demo_fact, size: large}]
 

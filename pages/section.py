@@ -45,7 +45,8 @@ import logging
 import dash
 import dash_bootstrap_components as dbc
 import pandas as pd
-from dash import ALL, Input, Output, State, callback, dcc, html
+from dash import (ALL, ClientsideFunction, Input, Output, State, callback,
+                  clientside_callback, dcc, html, no_update)
 
 from core import charts, data, mockup, widgets
 
@@ -369,6 +370,15 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
     for item in items:
         preset = widgets.size_meta(item["size"])
         toggle = _years_toggle(item, program)
+        # !! Число ВНУТРИ столбца (только «Годы» у СЭЭ, core/charts.py
+        # `_years_total`) красится не общей переменной `--damu-ink` — три
+        # замера контраста из шести проваливали 4,5:1 (зелёный/зол.
+        # заливка, обе темы), а фиксированный белый или чёрный до сих пор
+        # не проходил не то зелёный, не то золото разом. `damu-inside-text`
+        # переключает CSS-правило на белый текст с тёмной обводкой,
+        # держит контраст независимо от того, какая из трёх заливок под
+        # ним — см. custom.css, блок «Число внутри столбца (СЭЭ)».
+        inside_text = item["chart"] == "years_total" and program == "СЭЭ"
         columns.append(
             dbc.Col(
                 dbc.Card(
@@ -379,9 +389,18 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
                                 "index": f"{tab_key}|{item['id']}"},
                             style={"height": f"{preset['height']}px"},
                             config={"displayModeBar": False},
+                            className="damu-inside-text" if inside_text else None,
                         ),
                     ],
                     className="shadow-sm p-2 h-100",
+                    # !! Высота резервируется ДО того, как приедет диаграмма.
+                    # Иначе пустое место схлопывается, вся лента становится
+                    # короче двух экранов, и браузер решает, что показаны
+                    # сразу все разрезы (замерено 12.08.2026: приходили все
+                    # шесть секций СЭЭ вместо одной, отложенная постройка
+                    # не работала вовсе). Заодно уходит скачок раскладки:
+                    # готовая диаграмма встаёт в уже занятое ею место.
+                    style={"minHeight": f"{preset['height'] + 16}px"},
                 ),
                 xs=12, lg=preset["columns"], className="mb-3",
             )
@@ -506,6 +525,22 @@ def layout(key: str | None = None, **kwargs):
                     # Ключ раздела держим на странице: коллбэки читают его
                     # отсюда, а не разбирают адрес заново
                     dcc.Store(id="section-key", data=key),
+                    # Секции, диаграммы которых сервер уже строит. ПЕРВАЯ
+                    # лежит здесь сразу, а не ждёт первого тика опроса:
+                    # она видна всегда, и гонять ради неё лишний круг
+                    # «опрос → коллбэк» значило бы показать пустое место
+                    # там, где данные могли быть с самого начала.
+                    # Дальше список пополняет браузер по мере прокрутки,
+                    # см. `visibleSections` в assets/dashboard.js.
+                    dcc.Store(id="section-shown",
+                              data=[tabs[0]["key"]] if tabs else []),
+                    # !! Опрос, а не обработчик прокрутки: он живёт
+                    # в браузере и почти всегда возвращает `no_update`
+                    # (см. там же). Четверть секунды — компромисс между
+                    # «диаграмма готова до того, как домотали» и холостой
+                    # работой; всё равно прекращается, когда лента
+                    # показана целиком.
+                    dcc.Interval(id="section-shown-poll", interval=250),
                     tab_bar(tabs),
                     *section_feed(key, tabs),
                 ],
@@ -596,26 +631,58 @@ def _execution_value(row: pd.Series) -> float:
         return 0.0
 
 
+# Опрос страницы браузером: какие секции ленты уже показывались.
+# Сама функция — в assets/dashboard.js (`dash_clientside.damu`), потому
+# что это работа с DOM: она смотрит, докуда домотали. Здесь только
+# связь «опрос → список», сервера она не касается.
+clientside_callback(
+    ClientsideFunction(namespace="damu", function_name="visibleSections"),
+    Output("section-shown", "data"),
+    Input("section-shown-poll", "n_intervals"),
+    State("section-shown", "data"),
+)
+
+
 @callback(
     Output({"type": "section-widget", "index": ALL}, "figure"),
     Input("filter-year", "value"),
     Input("filter-regions", "value"),
     Input("data-version", "data"),
     Input("section-key", "data"),
+    Input("section-shown", "data"),
     State({"type": "section-widget", "index": ALL}, "id"),
 )
-def render_widgets(year, regions, _version, key, ids):
-    """Рисует виджеты всех разрезов разом, считая всё только по своему разделу.
+def render_widgets(year, regions, _version, key, shown, ids):
+    """Рисует виджеты ПОКАЗАННЫХ разрезов, считая всё только по своему разделу.
 
     Наборы перечитываются по одному разу на разрез и запоминаются в словаре:
     на ленте разрезов несколько, и ходить в хранилище за каждым виджетом
     значило бы читать один и тот же набор по шесть раз.
+
+    !! Разрезы, до которых человек не домотал, НЕ строятся вовсе: их место
+    остаётся пустым, а `shown` пополняется браузером по мере прокрутки
+    (`visibleSections` в assets/dashboard.js). На СЭЭ это двенадцать
+    диаграмм против одной при открытии.
+
+    !! Непоказанным отдаётся `no_update`, а не пустая фигура, и разница
+    тут не косметическая. `no_update` оставляет место нетронутым; пустая
+    фигура СТЁРЛА бы уже построенную диаграмму при каждом пополнении
+    списка — домотал до третьей секции, а первые две погасли.
+
+    Устаревших чисел этот приём не создаёт: смена года, регионов или
+    версии данных перестраивает ВСЕ показанные разрезы (они входят
+    в `shown`), а непоказанные пусты — им нечему устареть. Разрез,
+    до которого домотают позже, построится уже с новым фильтром.
     """
     program = widgets.program_of(key)
+    ready = set(shown or [])
     by_tab: dict[str, dict] = {}
     figures = []
     for graph_id in ids:
         tab_key, _, widget_id = str(graph_id["index"]).partition("|")
+        if tab_key not in ready:
+            figures.append(no_update)
+            continue
         if tab_key not in by_tab:
             by_tab[tab_key] = {
                 str(item["id"]): item

@@ -60,19 +60,17 @@ MONTHS_COLLAPSED = 6
 #: Иначе на экране рядом стояли бы «освоено 1 501» и столбики на другую сумму,
 #: и человек справедливо не поверил бы ни одному из двух чисел. За тем, что
 #: они не разъехались, следит проверка `_check_sums()` сразу под списком.
-INSTRUMENTS = [
-    {
-        "key": "all",
-        "title": "Все инструменты",
-        "tone": TONE_MAIN,
-        "plan": 1912, "fact": 1501,
-        "projects_plan": 1400, "projects_fact": 1100, "unique": 800,
-        "money_by_month": (96, 115, 268, 141, 372, 174, 335),
-        "money_by_month_full": (72, 88, 175, 104, 232, 118, 205,
-                                148, 96, 132, 84, 47),
-        "projects_by_month": (109, 47, 193, 114, 240, 159, 187),
-        "projects_by_month_full": (109, 47, 193, 114, 240, 159, 187, 201, 164, 228, 190, 142),
-    },
+#:
+#: !! «Все инструменты» — не отдельная строка с СВОИМИ числами, а сумма
+#: трёх остальных (считается ниже, `_all_instrument()`). До 13.08.2026 факт
+#: и план стояли вписанными вручную (1 501 / 1 912) и разошлись с суммой
+#: трёх инструментов (1 421) — на 80 единиц, без единой ошибки, потому что
+#: складывать их никто не заставлял. Поймано пользователем на разбивке
+#: по программам: там сумма считается по-настоящему, и она не совпала
+#: с карточкой-итогом. Тот же принцип файла, что и `_check_sums()`
+#: чуть ниже, применённый на уровень выше — к самому итогу, а не только
+#: к его помесячным рядам.
+_REAL_INSTRUMENTS = [
     {
         "key": "guarantee",
         "title": "Гарантирование",
@@ -112,6 +110,33 @@ INSTRUMENTS = [
 ]
 
 
+def _sum_series(*series: tuple[int, ...]) -> tuple[int, ...]:
+    """Поэлементная сумма нескольких помесячных рядов одинаковой длины."""
+    return tuple(sum(v) for v in zip(*series))
+
+
+def _all_instrument() -> dict:
+    """«Все инструменты» — сумма трёх настоящих, посчитанная, а не вписанная."""
+    return {
+        "key": "all", "title": "Все инструменты", "tone": TONE_MAIN,
+        "plan": sum(i["plan"] for i in _REAL_INSTRUMENTS),
+        "fact": sum(i["fact"] for i in _REAL_INSTRUMENTS),
+        "projects_plan": sum(i["projects_plan"] for i in _REAL_INSTRUMENTS),
+        "projects_fact": sum(i["projects_fact"] for i in _REAL_INSTRUMENTS),
+        "unique": sum(i["unique"] for i in _REAL_INSTRUMENTS),
+        "money_by_month": _sum_series(*(i["money_by_month"] for i in _REAL_INSTRUMENTS)),
+        "money_by_month_full": _sum_series(
+            *(i["money_by_month_full"] for i in _REAL_INSTRUMENTS)),
+        "projects_by_month": _sum_series(
+            *(i["projects_by_month"] for i in _REAL_INSTRUMENTS)),
+        "projects_by_month_full": _sum_series(
+            *(i["projects_by_month_full"] for i in _REAL_INSTRUMENTS)),
+    }
+
+
+INSTRUMENTS = [_all_instrument(), *_REAL_INSTRUMENTS]
+
+
 def _check_sums() -> None:
     """Денежные ряды обязаны складываться в `fact` — проверяем при импорте.
 
@@ -134,32 +159,90 @@ _check_sums()
 
 #: Разбивка по программам: четыре колонки, в каждой строки
 #: «название — освоено (млрд ₸) — проектов (шт)».
+#:
+#: !! Строки трёх инструментов ниже (гарантирование/кредитование/
+#: субсидирование) — не готовые числа, а ФОРМА: пропорция между
+#: программами (какая крупнее, какая мельче) настоящая, вручную
+#: подобранная, а сама сумма пересчитывается под факт инструмента через
+#: `_scale_rows()`. До 13.08.2026 суммы были независимо вписаны и
+#: расходились с фактом на карточке — местами в разы (например у
+#: «Кредитования» строки по проектам складывались в 19 714 штук при факте
+#: 470). Колонка «Все инструменты» и вовсе не считалась вообще — теперь
+#: её три строки берутся прямо из `_REAL_INSTRUMENTS`, тем же числом,
+#: что и карточка.
+def _scale_rows(rows: list[tuple], target_amount: int, target_count: int) -> list[tuple]:
+    """Пересчитывает столбец строк так, чтобы суммы совпали с фактом
+    инструмента, а форма (какая программа больше, какая меньше) осталась.
+
+    Наибольший остаток, а не поштучное округление: округлить каждую
+    строку по отдельности не гарантирует, что сумма сойдётся ровно —
+    полтора десятка округлений дают разброс в несколько единиц, и это
+    была бы та же самая ошибка на меньшем масштабе.
+
+    !! Мелкой программе гарантирован минимум 1, если она не пустая
+    изначально: у «Кредитования» разброс исходных весов доходил до 833
+    раз (12 500 против 15), и обычное пропорциональное округление
+    обнуляло мелкие строки — на экране выходило «128 млрд ₸, 0 шт»,
+    деньги есть, а проектов как бы нет. Занимает у самых крупных строк,
+    сумма всё равно остаётся точной.
+    """
+    def scale(values: list[int], target: int) -> list[int]:
+        total = sum(values)
+        if not total:
+            return [0] * len(values)
+        nonzero = sum(1 for v in values if v > 0)
+        if target < nonzero:
+            # Меньше единиц, чем ненулевых строк, — гарантию не выполнить,
+            # остаётся обычное распределение по наибольшему остатку
+            raw = [v * target / total for v in values]
+            floors = [int(v) for v in raw]
+            remainder = target - sum(floors)
+            order = sorted(range(len(values)), key=lambda i: raw[i] - floors[i],
+                           reverse=True)
+            for i in order[:remainder]:
+                floors[i] += 1
+            return floors
+
+        guaranteed = [1 if v > 0 else 0 for v in values]
+        rest_target = target - sum(guaranteed)
+        raw = [v * rest_target / total for v in values]
+        floors = [int(v) for v in raw]
+        remainder = rest_target - sum(floors)
+        order = sorted(range(len(values)), key=lambda i: raw[i] - floors[i],
+                       reverse=True)
+        for i in order[:remainder]:
+            floors[i] += 1
+        return [g + f for g, f in zip(guaranteed, floors)]
+
+    names = [r[0] for r in rows]
+    amounts = scale([r[1] for r in rows], target_amount)
+    counts = scale([r[2] for r in rows], target_count)
+    return list(zip(names, amounts, counts))
+
+
 PROGRAMS = [
     {
         "title": "Все инструменты",
         "tone": TONE_MAIN,
-        "rows": [
-            ("Гарантирование", 540, 430),
-            ("Кредитование", 650, 470),
-            ("Субсидирование", 231, 149),
-        ],
+        "rows": [(i["title"], i["fact"], i["projects_fact"])
+                 for i in _REAL_INSTRUMENTS],
     },
     {
         "title": "Гарантирование — программы",
         "tone": TONE_SECOND,
-        "rows": [
+        "rows": _scale_rows([
             ("ГФ2", 128, 145),
             ("ГФ1", 96, 110),
             ("АПК", 74, 88),
             ("МТИ", 51, 62),
             ("Агробизнес", 33, 40),
             ("Моно", 18, 21),
-        ],
+        ], _REAL_INSTRUMENTS[0]["fact"], _REAL_INSTRUMENTS[0]["projects_fact"]),
     },
     {
         "title": "Кредитование — программы",
         "tone": TONE_SECOND,
-        "rows": [
+        "rows": _scale_rows([
             ("Крупный биз.", 450, 20),
             ("Обработка", 180, 150),
             ("Өрлеу", 118, 1320),
@@ -168,21 +251,46 @@ PROGRAMS = [
             ("Даму Регион", 42, 4700),
             ("Үміт", 29, 310),
             ("Микро", 15, 12500),
-        ],
+        ], _REAL_INSTRUMENTS[1]["fact"], _REAL_INSTRUMENTS[1]["projects_fact"]),
     },
     {
         "title": "Субсидирование — программы",
         "tone": TONE_THIRD,
-        "rows": [
+        "rows": _scale_rows([
             ("Факторинг", 320, 15),
             ("Іскер Аймақ", 150, 400),
             ("Даму-Көпір", 47, 850),
             ("ИП Старт", 31, 5200),
             ("Сервис", 19, 820),
             ("Кооперация", 9, 12),
-        ],
+        ], _REAL_INSTRUMENTS[2]["fact"], _REAL_INSTRUMENTS[2]["projects_fact"]),
     },
 ]
+
+
+def _check_programs() -> None:
+    """Разбивка по программам обязана складываться в факт своей карточки.
+
+    `_scale_rows()` это гарантирует арифметически, но проверка при
+    импорте — на случай, если кто-то однажды впишет строку в `PROGRAMS`
+    в обход неё (тем же способом, что и `_check_sums()` выше: дешевле
+    поймать при запуске, чем глазами на экране)."""
+    for program, instrument in zip(PROGRAMS[1:], _REAL_INSTRUMENTS):
+        amount = sum(r[1] for r in program["rows"])
+        count = sum(r[2] for r in program["rows"])
+        if amount != instrument["fact"]:
+            raise ValueError(
+                f"{instrument['key']}: сумма программ {amount} != факт "
+                f"{instrument['fact']}"
+            )
+        if count != instrument["projects_fact"]:
+            raise ValueError(
+                f"{instrument['key']}: сумма проектов {count} != факт "
+                f"{instrument['projects_fact']}"
+            )
+
+
+_check_programs()
 
 
 def expected_pace(today: date | None = None) -> tuple[float, int, int]:
@@ -260,11 +368,12 @@ def for_year(year: int | None = None, expanded: bool = False,
             "months_total": months_total,
             "percent": percent, "projects_percent": projects_percent,
             "pace": pace, "pace_day": day, "pace_days": days,
+            # Плашка статуса («По графику»/«Отставание») убрана 13.08.2026 —
+            # решение пользователя после разбора: цвет тревоги (тёплое золото)
+            # путался с цветом «Кредитования», у которого золото — это личность
+            # инструмента, а не сигнал. `on_track`/`gap` остаются: на них
+            # держится словесная фраза «отстаёт от плана на X п.п.»
             "gap": gap, "on_track": gap >= 0,
-            # «Выполнено» отделено от «По графику» намеренно: перевыполненный
-            # план — это не «идём по графику», это уже другой разговор
-            "status": ("Выполнено" if percent >= 100
-                       else "По графику" if gap >= 0 else "Отставание"),
         })
     return out
 
