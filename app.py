@@ -5,7 +5,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
 
-from core import auth, data, examples, publish, theme, widgets
+from core import auth, data, publish, theme, widgets
 from core.cache import cache, sweep as sweep_cache
 
 # Без этой настройки log.info(...) со страниц молча пропадает: у Python
@@ -188,21 +188,10 @@ def navbar():
     items = [
         html.Div(brand, className="damu-brand-box"),
         dbc.NavLink("Главная", href="/", active="exact", class_name="nav-link"),
-        # «Разбор» — меню, а не одна ссылка: пока на нём выбирают раскладку
-        # из шести примеров, и прыгать между ними через список каждый раз
-        # неудобно. Первый пункт ведёт на сам список.
-        dbc.DropdownMenu(
-            label="Разбор",
-            nav=True,
-            class_name="damu-nav-menu",
-            children=[
-                dbc.DropdownMenuItem("Все примеры", href="/explore"),
-                dbc.DropdownMenuItem(divider=True),
-                *[dbc.DropdownMenuItem(f"{e['title']} — {e['note']}",
-                                       href=f"/explore/{e['key']}")
-                  for e in examples.EXAMPLES],
-            ],
-        ),
+        # Меню «Разбор ▾» здесь стояло, пока выбирали раскладку из шести
+        # примеров. Выбор сделан 18.08.2026 (пример 5), примеры удалены
+        # 19.08.2026 — вместе с ними ушло и меню: оно вело на страницы,
+        # которых больше нет.
         # Кнопка, а не ссылка: список разделов всплывает поверх страницы,
         # никуда не уводя (см. sections_modal ниже)
         html.Button("Разделы ▾", id="open-sections", className="damu-nav-link"),
