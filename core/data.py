@@ -409,8 +409,19 @@ def resolve_year(indicator: str, year: int, program: str | None = None) -> int |
     return int(earlier[0] if earlier else years[-1])
 
 
-def format_value(value: float, indicator: str) -> str:
-    """Число в виде, пригодном для показа: масштаб, разряды, единица."""
+def format_value(value: float, indicator: str, with_unit: bool = True) -> str:
+    """Число в виде, пригодном для показа: масштаб, разряды, единица.
+
+    `with_unit=False` — только число, без «млрд ₸». Нужно там, где единица
+    названа рядом один раз: подписи столбцов внутри диаграммы (17.08.2026,
+    просьба пользователя — пять раз «млрд ₸» на пяти столбцах занимали
+    больше места, чем сами числа, и подпись вставала вертикально).
+
+    !! Отдельной функции «только число» заводить нельзя: масштаб, разряды
+    и запятая обязаны считаться одинаково для карточки и для подписи.
+    Разойдись они — на одном экране появились бы два разных написания
+    одного числа, и никакой ошибки при этом не случилось бы.
+    """
     meta = get_indicator_meta(indicator)
     scaled = value / meta["divisor"]
     # Неразрывный пробел как разделитель разрядов — так принято в русской типографике
@@ -419,6 +430,8 @@ def format_value(value: float, indicator: str) -> str:
     # точку на запятую, иначе запятая-разделитель успела бы стать дробной.
     text = (f"{scaled:,.{meta['decimals']}f}"
             .replace(",", " ").replace(".", ","))
+    if not with_unit:
+        return text
     return f"{text} {meta['display_unit']}".strip()
 
 
@@ -866,6 +879,13 @@ def get_regions(
 MONTH_NAMES = ["янв", "фев", "мар", "апр", "май", "июн",
                "июл", "авг", "сен", "окт", "ноя", "дек"]
 
+# Тестовая сезонность для СЭЭ 2. Сумма коэффициентов ровно 1, поэтому
+# придуманная разбивка всегда сходится с настоящим годовым итогом и годовой
+# график не противоречит раскрытому. В хранилище эти строки НЕ записываются:
+# реальная выгрузка СЭЭ пока содержит только декабрь.
+TEST_MONTH_WEIGHTS = (0.055, 0.060, 0.070, 0.075, 0.080, 0.085,
+                      0.090, 0.095, 0.100, 0.090, 0.100, 0.100)
+
 
 def get_monthly(
     indicator: str, year: int, regions: list[str] | None = None,
@@ -899,6 +919,26 @@ def get_monthly(
         per_month.sort_values("month")[["month", "month_name", "value"]]
         .reset_index(drop=True)
     )
+
+
+def get_test_monthly(
+    indicator: str, year: int, regions: list[str] | None = None,
+    program: str | None = None,
+) -> pd.DataFrame:
+    """Прозрачная тестовая разбивка годового итога на 12 месяцев.
+
+    Используется только в отдельном макетном разделе СЭЭ 2, чтобы проверить
+    сценарий раскрытия года. Это не подмена источника: функция вызывается
+    только по явному флагу виджета, а сумма равна годовому итогу.
+    """
+    total = get_country_total(indicator, year, regions=regions, program=program)
+    if total is None:
+        return pd.DataFrame(columns=["month", "month_name", "value"])
+    return pd.DataFrame({
+        "month": range(1, 13),
+        "month_name": MONTH_NAMES,
+        "value": [float(total) * weight for weight in TEST_MONTH_WEIGHTS],
+    })
 
 
 def get_region_dynamics(

@@ -1706,6 +1706,47 @@ a:hover {
 }
 .damu-years-toggle:hover { background: var(--damu-divider); }
 
+/* Полка над диаграммой: слева — что сейчас показано и возврат к годам,
+   справа — «Показать динамику». Место под надпись занято всегда (полка
+   с `min-height`), иначе появление кнопки «✕ к годам» толкало бы график
+   вниз на свою высоту при каждом раскрытии года. */
+.damu-widget-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 26px;
+    margin-bottom: 0.25rem;
+}
+.damu-widget-bar .d-flex.justify-content-end { margin-bottom: 0 !important; }
+
+/* Раскрытый год: «Показать динамику» прячется. Она двигает окно оси ЛЕТ
+   (`data-range-lo/hi`), а на оси месяцев эти границы означают другое —
+   кнопка выглядела бы рабочей и делала бы бессмыслицу. */
+.damu-widget-bar.damu-drilled .damu-years-toggle { display: none; }
+
+.damu-drill-text {
+    font-size: 0.7rem;
+    color: var(--damu-muted);
+}
+/* Предупреждение «разворачивать нечего» — тем же золотом, что и прочие
+   пометки «данных нет» (.damu-stub-badge, .damu-mock-badge): человек
+   уже знает этот цвет как «здесь про нехватку данных». */
+.damu-drill-text.damu-drill-warn {
+    color: var(--damu-accent-2-dark, #6a531c);
+}
+.damu-drill-back {
+    font-size: 0.625rem;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    color: var(--damu-ink);
+    background: none;
+    border: 1px solid var(--damu-hairline);
+    padding: 3px 10px;
+}
+.damu-drill-back:hover { background: var(--damu-track); }
+
 /* Разрез без данных: честная строка и два поля со штриховкой.
    Пустые рамки без пояснения читались бы как поломка. */
 .damu-stub-badge {
@@ -2006,6 +2047,456 @@ a:hover {
    иначе непонятно, куда ты вообще попал */
 .damu-sec-tab.damu-empty.active {
     color: var(--damu-accent, #1f7a4d);
+}
+
+
+/* ============ РАЗРЕЗ ПОЛОСАМИ-ДИВАМИ (17.08.2026) ============
+
+   Заменил Plotly у видов-разрезов. Разбор — `cut_panel` в pages/section.py;
+   здесь только вид. Строка: название — число — полоса под ними. */
+.damu-cut-title {
+    font-size: 0.92rem;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--damu-hairline);
+}
+
+/* СЭЭ-2: единая компактная 2×2 панель из утверждённого макета. */
+.damu-see2-cut-grid {
+    background: var(--damu-white);
+    border: 0;
+    border-radius: 0;
+    padding: 1.15rem 1.35rem;
+}
+.damu-see2-cut-panel,
+.damu-see2-cut-panel .damu-cut { height: 100%; }
+.damu-see2-cut-grid .damu-cut-title {
+    display: flex;
+    align-items: baseline;
+    gap: .4rem;
+    margin-bottom: .7rem;
+    padding-bottom: .45rem;
+    font-size: .78rem;
+}
+.damu-see2-cut-label { font-weight: 800; }
+.damu-see2-cut-unit {
+    color: var(--damu-muted);
+    font-size: .68rem;
+    font-weight: 400;
+}
+.damu-see2-cut-grid .damu-cut-rows { gap: .45rem; }
+.damu-see2-cut-grid .damu-cut-row {
+    display: flex;
+    align-items: center;
+    gap: .55rem;
+    margin: 0;
+    padding: .05rem 0;
+}
+.damu-see2-cut-grid .damu-cut-name {
+    flex: 0 1 46%;
+    font-size: .72rem;
+}
+.damu-see2-cut-grid .damu-cut-track {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 4rem;
+    height: 7px;
+    margin: 0;
+}
+.damu-see2-cut-grid .damu-cut-value {
+    order: 2;
+    flex: 0 0 3.75rem;
+    font-size: .72rem;
+    text-align: right;
+}
+@media (max-width: 767.98px) {
+    .damu-see2-cut-grid { padding: 1rem; }
+    .damu-see2-cut-grid .damu-cut-name { flex-basis: 42%; }
+    .damu-see2-cut-grid .damu-cut-value { flex-basis: 3.35rem; }
+}
+.damu-cut-empty {
+    font-size: 0.78rem;
+    color: var(--damu-muted);
+}
+.damu-cut-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+/* Название и число в одной строке, полоса — во всю ширину под ними.
+   Так название получает всю ширину карточки и обрезается многоточием
+   только на совсем длинных, а не отрезается по фиксированной колонке,
+   как это делал Plotly. Полное имя остаётся в подсказке (`title`). */
+.damu-cut-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 0 0.5rem;
+    cursor: pointer;
+    padding: 0.15rem 0.25rem;
+    margin: -0.15rem -0.25rem;
+    transition: opacity 0.12s, background-color 0.12s;
+}
+.damu-cut-row:hover { background-color: var(--damu-track); }
+.damu-cut-name {
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.damu-cut-value {
+    font-size: 0.8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.damu-cut-track {
+    grid-column: 1 / -1;
+    position: relative;
+    height: 8px;
+    margin-top: 3px;
+    /* Дорожка ПРОЗРАЧНАЯ, а не готового цвета: готовый давал контраст
+       1.02 : 1 с поверхностью карточки — общее правило проекта */
+    background-color: var(--damu-track);
+}
+.damu-cut-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background-color: var(--damu-accent, #1f7a4d);
+}
+/* Нулевая засечка. Появляется только там, где есть отрицательные значения
+   (у СЭЭ это «Создано раб. мест» по отраслям): без неё непонятно,
+   откуда полосы растут влево. */
+.damu-cut-zero {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 1px;
+    background-color: var(--damu-ink);
+    opacity: 0.45;
+}
+
+/* Подсветка выбранной строки во ВСЕХ разрезах вкладки сразу.
+   Гасим только в тех разрезах, где выбранное имя есть (`damu-has-pin`
+   ставит assets/dashboard.js) — разрез без такой категории остаётся
+   в полную силу, иначе он выглядел бы сломанным. */
+.damu-sec-block.damu-has-pin .damu-cut-row { opacity: 0.35; }
+.damu-sec-block.damu-has-pin .damu-cut-row.damu-pinned { opacity: 1; }
+.damu-cut-row.damu-pinned .damu-cut-name,
+.damu-cut-row.damu-pinned .damu-cut-value { font-weight: 800; }
+.damu-cut-row.damu-pinned .damu-cut-track {
+    box-shadow: 0 0 0 1px var(--damu-accent, #1f7a4d);
+}
+
+
+/* ============ РЕДИЗАЙН РАЗДЕЛА (17.08.2026) ============
+
+   Три вещи из макета «Разделы — редизайн»: плашка происхождения чисел
+   у заголовка, подпись над рядом «пилюль» и герой-карточка слева
+   от диаграммы. Разбор каждой — в pages/section.py, здесь только вид. */
+
+/* Заголовок и плашка стоят на одной базовой линии, а не одна под другой:
+   плашка — уточнение к заголовку, а не отдельная строка */
+.damu-sec-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+.damu-sec-head .damu-sec-title { margin-bottom: 0; }
+
+/* Близнец .damu-mock-badge, но в цвете темы: «числа настоящие» — это
+   не предупреждение, и жёлтая рамка предупреждения тут читалась бы
+   как «осторожно» ровно там, где осторожничать не о чем */
+.damu-real-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--damu-accent, #1f7a4d);
+    border: 1px solid var(--damu-accent, #1f7a4d);
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+}
+
+/* Ряд «пилюль» открытой группы с подписью слева. Подпись нужна затем,
+   что без неё второй ряд читался как второй, более мелкий ряд вкладок,
+   и было непонятно, чему эти пилюли подчинены */
+.damu-sec-subtabs-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0 0.15rem;
+}
+.damu-sec-group-label {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+    white-space: nowrap;
+}
+.damu-sec-subtabs-row .damu-sec-subtabs { padding: 0; }
+
+/* Герой-карточка и диаграмма — две колонки. minmax не даёт карточке
+   раздуться на широком экране и одновременно не даёт ей сплющиться:
+   в ней крупное число, и переносить его по слогам нельзя */
+.damu-hero-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 290px) 1fr;
+    gap: 1rem;
+    align-items: stretch;
+}
+/* На узком экране колонки складываются в одну: 290 px карточки плюс
+   диаграмма рядом на планшете уже не помещаются читаемо */
+@media (max-width: 991.98px) {
+    .damu-hero-row { grid-template-columns: 1fr; }
+}
+.damu-hero-side { min-width: 0; }
+.damu-hero-side .row { margin-bottom: 0; }
+
+/* !! Карточка НЕ тянется до низа графика (17.08.2026, замечание
+   пользователя «здесь всё равно много места»). Тянулась: колонка сетки
+   по умолчанию растягивается на всю высоту строки, а графику отведено
+   420 px против ~270 px содержимого карточки. Разница читалась пустой
+   коробкой, и заполнять её было нечем — топ-5 регионов уже стоит внутри.
+   `align-self: start` отдаёт эти пиксели фону страницы: пустое поле
+   выглядит пустым полем, а не недорисованной карточкой. */
+.damu-hero-slot { align-self: start; }
+
+/* СЭЭ: карточка-инсайт и график отвечают на один вопрос и должны
+   восприниматься как единая композиция. Раньше карточка заканчивалась
+   заметно выше графика — это выглядело не как осознанная асимметрия, а как
+   недорисованный левый край. Растягиваем только СЭЭ: у других разделов
+   герой-карточки могут быть короче намеренно. Список ведущих регионов
+   прижат к нижней части карточки, поэтому свободное место становится
+   воздухом между итогом и расшифровкой, а не пустой серой коробкой. */
+.damu-sec-wrap--see .damu-hero-row,
+.damu-sec-wrap--see2 .damu-hero-row { gap: 1.25rem; }
+.damu-sec-wrap--see .damu-hero-slot,
+.damu-sec-wrap--see2 .damu-hero-slot { align-self: stretch; }
+.damu-sec-wrap--see .damu-hero,
+.damu-sec-wrap--see2 .damu-hero {
+    height: 100%;
+    border-right: 1px solid var(--damu-hairline);
+    border-bottom: 1px solid var(--damu-hairline);
+    border-left: 1px solid var(--damu-hairline);
+}
+.damu-sec-wrap--see .damu-hero-reg-head,
+.damu-sec-wrap--see2 .damu-hero-reg-head { margin-top: auto; }
+.damu-sec-wrap--see .damu-hero-side .card,
+.damu-sec-wrap--see2 .damu-hero-side .card {
+    border: 1px solid var(--damu-hairline);
+}
+@media (max-width: 991.98px) {
+    .damu-sec-wrap--see .damu-hero,
+    .damu-sec-wrap--see2 .damu-hero { height: auto; }
+    .damu-sec-wrap--see .damu-hero-reg-head,
+    .damu-sec-wrap--see2 .damu-hero-reg-head { margin-top: 1rem; }
+}
+
+/* СЭЭ 2 — точная композиция вкладки «Динамика по годам» из макета:
+   короткая KPI-карточка слева и низкий график справа, без списка регионов. */
+.damu-sec-wrap--see2 .damu-hero-row {
+    grid-template-columns: minmax(300px, 365px) minmax(0, 1fr);
+    align-items: stretch;
+}
+.damu-sec-wrap--see2 .damu-see2-year-hero {
+    justify-content: flex-start;
+    min-height: 190px;
+    padding: 1.3rem 1.45rem;
+    background-color: var(--damu-track);
+}
+.damu-sec-wrap--see2 .damu-see2-year-hero .damu-hero-figure { margin-top: .45rem; }
+.damu-sec-wrap--see2 .damu-see2-year-hero .damu-hero-value {
+    color: var(--damu-hero-tone, var(--damu-ink));
+    font-size: 2.4rem;
+}
+.damu-sec-wrap--see2 .damu-see2-year-hero .damu-hero-spark { margin-top: 1rem; }
+.damu-sec-wrap--see2 .damu-see2-year-hero .damu-hero-spark-years {
+    display: flex;
+    justify-content: space-between;
+    padding: 0 .1rem;
+    margin-top: .15rem;
+    color: var(--damu-muted);
+    font-size: .62rem;
+    font-variant-numeric: tabular-nums;
+}
+.damu-sec-wrap--see2 .damu-see2-year-hero .damu-hero-delta { margin-top: .55rem; }
+.damu-sec-wrap--see2 .damu-hero-side .card { padding: .75rem !important; }
+.damu-sec-wrap--see2 .damu-sec-subtab {
+    border: 1px solid var(--damu-hairline);
+    border-radius: 0;
+    background: var(--damu-surface);
+}
+.damu-sec-wrap--see2 .damu-sec-subtab.active {
+    background: color-mix(in srgb, var(--damu-accent) 16%, var(--damu-surface));
+    color: var(--damu-accent);
+    border-color: var(--damu-accent);
+}
+@media (max-width: 991.98px) {
+    .damu-sec-wrap--see2 .damu-hero-row { grid-template-columns: 1fr; }
+    .damu-sec-wrap--see2 .damu-see2-year-hero { min-height: 0; }
+}
+
+.damu-hero {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem 1.1rem;
+    background-color: var(--damu-surface);
+    box-shadow: var(--damu-shadow-sm, 0 1px 2px rgba(45, 43, 43, 0.14));
+    /* Цвет черты ставит Python (тон показателя), здесь только её толщина:
+       по общему правилу проекта — Python решает, какой сейчас цвет,
+       CSS решает, что этим цветом красить */
+    border-top: 3px solid var(--damu-accent, #1f7a4d);
+}
+.damu-hero-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+}
+.damu-hero-figure {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin-top: 0.25rem;
+}
+/* !! Цвета у числа НЕТ намеренно — наследует --damu-ink, как и
+   .damu-kpi2-value. В макете число покрашено тоном показателя, но замер
+   17.08.2026 показал 2,66 : 1 для золота на светлой поверхности при
+   пороге 3 : 1 для крупного текста. Тон остался на черте сверху
+   и на спарклайне: они не текст, и порог к ним не применяется. */
+.damu-hero-value {
+    font-weight: 800;
+    font-size: 1.9rem;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+.damu-hero-unit {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--damu-muted);
+}
+/* Спарклайн — картинка-SVG, тянется на всю ширину карточки.
+   margin-top: auto прижимает дельту к низу, чтобы у четырёх карточек
+   подряд нижние строки стояли на одной высоте */
+.damu-hero-spark {
+    display: block;
+    width: 100%;
+    height: 30px;
+    margin-top: 0.6rem;
+}
+/* Дельта тоже без цвета: 11,5 px — обычный текст, ему положено 4,5 : 1,
+   и тон показателя не давал их ни в одной из восьми проверенных пар.
+   Направление и так сказано знаком «+» или «−» перед числом. */
+.damu-hero-delta {
+    font-size: 0.72rem;
+    margin-top: 0.4rem;
+    font-variant-numeric: tabular-nums;
+}
+.damu-hero--empty {
+    font-size: 0.78rem;
+    color: var(--damu-muted);
+}
+
+/* Топ-5 регионов под числом — то, чем заполнено бывшее пустое место.
+
+   !! Список идёт СРАЗУ за дельтой, без `margin-top: auto`. Прижим к низу
+   был первой версией — он ровнял списки четырёх соседних карточек по одной
+   линии, но вместе с `height: 100%` вырезал дыру в 200 px посередине
+   карточки (видно на снимке пользователя). Ровные линии не стоят дыры:
+   карточки и так одинаковой ширины и с одинаковой чертой сверху. */
+.damu-hero-reg-head {
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--damu-muted);
+    border-top: 1px solid var(--damu-hairline);
+}
+.damu-hero-regs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+/* Две колонки и полоска под ними: название слева, число справа по правому
+   краю (tabular-nums выравнивает разряды в столбик), полоска на всю
+   ширину строки — она про сравнение с лидером, а не про точную величину. */
+.damu-hero-reg {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 0 0.4rem;
+}
+.damu-hero-reg-name {
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.damu-hero-reg-value {
+    font-size: 0.72rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+.damu-hero-reg-track {
+    grid-column: 1 / -1;
+    height: 4px;
+    margin-top: 2px;
+    /* Дорожка ПРОЗРАЧНАЯ, а не готового цвета: готовый давал контраст
+       1.02 : 1 с поверхностью карточки (то же правило, что у остальных
+       полосок проекта) */
+    background-color: var(--damu-track);
+}
+.damu-hero-reg-fill { height: 100%; }
+
+/* Вид «два года»: прошлый тише и мельче, выбранный крупно и в цвете.
+   Разделитель только между ними — линия под последней строкой
+   отрезала бы дельту от числа, к которому она относится */
+.damu-hero-cmp {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--damu-hairline);
+}
+.damu-hero-cmp.last { border-bottom: none; }
+.damu-hero-cmp-year {
+    font-size: 0.7rem;
+    color: var(--damu-muted);
+}
+.damu-hero-cmp-year.now {
+    color: var(--damu-ink);
+    font-weight: 700;
+}
+.damu-hero-cmp-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.damu-hero-cmp-value.now {
+    font-weight: 800;
+    font-size: 1.3rem;
+}
+
+/* На тёмной теме тень не видна — карточке нужна рамка, как и всем
+   остальным поверхностям (см. блок тёмной темы выше). Верхнюю сторону
+   перечисляем отдельно: сокращённое `border` стёрло бы цветную черту */
+:root[data-theme="dark"] .damu-hero {
+    border-right: 1px solid var(--damu-hairline);
+    border-bottom: 1px solid var(--damu-hairline);
+    border-left: 1px solid var(--damu-hairline);
 }
 
 

@@ -442,14 +442,37 @@ section_tabs_by_section:
     # в section_widgets_by_page) и своя карточка-показатель того же
     # показателя: число и его динамика стоят рядом, а не в общем ряду
     # из четырёх карточек над всей вкладкой, как было.
+    #
+    # `hero` (17.08.2026, макет «Разделы — редизайн») — вид карточки слева
+    # от графика. Она ЗАМЕНЯЕТ ряд `kpi` у этой вкладки: показатель тот же
+    # (берётся из `kpi[0]`, чтобы не писать его в конфиге дважды), но кроме
+    # числа карточка показывает и движение — а именно за ним сюда и идут.
+    #   trend   — число, спарклайн последних лет, дельта к прошлому году;
+    #   compare — только два года столбиком, без спарклайна.
+    # Пусто или ключа нет — рисуется прежний ряд карточек `kpi`.
+    #
+    # `compare` стоит у «Созданных раб. мест» не для разнообразия: у этого
+    # показателя первые два года ряда рвут его в клочья — 30 246 в 2019-м
+    # против 3 911 в 2020-м, почти восьмикратный обвал (замерено 17.08.2026
+    # по хранилищу). Спарклайн на таком размахе превращается в отвесную
+    # стену, за которой все годы с 2021-го лежат почти в одну линию,
+    # хотя между ними полуторакратная разница.
+    #
+    # !! 18.08.2026 (по просьбе пользователя) здесь тоже `trend`, а не
+    # `compare`, как было раньше специально для этой карточки. Решение
+    # то же, что уже подобрали для СЭЭ 2 с тем же показателем: график
+    # остаётся, но окно спарклайна обрезано до `hero_spark_years: 4` —
+    # линия по 2021–2024, где разброс честный, а не по всем шести годам,
+    # где обвал 2020-го тянет их в кучу у пола (замер СЭЭ 2, 18.08.2026:
+    # на полных шести 2021–2024 занимали всего 32–67 % высоты).
     - {key: years_output,  title: "Выпуск продукции",  group: "Динамика по годам",
-       data: true, kpi: [see_output]}
+       data: true, kpi: [see_output],       hero: trend}
     - {key: years_jobs,    title: "Созданные раб. места", group: "Динамика по годам",
-       data: true, kpi: [see_jobs_created]}
+       data: true, kpi: [see_jobs_created], hero: trend, hero_spark_years: 4}
     - {key: years_tax,     title: "Налоговые поступления", group: "Динамика по годам",
-       data: true, kpi: [see_tax_revenue]}
+       data: true, kpi: [see_tax_revenue],  hero: trend}
     - {key: years_saved,   title: "Сохранённые раб. места", group: "Динамика по годам",
-       data: true, kpi: [see_jobs_saved]}
+       data: true, kpi: [see_jobs_saved],   hero: trend}
     # !! «Отрасли» и «Регионы» — по ОДНОЙ вкладке с четырьмя диаграммами
     # 2×2, а НЕ группа подсекций (решено 11.08.2026, после сравнения
     # с оригинальным порталом tablo.fund.kz).
@@ -467,6 +490,32 @@ section_tabs_by_section:
        # те же 4 диаграммы, разрез по отраслям
     - {key: regions,    title: "Регионы",              data: true}
        # те же 4 диаграммы, разрез по регионам
+
+  # СЭЭ 2 повторяет утверждённый макет целиком: сначала четыре временных
+  # ряда в группе «Динамика по годам», затем компактные разрезы.
+  see2:
+    - {key: years_output, title: "Выпуск продукции", group: "Динамика по годам (4)",
+       data: true, kpi: [see_output], hero: trend}
+    # !! `hero: trend` с обрезанным окном, а не `compare` — то же решение,
+    # что чуть позже в тот же день переняла и «СЭЭ» выше (18.08.2026).
+    # У показателя восьмикратный обвал 2019→2020 (30 246 → 3 911), из-за
+    # которого полный спарклайн на шести годах сплющивал 2021–2024 почти
+    # в линию. `hero_spark_years: 4` рисует только 2021–2024, где разброс
+    # честный и читаемый. Замерено 18.08.2026: линейная шкала на полных
+    # шести даёт 2021–2024 всего 32–67 % высоты (сплющено), логарифмическая
+    # — ещё туже, 57–83 %. Обрезка окна — единственный вариант, который
+    # ничего не подделывает: обвал остаётся видимым в двух числах сверху
+    # (см. «Созданные раб. места» на карточке), а не изображается
+    # диаграммой, зато сама диаграмма не врёт своей формой.
+    - {key: years_jobs, title: "Созданные раб. места", group: "Динамика по годам (4)",
+       data: true, kpi: [see_jobs_created], hero: trend, hero_spark_years: 4}
+    - {key: years_tax, title: "Налоговые поступления", group: "Динамика по годам (4)",
+       data: true, kpi: [see_tax_revenue], hero: trend}
+    - {key: years_saved, title: "Сохранённые раб. места", group: "Динамика по годам (4)",
+       data: true, kpi: [see_jobs_saved], hero: trend}
+    # Четыре разреза собраны в единую 2×2 панель из утверждённого макета.
+    - {key: industries, title: "Отрасли", data: true}
+    - {key: regions, title: "Регионы", data: true}
 
   # Гар. выдача — единственный раздел, уже собранный раньше (структура
   # подтвердилась документом почти дословно). Ниже — та же структура,
@@ -815,6 +864,17 @@ main_tabs: [subsidy, credit, guarantee, nonfin]
 sections:
   - {key: plan,          title: "План освоения",     data: true, abbr: "ПО"}
   - {key: see,           title: "СЭЭ",               data: true, abbr: "СЭ"}
+  # `@@` ВРЕМЕННЫЙ раздел под выбор дизайна разрезов (17.08.2026, просьба
+  # пользователя). Те же данные СЭЭ, та же вкладка «Отрасли», но нарисованная
+  # ПО-СТАРОМУ — диаграммами Plotly, чтобы сравнить со строками-дивами
+  # на соседнем разделе не по описанию, а глазами. Выберут вид — раздел
+  # удаляется целиком, вместе со своими строками в `section_tabs_by_section`
+  # и `section_widgets_by_page`.
+  #
+  # `program: СЭЭ` — данные берутся у СЭЭ. Без этого поля раздел искал бы
+  # в фактах программу «СЭЭ 2», не нашёл бы и встал бы пустым.
+  - {key: see2,          title: "СЭЭ 2",             data: true, abbr: "СЭ2",
+     program: "СЭЭ"}
   - {key: guarantee,     title: "Гар. выдача",       data: true, abbr: "ГВ"}
   - {key: gf2,           title: "ГФ2",               data: true, abbr: "ГФ2"}
   - {key: guarantee_debt, title: "Гар. — Осн. долг", data: true, abbr: "ГОД"}
@@ -942,6 +1002,10 @@ widget_sizes:
     label: "Широкий — во всю ширину, пониже"
     columns: 12
     height: 420
+  compact_wide:
+    label: "Компактный широкий — динамика СЭЭ 2"
+    columns: 12
+    height: 190
   # Ширина как у среднего (2 в ряд), высота больше. Заведён 12.08.2026 для
   # «Регионов»/«Отраслей» у СЭЭ: список из 20 областей при шрифте не мельче
   # 16 px (правило пользователя — иначе подписи нечитаемы) в среднем
@@ -1028,10 +1092,15 @@ section_widgets_by_page:
   # ширина та же — во всю линию, а высота 420 вместо 700. С 700 график
   # не помещался на экран целиком вместе с липкой шапкой и карточкой-
   # показателем, и было «не видно, где что».
-  see:years_output: [{chart: years_total, indicator: see_output,       size: wide, recent_years: 5}]
-  see:years_jobs:   [{chart: years_total, indicator: see_jobs_created, size: wide, recent_years: 5}]
-  see:years_tax:    [{chart: years_total, indicator: see_tax_revenue,  size: wide, recent_years: 5}]
-  see:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: wide, recent_years: 5}]
+  # `test_months` (18.08.2026, просьба пользователя «придумай числа, чтобы
+  # разбивка работала») — тот же приём, что у СЭЭ 2 ниже: у СЭЭ в источнике
+  # только декабрь, и без него клик по году показывал бы отказ вместо
+  # разбивки. Раскрытие помечено на экране «тестовые месяцы» — это не
+  # подмена источника молча, а тот же явный флаг виджета, что и у СЭЭ 2.
+  see:years_output: [{chart: years_total, indicator: see_output,       size: wide, recent_years: 5, test_months: true}]
+  see:years_jobs:   [{chart: years_total, indicator: see_jobs_created, size: wide, recent_years: 5, test_months: true}]
+  see:years_tax:    [{chart: years_total, indicator: see_tax_revenue,  size: wide, recent_years: 5, test_months: true}]
+  see:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: wide, recent_years: 5, test_months: true}]
   guarantee:years:     [{chart: years_total, indicator: guarantees_issued, size: large}]
   credit:years:        [{chart: years_total, indicator: credits_issued, size: large}]
   subsidy:years:        [{chart: years_total, indicator: subsidy_project_amount, size: large}]
@@ -1063,6 +1132,23 @@ section_widgets_by_page:
     # сравнения рядом с обычным «по значению» (просьба пользователя
     # 13.08.2026). Остальные три остались как были.
     - {chart: industries_alpha, indicator: see_jobs_saved_industry, size: medium_tall}
+  # СЭЭ 2 использует данные СЭЭ, но раскладывает разрезы по новому макету.
+  # `test_months` создаёт помесячные значения в памяти из годового итога.
+  # Они нужны только для проверки раскрытия в СЭЭ 2 и помечаются на экране.
+  see2:years_output: [{chart: years_total, indicator: see_output,       size: compact_wide, recent_years: 6, test_months: true, compact_years: true}]
+  see2:years_jobs:   [{chart: years_total, indicator: see_jobs_created, size: compact_wide, recent_years: 6, test_months: true, compact_years: true}]
+  see2:years_tax:    [{chart: years_total, indicator: see_tax_revenue,  size: compact_wide, recent_years: 6, test_months: true, compact_years: true}]
+  see2:years_saved:  [{chart: years_total, indicator: see_jobs_saved,   size: compact_wide, recent_years: 6, test_months: true, compact_years: true}]
+  see2:industries:
+    - {chart: industries, indicator: see_output_industry, size: medium_tall}
+    - {chart: industries, indicator: see_jobs_created_industry, size: medium_tall}
+    - {chart: industries, indicator: see_tax_revenue_industry, size: medium_tall}
+    - {chart: industries_alpha, indicator: see_jobs_saved_industry, size: medium_tall}
+  see2:regions:
+    - {chart: bar, indicator: see_output, size: medium_tall}
+    - {chart: bar, indicator: see_jobs_created, size: medium_tall}
+    - {chart: bar, indicator: see_tax_revenue, size: medium_tall}
+    - {chart: bar, indicator: see_jobs_saved, size: medium_tall}
   # !! Ключ «раздел:вкладка» должен встречаться в этом блоке РОВНО ОДИН РАЗ.
   # YAML на дубль не ругается — молча побеждает последний. Поймано
   # 07.08.2026: `orleu:terms` оказался объявлен дважды, и вкладка «Цели

@@ -49,6 +49,13 @@ CHART_FONT_PX = 16
 #: верхнее поле, а высота нужна самим данным.
 TITLE_FONT_PX = 17
 
+#: Подмена пробела на время переноса заголовка. `textwrap` рвёт строку
+#: по любому пробельному символу, включая неразрывный (`\xa0` подходит
+#: под `\s` в Unicode-режиме `re`, проверено) — поэтому нужен символ,
+#: который вообще не пробельный. `\x00` в тексте заголовка встретиться
+#: не может, и после переноса он заменяется обратно на обычный пробел.
+GLUE = "\x00"
+
 #: Знаков заголовка на колонку сетки. Пересчитано под 17 px: около 9,4 px
 #: на знак (замер 11.08.2026), колонка сетки ~56 px на экране 1024.
 TITLE_CHARS_PER_COLUMN = 5.8
@@ -101,6 +108,13 @@ class Ctx:
     #: и вид знает его сам. Пусто — вид не режет данные (итог, шкала)
     #: или пишет заголовок сам (месяцы, сравнение лет).
     cut: str = ""
+    #: Явно переданная помесячная серия. Нужна только тестовому СЭЭ 2:
+    #: исходная выгрузка СЭЭ помесячных строк пока не содержит.
+    monthly: pd.DataFrame | None = None
+    #: Пометка не даёт тестовой разбивке выглядеть как данные источника.
+    monthly_is_test: bool = False
+    #: Компактная динамика СЭЭ 2: подписи над столбцами и чистая ось.
+    compact_years: bool = False
 
     @property
     def meta(self) -> dict:
@@ -136,6 +150,17 @@ class Ctx:
         # уже знает, по какой колонке режет, и дублировать это словами
         # значило бы завести второй источник правды.
         head, _ = self.title_parts
+        # !! Единица измерения — ЗДЕСЬ, в скобках после названия, и больше
+        # нигде (17.08.2026, просьба пользователя). Раньше её носила каждая
+        # подпись столбца, то есть повторяла себя столько раз, сколько
+        # на диаграмме полос. Одно название — одна единица.
+        #
+        # Место выбрано не случайно: единица — часть ответа на вопрос
+        # «что за число», а этот вопрос задают, читая заголовок. Отдельная
+        # надпись в углу (так было до 11.08.2026 у не-СЭЭ) отвечала на него
+        # в стороне от вопроса, и её приходилось искать глазами.
+        #
+        unit = f"({self.unit})" if self.unit else ""
         # !! СЭЭ — короткие заголовки без года (11.08.2026, просьба
         # пользователя): «Сохранено раб. мест по регионам» вместо
         # «Количество сохраненных рабочих мест по регионам — 2024 год ·
@@ -152,13 +177,15 @@ class Ctx:
             # приклеенный `cut` (см. `title_parts` выше), и наклеить его
             # второй раз значило бы получить «по регионам по регионам».
             short = self.meta.get("short") or self.meta["title"]
-            return f"{short} {self.cut}".strip() if self.cut else short
-        tail = f"{self.year} год"
-        if self.asked_year and self.asked_year != self.year:
-            # !! Пометка обязательна. Тихо подставить 2024-й там, где человек
-            # выбрал 2026-й, — худший вид ошибки: цифры выглядят свежими,
-            # график не пустой, и заметить подмену нечем
-            tail += f" · за {self.asked_year} данных нет"
+            head = f"{short} {self.cut}".strip() if self.cut else short
+            tail = ""
+        else:
+            tail = f"{self.year} год"
+            if self.asked_year and self.asked_year != self.year:
+                # !! Пометка обязательна. Тихо подставить 2024-й там, где
+                # человек выбрал 2026-й, — худший вид ошибки: цифры выглядят
+                # свежими, график не пустой, и заметить подмену нечем
+                tail += f" · за {self.asked_year} данных нет"
         # !! Длинный заголовок переносится, а не обрезается. Разрез добавил
         # к строке 15–20 знаков, и в среднем виджете (336 px на экране
         # 1024) она перестала помещаться: «Выдано кредитов по субъектности
@@ -166,7 +193,8 @@ class Ctx:
         # без всякой ошибки. Замерено в браузере 11.08.2026; перенос года
         # на вторую строку даёт 291 px и запас 28.
         budget = int((self.columns or TITLE_FULL_COLUMNS) * TITLE_CHARS_PER_COLUMN)
-        whole = f"{head} — {tail}"
+        named = f"{head} {unit}" if unit else head
+        whole = f"{named} — {tail}" if tail else named
         if len(whole) <= budget:
             return whole
         # Переносим по словам, а не только перед годом: у СЭЭ названия
@@ -179,8 +207,33 @@ class Ctx:
         # Год переносится ЦЕЛИКОМ, отдельной строкой. Перенос всей строки
         # разом рвал его пополам («Выдано кредитов — 2026 / год»), а год —
         # то, ради чего заголовок и читают вторым делом.
-        head_lines = textwrap.wrap(head, width=budget,
-                                   break_long_words=False) or [head]
+        # !! Единица «(млрд ₸)» едет в перенос ОДНИМ словом, и это не мелочь.
+        # Два подхода до этого не сработали:
+        #
+        #   1. приписать к последней строке ПОСЛЕ переноса — строка вылезала
+        #      за бюджет: «по отраслям (ОКЭД) (млрд ₸)» это 27 знаков против
+        #      23 на узком виджете (поймал `tests/test_chart_titles.py`);
+        #   2. отдать `textwrap` как есть — он рвёт по пробелам, и пробел
+        #      внутри скобок для него такой же: «(млрд / ₸)».
+        #
+        # Поэтому внутренний пробел на время переноса подменяется символом,
+        # по которому `textwrap` не рвёт, а после переноса возвращается
+        # обратно. Пробел ПЕРЕД скобкой остаётся настоящим: единице можно
+        # уехать на свою строку целиком, нельзя только разорваться пополам.
+        glued = f"{head} {unit.replace(' ', GLUE)}" if unit else head
+        head_lines = textwrap.wrap(glued, width=budget,
+                                   break_long_words=False) or [glued]
+        head_lines = [line.replace(GLUE, " ") for line in head_lines]
+        # !! Перенос теперь общий для ВСЕХ разделов, включая СЭЭ. До
+        # 17.08.2026 ветка СЭЭ возвращала строку выше, не заходя сюда, —
+        # её заголовки просто не переносились. Пока в них не было единицы,
+        # это сходило с рук: «Выпуск продукции по регионам» это 28 знаков
+        # при бюджете 34. С «(млрд ₸)» стало 37, и хвост начал уезжать
+        # за край МОЛЧА, без ошибки и без обрезки — Plotly рисует, что
+        # влезло. Поймано замером сразу после правки; лечится тем, что
+        # у СЭЭ просто пустой `tail`, а перенос один на всех.
+        if not tail:
+            return "<br>".join(head_lines[:TITLE_MAX_LINES])
         tail_lines = textwrap.wrap(tail, width=budget,
                                    break_long_words=False) or [tail]
         keep = max(1, TITLE_MAX_LINES - len(tail_lines))
@@ -190,11 +243,19 @@ class Ctx:
         """Готовит колонки для показа.
 
         `shown` — значение в масштабе показа (для осей и размеров).
-        `текст`  — то же значение строкой с разрядами и единицей (для подписей).
+        `текст`  — то же значение строкой с разрядами, БЕЗ единицы.
+
+        !! Единицы в подписи столбца нет с 17.08.2026 (просьба пользователя).
+        Была: «12 929 млрд ₸» на каждом из пяти столбцов. У «Динамики
+        по годам» подпись стоит ВНУТРИ столбца и разворачивается вертикально,
+        поэтому «млрд ₸» съедало больше высоты, чем само число, — и повторяло
+        одно и то же пять раз подряд. Теперь единица названа один раз,
+        в заголовке диаграммы: «Выпуск продукции (млрд ₸)» (см. `title`).
         """
         out = df.copy()
         out["shown"] = out[column] / self.meta["divisor"]
-        out["текст"] = [data.format_value(v, self.indicator) for v in out[column]]
+        out["текст"] = [data.format_value(v, self.indicator, with_unit=False)
+                        for v in out[column]]
         return out
 
 
@@ -444,6 +505,29 @@ def _tone_color(indicator: str, settings: dict) -> str:
     return settings.get(key) or settings["accent"]
 
 
+def indicator_color(indicator: str) -> str:
+    """Тот же цвет, но снаружи — для разметки рядом с диаграммой.
+
+    !! Существует ради ОДНОГО правила: цвет карточки и цвет её диаграммы
+    обязаны совпасть, а значит считаться одной функцией, а не двумя
+    похожими. Герой-карточка на странице раздела стоит вплотную к своему
+    графику; посчитай она тон сама (хоть бы и по той же таблице `TONE_KEYS`),
+    первое же изменение правила развело бы их по цвету, и ошибка вылезла бы
+    не сообщением, а несовпадающей заливкой — то есть глазами и не сразу.
+
+    !! Имя выбрано так, чтобы НЕ столкнуться с `tone_color()` ниже в этом
+    же файле: та берёт НОМЕР тона и раздаёт цвета по другому правилу
+    (тон 3 у неё — затемнённое золото, а не бирюза), потому что служит
+    карточкам главной. Сначала функция называлась так же, и Python молча
+    оставил ту, что ниже по файлу: вызов уходил в неё со строкой вместо
+    числа, ни с чем не совпадал и возвращал зелёный. Ошибки не было —
+    все четыре карточки СЭЭ просто оказались одного цвета (поймано
+    17.08.2026 замером цвета в браузере, глазами это выглядело
+    как «так и задумано»).
+    """
+    return _tone_color(indicator, theme.get_theme())
+
+
 def _title_lines(fig: go.Figure) -> int:
     """Сколько строк в заголовке готовой фигуры (минимум одна)."""
     text = (fig.layout.title.text or "") if fig.layout.title else ""
@@ -453,7 +537,9 @@ def _title_lines(fig: go.Figure) -> int:
 def build(chart_type: str, indicator: str, year, regions, log: bool = False,
           height: int | None = None, program: str | None = None,
           recent_years: int | None = None,
-          columns: int | None = None) -> go.Figure:
+          columns: int | None = None, monthly: pd.DataFrame | None = None,
+          monthly_is_test: bool = False,
+          compact_years: bool = False) -> go.Figure:
     """Собирает выбранную диаграмму и навешивает общее оформление.
 
     height — высота в пикселях. Задан (виджет на главной со своим пресетом
@@ -482,6 +568,9 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         recent_years=recent_years,
         cut=entry.get("cut", ""),
         columns=columns,
+        monthly=monthly,
+        monthly_is_test=monthly_is_test,
+        compact_years=compact_years,
     )
     # Оформление сайта распространяется и на диаграммы: иначе страница была
     # бы одним шрифтом, а подписи внутри графиков — другим. Тему спрашиваем
@@ -523,6 +612,16 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         y = fig.data[0].y
         left_margin = _left_align_reserve(list(y) if y is not None else [])
 
+    # !! Правое поле нужно ТОЛЬКО горизонтальным полосам («Полосы — рейтинг»
+    # и похожие) — там число подписано у конца полосы, справа. У вертикальных
+    # видов («Динамика по годам» и остальные 20+) справа нет ничего: подпись
+    # либо внутри столбца, либо над ним. Формула ниже раньше не различала
+    # ориентацию и резервировала 120 px и вертикальным видам тоже — на
+    # «широком» пресете (12 колонок) это была четверть высоты столбца шириной
+    # пустоты справа от последнего года (снимок пользователя 18.08.2026).
+    horizontal = bool(fig.data) and getattr(fig.data[0], "orientation", None) == "h"
+    right_margin = int((columns or TITLE_FULL_COLUMNS) * 10) if horizontal else 16
+
     fig.update_layout(
         # !! Цвет текста здесь — ЗАПАСНОЙ. Настоящий ставит CSS в браузере
         # (`assets/custom.css`, блок «Текст внутри диаграмм»), потому что
@@ -552,7 +651,7 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
         # во всю ширину; на половинной карточке (464 px) они съедали
         # четверть, а вместе с подписями отраслей не оставляли полосам
         # и сотни пикселей (замерено 11.08.2026).
-        margin=dict(l=left_margin, r=int((columns or TITLE_FULL_COLUMNS) * 10),
+        margin=dict(l=left_margin, r=right_margin,
                     b=40 if fig.layout.xaxis.visible is not False else 16,
                     t=TITLE_MARGIN_BASE + TITLE_LINE_H * _title_lines(fig)),
         # !! Фон прозрачный, а не белый, и это про тёмную тему. Тему человек
@@ -586,40 +685,34 @@ def build(chart_type: str, indicator: str, year, regions, log: bool = False,
                      zerolinecolor=NEUTRAL_GRID)
     fig.update_yaxes(gridcolor=GRID_COLOR, griddash=GRID_DASH,
                      zerolinecolor=NEUTRAL_GRID)
-                     
-    # !! Подпись единиц измерения в правом верхнем углу — НЕ для СЭЭ
-    # (11.08.2026, вторая часть той же просьбы: «убери года и ед.
-    # измерения»). Для остальных разделов поведение прежнее: раньше
-    # «(в сумме, млрд тенге)» висело в заголовке, удлиняя его и заставляя
-    # переноситься — доставали из скобок и вешали над правым краем графика.
-    if ctx.program != "СЭЭ":
-        _, annotation = ctx.title_parts
-        if annotation:
-            fig.add_annotation(
-                text=annotation,
-                xref="paper", yref="paper",
-                x=1.0, y=1.0,
-                xanchor="right", yanchor="bottom",
-                yshift=15,
-                showarrow=False,
-                font=dict(size=11, color=NEUTRAL_INK)
-            )
-    else:
-        # !! Заодно убирает и заголовок самой оси значений («ед.»,
-        # «млрд ₸»), который вид кладёт через `labels={"shown": ctx.unit}`.
-        # У полос (bar/industries) ось скрыта (`visible=False`), но
-        # ЗАГОЛОВОК всё равно рендерится отдельной надписью — это не
-        # общий баг Plotly в других видах проекта, а особенность именно
-        # скрытой оси: `visible=False` прячет линию, деления и подписи
-        # делений, но не сам `title` (замерено 11.08.2026 — «ед.» висело
-        # в правом верхнем углу графика регионов сверху заголовка).
-        # У «Динамики по годам» ось, наоборот, ВИДНА, и там та же подпись
-        # («млрд ₸») налезала на цифры шкалы, потому что automargin
-        # для этой оси не задан. Both лечится одной строкой: подписи
-        # оси у показателей СЭЭ не нужны — сами числа подписаны у полос
-        # или над столбцами.
-        fig.update_xaxes(title_text="")
-        fig.update_yaxes(title_text="")
+
+    # У компактной годовой диаграммы нет ни правых значений, ни шкалы Y:
+    # штатное поле под них оставляло столбцы узкой группой посередине.
+    # Отдаём это место данным и слегка уплотняем интервалы между годами.
+    if compact_years:
+        fig.update_layout(
+            margin=dict(l=12, r=12, t=48, b=28),
+            title_font=dict(size=15),
+            bargap=0.12,
+        )
+
+    # !! Единица измерения на диаграмме теперь ровно ОДНА, и она в заголовке
+    # (17.08.2026, `Ctx.title`). Прежде их было до трёх сразу: надпись
+    # в правом верхнем углу, заголовок оси значений и «млрд ₸» в подписи
+    # КАЖДОГО столбца. Здесь снимаются две из трёх — угловая надпись убрана
+    # целиком, заголовки осей гасятся у всех разделов, а не только у СЭЭ,
+    # как было с 11.08.2026.
+    #
+    # Почему заголовки осей гасятся, а не оставлены «хотя бы на одной оси»:
+    # у полос (bar/industries) ось значений скрыта (`visible=False`), но её
+    # ЗАГОЛОВОК всё равно рисуется — `visible=False` прячет линию, деления
+    # и подписи делений, но не `title` (замерено 11.08.2026: «ед.» висело
+    # в правом верхнем углу поверх заголовка). У «Динамики по годам» ось,
+    # наоборот, видна, и там «млрд ₸» налезало на цифры шкалы, потому что
+    # `automargin` для неё не задан. Обе беды снимаются одной строкой,
+    # и после переноса единицы в заголовок терять нечего.
+    fig.update_xaxes(title_text="")
+    fig.update_yaxes(title_text="")
 
     _grid_across_bars(fig)
 
@@ -870,6 +963,77 @@ def _industry_label(name: str, columns: int | None = None) -> str:
     return f"{code} · {rest}" if code else rest
 
 
+#: Виды-«разрезы» и колонка фактов, по которой каждый режет.
+#:
+#: !! Таблица нужна затем, что один и тот же разрез показывается ДВУМЯ
+#: способами: полосами-дивами на странице раздела (17.08.2026) и диаграммой
+#: Plotly на «Разборе». Оба обязаны брать одни и те же строки, поэтому
+#: «какой колонкой режет этот вид» знает одно место, а не два.
+CUT_COLUMNS = {
+    "bar": "region",
+    "industries": "industry",
+    "industries_alpha": "industry",
+    "banks": "bank",
+    "subjects": "subject_type",
+    "purposes": "loan_purpose",
+    "programs": "source_program",
+}
+
+#: Порядок строк разреза. По умолчанию — по значению (крупнее сверху);
+#: у отраслей есть вариант по алфавиту, он же по коду секции ОКЭД.
+CUT_SORT = {"industries_alpha": "alpha"}
+
+
+def is_cut(chart_type: str) -> bool:
+    """Вид режет данные по колонке и показывается полосами?"""
+    return chart_type in CUT_COLUMNS
+
+
+def cut_frame(indicator: str, year: int, column: str,
+              regions: list[str] | None = None,
+              program: str | None = None) -> pd.DataFrame:
+    """Строки разреза: сама колонка, `value` и готовая подпись `label`.
+
+    !! ЕДИНСТВЕННЫЙ источник строк для разреза — и для полос-дивов
+    на странице раздела, и для диаграммы Plotly на «Разборе». Считай их
+    два места по отдельности, и однажды они разойдутся: у регионов свой
+    вход в данные (`get_regions`), у остальных разрезов общий
+    (`get_breakdown`), и повторить эту развилку во второй раз — значит
+    завести второе место, где её можно забыть.
+    """
+    if column == "region":
+        df = data.get_regions(indicator, year, regions=regions, program=program)
+    else:
+        df = data.get_breakdown(indicator, year, column,
+                                regions=regions, program=program)
+    if df.empty:
+        return pd.DataFrame(columns=[column, "value", "label"])
+    df = df.copy()
+    df["label"] = df[column].astype(str)
+    return df
+
+
+def cut_title(chart_type: str, indicator: str, year: int,
+              program: str | None = None, columns: int | None = None) -> str:
+    """Заголовок разреза — ТОЙ ЖЕ функцией, что и у диаграммы (`Ctx.title`).
+
+    Полосы-дивы не строят фигуру, но подписаны обязаны быть одинаково
+    с Plotly: и разрез в названии, и единица в скобках, и пометка
+    о подставленном годе. Свой заголовок рядом означал бы, что один
+    и тот же разрез на «Разборе» и в разделе называется по-разному.
+    """
+    entry = _REGISTRY.get(chart_type) or {}
+    asked = int(year)
+    shown = data.resolve_year(indicator, asked, program)
+    ctx = Ctx(
+        indicator=indicator,
+        year=shown if shown is not None else asked,
+        regions=None, program=program, asked_year=asked,
+        cut=entry.get("cut", ""), columns=columns,
+    )
+    return ctx.title
+
+
 def _breakdown(column: str, shorten=None, sort: str = "value"):
     """Собирает вид «рейтинг по разрезу»: полосы с числом у каждой.
 
@@ -892,8 +1056,10 @@ def _breakdown(column: str, shorten=None, sort: str = "value"):
     """
 
     def builder(ctx: Ctx) -> go.Figure:
-        df = data.get_breakdown(ctx.indicator, ctx.year, column,
-                                regions=ctx.regions, program=ctx.program)
+        # Строки берём общей `cut_frame` — той же, что и полосы-дивы
+        # на странице раздела. Разбор, зачем так, — в её шапке
+        df = cut_frame(ctx.indicator, ctx.year, column,
+                       regions=ctx.regions, program=ctx.program)
         if df.empty:
             return _message(NO_DATA)
 
@@ -995,10 +1161,12 @@ chart("programs", "Полосы — программы",
 
 @chart("bar", "Полосы — рейтинг", cut="по регионам")
 def _bar(ctx: Ctx) -> go.Figure:
-    df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
+    df = ctx.scaled(cut_frame(ctx.indicator, ctx.year, "region",
+                              regions=ctx.regions, program=ctx.program))
     fig = px.bar(
         df, x="shown", y="region", orientation="h",
-        text=[data.format_value(v, ctx.indicator) for v in df["value"]],
+        text=[data.format_value(v, ctx.indicator, with_unit=False)
+              for v in df["value"]],
         labels={"shown": ctx.unit, "region": ""}, title=ctx.title,
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
@@ -1034,7 +1202,8 @@ def _dot(ctx: Ctx) -> go.Figure:
     df = ctx.scaled(data.get_regions(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
     fig = px.scatter(
         df, x="shown", y="region",
-        text=[data.format_value(v, ctx.indicator) for v in df["value"]],
+        text=[data.format_value(v, ctx.indicator, with_unit=False)
+              for v in df["value"]],
         labels={"shown": ctx.unit, "region": ""},
         title=ctx.title + (" — логарифмическая шкала" if ctx.log else ""),
     )
@@ -1062,7 +1231,8 @@ def _facets(ctx: Ctx) -> go.Figure:
     fig = px.bar(
         df, x="shown", y="region", orientation="h",
         facet_col="macroregion", facet_col_wrap=3,
-        text=[data.format_value(v, ctx.indicator) for v in df["value"]],
+        text=[data.format_value(v, ctx.indicator, with_unit=False)
+              for v in df["value"]],
         labels={"shown": ctx.unit, "region": ""},
         title=f"{ctx.title} — по макрорегионам, у каждого своя шкала",
     )
@@ -1196,13 +1366,28 @@ def _months(ctx: Ctx) -> go.Figure:
     Здесь наоборот: регионы сворачиваются в страну, а месяцы остаются —
     видно, как показатель шёл внутри отчётного года.
     """
-    df = ctx.scaled(data.get_monthly(ctx.indicator, ctx.year, regions=ctx.regions, program=ctx.program))
+    monthly = ctx.monthly
+    if monthly is None:
+        monthly = data.get_monthly(ctx.indicator, ctx.year,
+                                   regions=ctx.regions, program=ctx.program)
+    df = ctx.scaled(monthly)
     if df.empty:
         return _message(NO_DATA)
+    # !! Единица — в заголовке, как у всех остальных видов. Свой заголовок
+    # этот вид собирает сам (год у него не «за какой год», а «внутри какого»),
+    # и при переносе единицы из подписей столбцов в заголовок про него легко
+    # забыть: подписи-то он берёт из общей `ctx.scaled`, и они уже без
+    # единицы. Тогда на раскрытой диаграмме единица пропадала бы совсем
+    # (поймано в браузере 17.08.2026 сразу после того, как раскрытие
+    # заработало).
+    head = ctx.meta.get("short") if ctx.program == "СЭЭ" else ctx.meta["title"]
+    head = head or ctx.meta["title"]
+    unit = f" ({ctx.unit})" if ctx.unit else ""
+    source = "Тестовая разбивка · " if ctx.monthly_is_test else ""
     fig = px.bar(
         df, x="month_name", y="shown", text="текст",
         labels={"shown": ctx.unit, "month_name": ""},
-        title=f"{ctx.meta['title']} — по месяцам {ctx.year} года",
+        title=f"{source}{head}{unit} — по месяцам {ctx.year} года",
     )
     fig.update_traces(textposition="outside", cliponaxis=False)
     return fig
@@ -1511,11 +1696,23 @@ def _years_total(ctx: Ctx) -> go.Figure:
         return _message(NO_DATA)
 
     df = ctx.scaled(df)
+    # В макете СЭЭ 2 годовая карточка — фиксированный обзор последних шести
+    # лет. В отличие от большой диаграммы СЭЭ здесь не держим скрытые ранние
+    # столбцы: Plotly всё равно оставлял бы под них ширину по краям.
+    if ctx.compact_years and ctx.recent_years:
+        df = df.tail(ctx.recent_years).copy()
     fig = px.bar(
         df, x="report_year", y="shown", text="текст",
         labels={"shown": ctx.unit, "report_year": ""},
         title=ctx.title,
     )
+    if ctx.compact_years:
+        short = ctx.meta.get("short") or ctx.meta["title"]
+        fig.update_layout(
+            title=f"{short} по годам, {ctx.unit} · нажмите на год",
+        )
+        fig.update_traces(textposition="outside", textfont=dict(size=12, weight="bold"))
+        fig.update_yaxes(showgrid=False, showticklabels=False, zeroline=False)
     # Числа внутрь столбцов — тест только для СЭЭ (просьба пользователя
     # 13.08.2026), остальные разделы остаются со старым положением снаружи.
     # !! Цвет подписи здесь красит НЕ общее правило `--damu-ink` (оно на
@@ -1525,7 +1722,7 @@ def _years_total(ctx: Ctx) -> go.Figure:
     # CSS красит его белым с тёмной обводкой (custom.css, блок «Число
     # внутри столбца (СЭЭ)»). Совпадение имён программы здесь и там
     # обязательное: разойдётся строка — разойдётся и контраст.
-    if ctx.program == "СЭЭ":
+    if ctx.program == "СЭЭ" and not ctx.compact_years:
         fig.update_traces(
             textposition="inside",
             # По умолчанию plotly прижимает inside-подпись к ВЕРХНЕМУ краю
@@ -1539,12 +1736,17 @@ def _years_total(ctx: Ctx) -> go.Figure:
         fig.update_traces(textposition="outside")
     # Год — подпись, а не число на шкале: 2 022,5 года не бывает
     fig.update_xaxes(type="category")
+    # У временного ряда ось значений остаётся видимой. Общий отступ для
+    # диаграмм с ручными подписями категорий равен 10 px, из-за чего на СЭЭ
+    # слева обрезались цифры делений и оставалась одна буква «K». Plotly сам
+    # измерит подписи только здесь, где им действительно требуется место.
+    fig.update_yaxes(automargin=True, tickformat=",.0f")
 
     # !! Точно та же формула границ — в pages/section.py (widget_grid),
     # откуда JS-обработчик берёт числа для кнопки «Скрыть» (data-range-lo/
     # hi). Разойдутся — раскрытие и укрытие будут показывать разную ширину.
     total = len(df)
-    if ctx.recent_years and total > ctx.recent_years:
+    if not ctx.compact_years and ctx.recent_years and total > ctx.recent_years:
         fig.update_xaxes(range=[total - ctx.recent_years - 0.5, total - 0.5])
     return fig
 

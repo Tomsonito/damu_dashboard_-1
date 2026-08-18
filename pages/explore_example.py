@@ -41,7 +41,7 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import html
 
-from core import charts, data, examples, mockup
+from core import charts, data, examples, mockup, showcase
 from core.examples import (DIVIDER, GOLD, GREEN, HAIRLINE, INK, MUTED,
                            PALE, SHADOW, SURFACE, TEAL, TOTAL, TRACK, num)
 
@@ -95,6 +95,10 @@ def _programs(colors: list[str]) -> list[dict]:
             "short": column["title"].split(" — ")[0],
             "color": color,
             "total": num(sum(row[1] for row in column["rows"])),
+            # Сумма проектов — нужна варианту 2 разбивки (одобрен
+            # пользователем 13.08.2026): шапка колонки показывает оба
+            # итога, деньги и проекты, а не один без объяснения почему.
+            "total_count": num(sum(row[2] for row in column["rows"])),
             "rows": [
                 {
                     "name": name,
@@ -323,50 +327,140 @@ def _legend(long=22, short=12):
     )
 
 
-def _programs_card(columns, per_row, grid, row_height, font_size,
-                   head_size="15px", pad="14px 20px 0"):
-    """Разбивка по программам: колонки инструментов со строками программ."""
-    body = []
-    for column in columns:
-        rows = [
+def _unit(text) -> html.Span:
+    """Единица измерения рядом с числом — мельче и светлее самого числа."""
+    return html.Span(text, style={"fontSize": "9.5px", "fontWeight": 600,
+                                  "color": MUTED, "marginLeft": "3px"})
+
+
+def _program_row(row, color, compact=False) -> html.Div:
+    """Строка разбивки в ОДНУ линию.
+
+    Два режима:
+
+    * **обычный** (по умолчанию) — имя · сумма денег над своей полосой ·
+      число проектов бейджем. Вариант 2 из макета (одобрен 13.08.2026).
+    * **compact** — имя · полоса · сумма. Бейдж «шт» убран, полоса
+      стоит между именем и суммой, а не под суммой: строка становится
+      ниже, и панель программ умещается на экране без скролла (просьба
+      пользователя 14.08.2026). Используется в примере 5.
+    """
+    if compact:
+        return html.Div(
+            [
+                html.Div(row["name"], style={
+                    "flex": "0 0 30%", "minWidth": 0, "fontSize": "12px",
+                    "color": INK, "lineHeight": 1.2}),
+                html.Div(
+                    html.Div(style={"height": "100%",
+                                    "width": row["amount_width"],
+                                    "background": color,
+                                    "borderRadius": "3px"}),
+                    style={"flex": 1, "height": "5px", "background": TRACK,
+                           "borderRadius": "3px", "overflow": "hidden"},
+                ),
+                html.Span([row["amount"], _unit("млрд ₸")],
+                          style={"flex": "none", "fontSize": "12px",
+                                 "fontWeight": 700, "color": INK,
+                                 "whiteSpace": "nowrap",
+                                 "fontVariantNumeric": "tabular-nums"}),
+            ],
+            style={"display": "flex", "alignItems": "center", "gap": "10px",
+                   "padding": "6px 0",
+                   "borderBottom": f"1px solid {HAIRLINE}"},
+        )
+
+    return html.Div(
+        [
+            html.Div(row["name"], style={
+                "flex": "0 0 30%", "minWidth": 0, "fontSize": "12.5px",
+                "color": INK, "lineHeight": 1.2}),
             html.Div(
                 [
-                    html.Span(row["name"], style={
-                        "color": INK, "overflow": "hidden",
-                        "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
-                    _bar(row["amount_width"], column["color"], height=6),
-                    html.Span(row["amount"], style={
-                        "fontWeight": 700, "textAlign": "right",
-                        "fontVariantNumeric": "tabular-nums"}),
-                    _bar(row["count_width"], column["color"], height=6, opacity=".45"),
-                    html.Span(row["count"], style={
-                        "textAlign": "right", "color": MUTED,
-                        "fontVariantNumeric": "tabular-nums"}),
+                    html.Span([row["amount"], _unit("млрд ₸")],
+                              style={"fontSize": "12.5px", "fontWeight": 700,
+                                    "color": INK, "whiteSpace": "nowrap",
+                                    "fontVariantNumeric": "tabular-nums"}),
+                    html.Div(
+                        html.Div(style={"height": "100%",
+                                        "width": row["amount_width"],
+                                        "background": color,
+                                        "borderRadius": "3px"}),
+                        style={"height": "5px", "background": TRACK,
+                              "borderRadius": "3px", "overflow": "hidden",
+                              "marginTop": "3px"},
+                    ),
                 ],
-                style={"display": "grid", "gridTemplateColumns": grid,
-                       "alignItems": "center", "gap": "8px",
-                       "height": f"{row_height}px", "fontSize": font_size},
-            )
-            for row in column["rows"]
-        ]
+                style={"flex": 1, "minWidth": 0},
+            ),
+            html.Span(
+                [row["count"], _unit("шт")],
+                style={"flex": "none", "background": TRACK,
+                      "borderRadius": "6px", "padding": "3px 8px",
+                      "fontSize": "12px", "color": MUTED,
+                      "fontVariantNumeric": "tabular-nums",
+                      "whiteSpace": "nowrap"},
+            ),
+        ],
+        style={"display": "flex", "alignItems": "center", "gap": "10px",
+              "padding": "8px 0", "borderBottom": f"1px solid {HAIRLINE}"},
+    )
+
+
+def _program_head(column) -> html.Div:
+    """Шапка колонки: название и оба итога (деньги и проекты).
+
+    Раньше шапка показывала ОДИН итог без объяснения, почему не оба
+    и не ни одного (просьба пользователя 13.08.2026).
+
+    `!!` Три вещи в ОДНОЙ строке (название + деньги + проекты) ломались
+    посреди слова: в колонку 173 px они не влезали, и «₸» переносился
+    отдельно от своего числа. Поэтому название стоит своей строкой,
+    а деньги и проекты — вместе на второй: там им хватает места
+    (~110 px из 173), и это ровно то, о чём просил пользователь —
+    «шт на одной линии с бюджетом». `nowrap` на обоих числах: перенос
+    внутри пары «число + единица» и есть та поломка, от которой ушли.
+
+    Строка «полоса — доля от X по деньгам» была здесь же и её убрали
+    (та же просьба, 13.08.2026): в узкой колонке она сама переносилась
+    на две строки и добавляла шапке высоты больше, чем объясняла.
+    """
+    return html.Div(
+        [
+            html.Span(column["short"], style={
+                "fontSize": "11px", "fontWeight": 800,
+                "letterSpacing": ".08em", "textTransform": "uppercase",
+                "color": column["color"]}),
+            html.Span([column["total"], _unit("млрд ₸")], style={
+                "fontSize": "15px", "fontWeight": 800,
+                "color": column["color"],
+                "fontVariantNumeric": "tabular-nums",
+                "whiteSpace": "nowrap"}),
+            html.Span([column["total_count"], _unit("шт")], style={
+                "fontSize": "12px", "fontWeight": 600, "color": MUTED,
+                "fontVariantNumeric": "tabular-nums",
+                "whiteSpace": "nowrap"}),
+        ],
+        style={"display": "flex", "alignItems": "baseline", "gap": "10px",
+              "paddingBottom": "8px", "marginBottom": "10px",
+              "borderBottom": f"2px solid {column['color']}"},
+    )
+
+
+def _programs_card(columns, per_row, head_size="15px", pad="14px 20px 0"):
+    """Разбивка по программам: колонки инструментов со строками программ.
+
+    Строка и шапка — общие кирпичики `_program_row`/`_program_head`
+    (вариант 2, см. их докстринги). Раньше здесь была сетка с прежней
+    формой строки — своя, третья по счёту реализация одной и той же
+    таблицы; теперь общая с примерами 5 и 6.
+    """
+    body = []
+    for column in columns:
         body.append(html.Div(
             [
-                html.Div(
-                    [
-                        html.Span(column["short"], style={
-                            "fontSize": "10px", "fontWeight": 800,
-                            "letterSpacing": ".08em", "textTransform": "uppercase",
-                            "color": column["color"]}),
-                        html.Span(column["total"], style={
-                            "marginLeft": "auto", "fontSize": "13px", "fontWeight": 800,
-                            "color": column["color"],
-                            "fontVariantNumeric": "tabular-nums"}),
-                    ],
-                    style={"display": "flex", "alignItems": "baseline", "gap": "8px",
-                           "paddingBottom": "8px", "marginBottom": "10px",
-                           "borderBottom": f"2px solid {column['color']}"},
-                ),
-                *rows,
+                _program_head(column),
+                *[_program_row(row, column["color"]) for row in column["rows"]],
             ],
             style={"padding": pad, "borderRight": f"1px solid {HAIRLINE}"},
         ))
@@ -539,7 +633,7 @@ def _example_1():
         _title_row(),
         _card([head, *rows], klass="damu-ex1"),
         _programs_card(_programs([TOTAL, GREEN, GOLD, TEAL]), 4,
-                       "1fr 56px 40px 44px 30px", 22, "12px", pad="14px 16px 0"),
+                       pad="14px 16px 0"),
     ]
 
 
@@ -664,48 +758,12 @@ def _example_3():
 
     columns = _programs([TOTAL, GREEN, GOLD, TEAL])
 
-    legend = html.Div([
-        html.Span([html.I(style={"width": "24px", "height": "5px", "background": "#8f8b88", "display": "inline-block"}), "Освоено, млрд ₸"], style={"display": "flex", "alignItems": "center", "gap": "6px"}),
-        html.Span([html.I(style={"width": "14px", "height": "5px", "background": "#8f8b88", "display": "inline-block"}), "Проектов, шт"], style={"display": "flex", "alignItems": "center", "gap": "6px"})
-    ], style={"marginLeft": "auto", "display": "flex", "alignItems": "center", "gap": "16px", "fontSize": "12px", "color": muted})
-
     programs = html.Div([
-        html.Div([
-            html.H2("Разбивка по программам", style={
-                "margin": 0, "fontSize": "15px", "fontWeight": 800, "color": ink,
-                "letterSpacing": "-0.015em"}),
-            legend,
-        ], style={"display": "flex", "alignItems": "center", "gap": "12px",
-                  "padding": "14px 20px 10px", "borderBottom": f"1px solid {divider}"}),
+        _card_head("Разбивка по программам", "факт по инструментам", _legend()),
         html.Div(
             [html.Div([
-                html.Div([
-                    html.Span(col["short"], style={
-                        "fontSize": "11px", "fontWeight": 800, "letterSpacing": ".08em",
-                        "textTransform": "uppercase", "color": col["color"]}),
-                    html.Span(col["total"], style={
-                        "marginLeft": "auto", "fontSize": "14px", "fontWeight": 800,
-                        "color": col["color"], "fontVariantNumeric": "tabular-nums"}),
-                ], style={"display": "flex", "alignItems": "baseline", "gap": "8px",
-                          "paddingBottom": "8px", "marginBottom": "10px",
-                          "borderBottom": f"2px solid {col['color']}"}),
-                *[html.Div([
-                    html.Span(r["name"], style={"color": ink,
-                                                "overflow": "hidden",
-                                                "textOverflow": "ellipsis",
-                                                "whiteSpace": "nowrap"}),
-                    _bar(r["amount_width"], col["color"], height=6, track=track),
-                    html.Span(r["amount"], style={"fontWeight": 700, "color": ink,
-                                                  "textAlign": "right",
-                                                  "fontVariantNumeric": "tabular-nums"}),
-                    _bar(r["count_width"], col["color"], height=6, opacity=".45", track=track),
-                    html.Span(r["count"], style={"textAlign": "right",
-                                                 "color": muted,
-                                                 "fontVariantNumeric": "tabular-nums"}),
-                ], style={"display": "grid",
-                          "gridTemplateColumns": "1fr 50px 42px 38px 34px",
-                          "alignItems": "center", "gap": "8px", "height": "24px",
-                          "fontSize": "12.5px"}) for r in col["rows"]],
+                _program_head(col),
+                *[_program_row(r, col["color"]) for r in col["rows"]],
             ], style={"padding": "14px 18px 4px",
                       "borderRight": f"1px solid {hairline}"}) for col in columns],
             style={"display": "grid", "gridTemplateColumns": "1fr 1fr",
@@ -716,10 +774,13 @@ def _example_3():
     return [
         _title_row(),
         html.Div([
+            # alignSelf: start — карточка по своему содержимому, а не в высоту
+            # соседней (тот же довод, что в примере 5: разбивка стала выше,
+            # и растянутая карточка копила пустоту внутри себя)
             html.Div([
                 head,
-                html.Div([rows_2026, rows_2025], style={"display": "flex", "flexDirection": "column", "justifyContent": "space-evenly", "flex": 1})
-            ], style={"background": surface, "boxShadow": SHADOW, "color": ink, "height": "100%", "display": "flex", "flexDirection": "column"}),
+                html.Div([rows_2026, rows_2025], style={"display": "flex", "flexDirection": "column", "justifyContent": "flex-start", "flex": 1})
+            ], style={"background": surface, "boxShadow": SHADOW, "color": ink, "alignSelf": "start", "display": "flex", "flexDirection": "column"}),
             html.Div(programs.children, style={"background": surface, "boxShadow": SHADOW, "color": ink, "height": "100%"})
         ], style={"display": "grid", "gridTemplateColumns": "1fr 640px", "gap": "14px",
                   "marginTop": "14px"}),
@@ -1274,17 +1335,23 @@ def _ex5_row(item: dict, last: bool) -> html.Div:
         html.Div([
             html.Span(item["title"], style={
                 "borderLeft": f"4px solid {EX5_K}", "paddingLeft": "10px",
-                "fontSize": "15px", "fontWeight": 700,
+                "fontSize": "16px", "fontWeight": 700,
                 "letterSpacing": "-0.01em", "whiteSpace": "nowrap"}),
             # Сумма плоским текстом, без пилюли со скруглением и тенью:
             # радиус в дизайн-системе нулевой везде
             html.Span([
+                # !! Свой цвет ОБЯЗАТЕЛЕН: число вложено в span с MUTED
+                # (тот же цвет, что у хвоста «из X млрд ₸» — приём как
+                # в `_ex4_money` выше в файле, только там число стоит
+                # СНАРУЖИ приглушённого span, а здесь внутри), и без
+                # своего цвета число унаследовало бы приглушённый тон
+                # вместо полновесного, потеряв контраст.
                 html.B(num(item["fact"]), style={
-                    "fontSize": "17px", "fontWeight": 800,
-                    "letterSpacing": "-0.02em"}),
+                    "fontSize": "19px", "fontWeight": 800,
+                    "letterSpacing": "-0.02em", "color": INK}),
                 f" из {num(item['plan'])} млрд ₸",
-            ], style={"marginLeft": "auto", "fontSize": "13px",
-                      "color": "var(--damu-muted)", "whiteSpace": "nowrap"}),
+            ], style={"marginLeft": "auto", "fontSize": "14px",
+                      "color": MUTED, "whiteSpace": "nowrap"}),
         ], style={"display": "flex", "alignItems": "baseline", "gap": "10px",
                   "marginBottom": "9px"}),
         # Полоса без засечки, процент — в своей колонке, а не за краем
@@ -1294,13 +1361,19 @@ def _ex5_row(item: dict, last: bool) -> html.Div:
         # стопроцентная отметка, и полоса выглядит обрывающейся. Задана
         # через outline, а не border: border вошёл бы в высоту (14 -> 16),
         # а outline рисуется поверх и раскладку не двигает
+        # Полоса и процент крупнее прежнего (18.08.2026, просьба
+        # пользователя): было 14 px высоты и 14 px у процента. Это главная
+        # строка примера — на неё смотрят первой, а весила она столько же,
+        # сколько подписи вокруг. Колонка процента расширена вместе со
+        # шрифтом: при 66 px «100,0 %» встаёт одной строкой, при прежних
+        # 58 px оно переносилось бы
         html.Div([
-            _bar(f"{min(item['percent'], 100):.1f}%", EX5_K, height=14,
+            _bar(f"{min(item['percent'], 100):.1f}%", EX5_K, height=18,
                  track="var(--damu-track)",
                  extra={"flex": 1, "outline": "1px solid var(--damu-hairline)",
                         "outlineOffset": "-1px"}),
             html.Div(f"{num(item['percent'], 1)} %", style={
-                "width": "58px", "textAlign": "right", "fontSize": "14px",
+                "width": "66px", "textAlign": "right", "fontSize": "17px",
                 "fontWeight": 800, "color": EX5_K,
                 "fontVariantNumeric": "tabular-nums"}),
         ], style={"display": "flex", "alignItems": "center", "gap": "12px"}),
@@ -1310,13 +1383,16 @@ def _ex5_row(item: dict, last: bool) -> html.Div:
     right = html.Div([
         html.Div([
             html.Div(counts, style={
-                "fontSize": "15px", "fontWeight": 700, "textAlign": "right",
+                "fontSize": "16px", "fontWeight": 700, "textAlign": "right",
                 "fontVariantNumeric": "tabular-nums"}),
-            _bar(f"{item['projects_percent']:.1f}%", EX5_K, height=6,
-                 track="var(--damu-track)", extra={"marginTop": "8px"}),
+            # !! Полосы проектов здесь БОЛЬШЕ НЕТ (18.08.2026, просьба
+            # пользователя). Она повторяла ту же мысль, что полоса слева,
+            # но тоньше и без числа — и в паре с выросшей левой полосой
+            # читалась как её бледная копия. Осталось «Уникальных: N» —
+            # единственное, чего в строке больше нигде нет.
             html.Div(f"Уникальных: {num(item['unique'])}", style={
                 "fontSize": "11px", "color": "var(--damu-muted)",
-                "marginTop": "6px", "textAlign": "right"}),
+                "marginTop": "8px", "textAlign": "right"}),
             _ex5_cells(item["months"]),
         ], className="damu-proj-default"),
         html.Div([
@@ -1361,134 +1437,207 @@ def _ex5_rows(year: int | None, block_id: str, hidden: bool) -> html.Div:
     return html.Div(rows, id=block_id, style=style)
 
 
-def _ex5_legend() -> html.Div:
-    def one(width, text):
-        return html.Span(
-            [html.I(style={"width": f"{width}px", "height": "5px",
-                           "background": "var(--damu-muted)",
-                           "display": "inline-block"}), text],
-            style={"display": "flex", "alignItems": "center", "gap": "6px"},
-        )
-    return html.Div(
-        [one(24, "Освоено, млрд ₸"), one(12, "Проектов, шт")],
-        style={"marginLeft": "auto", "display": "flex", "alignItems": "center",
-               "gap": "16px", "fontSize": "12px", "color": "var(--damu-muted)"},
-    )
+def _ex5_total_line(label: str, fact: int, plan: int, unit: str,
+                    percent: float) -> html.Div:
+    """Строка «план → факт» одной величины: подпись, дробь, полоса, процент.
+
+    Две таких строки в карточке итогов — по бюджету и по проектам. Обе
+    устроены одинаково намеренно: величины разные, а вопрос к ним один
+    («сколько от плана»), и разная подача заставляла бы сравнивать формы
+    вместо чисел.
+    """
+    return html.Div([
+        html.Div([
+            html.Span(label, style={"fontSize": "12px", "color": INK}),
+            html.Span([
+                html.B(num(fact), style={"fontSize": "15px", "fontWeight": 800,
+                                         "letterSpacing": "-0.02em",
+                                         "color": INK}),
+                f" из {num(plan)} {unit}",
+            ], style={"marginLeft": "auto", "fontSize": "11.5px",
+                      "color": MUTED, "whiteSpace": "nowrap"}),
+        ], style={"display": "flex", "alignItems": "baseline", "gap": "8px"}),
+        html.Div([
+            _bar(f"{min(percent, 100):.1f}%", EX5_K, height=12,
+                 track="var(--damu-track)",
+                 extra={"flex": 1, "outline": "1px solid var(--damu-hairline)",
+                        "outlineOffset": "-1px"}),
+            html.Div(f"{num(percent, 1)} %", style={
+                "width": "54px", "textAlign": "right", "fontSize": "13px",
+                "fontWeight": 800, "color": EX5_K,
+                "fontVariantNumeric": "tabular-nums"}),
+        ], style={"display": "flex", "alignItems": "center", "gap": "10px",
+                  "marginTop": "5px"}),
+    ], style={"marginBottom": "12px"})
 
 
-#: Сетка строки программ в примере 5 — как была.
-EX5_PROG_GRID = "1fr 50px 42px 38px 34px"
+def _ex5_totals_card(item: dict) -> html.Div:
+    """Четвёртая карточка разбивки — план и факт по всем инструментам сразу.
 
-#: Сетка той же строки в примере 6: как на главной после правок
-#: 10.08.2026 — пары «полоса + своё число» и пустая колонка-разделитель
-#: между ними. Ячейки под числа «в притык», чтобы правое выравнивание
-#: не отодвигало короткие числа от своей полосы.
-EX6_PROG_GRID = "minmax(0,1fr) minmax(48px,1fr) 30px 8px minmax(34px,0.55fr) 26px"
+    Заведена 18.08.2026 по просьбе пользователя. Занимает место, которое
+    в сетке 2×2 пустовало: программных колонок три, а клеток четыре.
+
+    `!!` Это НЕ возвращение колонки «Все инструменты», которую убрали
+    13.08.2026. Ту убрали за дело: она повторяла программными строками
+    ровно те же числа, что стоят карточками слева. Здесь другое содержание —
+    план против факта, чего в разбивке по программам нет вовсе: там только
+    факт. Повтора не возникает, потому что показывается то, чего рядом нет.
+
+    `!!` Проекты — ОДНОЙ полосой, как на главной и в карточке инструмента:
+    дорожка это план, заливка — факт, внутри заливки сплошной кусок
+    уникальные и штриховка повторные. Разбор, почему не двумя полосами
+    и почему у «уникальных» нет своего процента, — в `core/showcase.py`,
+    `instrument_card()`. Своя вторая правда об одних и тех же числах
+    рядом с первой — это то, как они однажды и разъезжаются.
+    """
+    unique_share = item["unique"] / max(item["projects_fact"], 1) * 100
+    fill = min(item["projects_percent"], 100)
+
+    def key(hatch: bool, text: str):
+        mark = {"width": "9px", "height": "9px", "display": "inline-block",
+                "flex": "none"}
+        mark["background"] = (
+            f"repeating-linear-gradient(135deg,{EX5_K} 0,{EX5_K} 2px,"
+            "transparent 2px,transparent 4px)" if hatch else EX5_K)
+        return html.Span([html.I(style=mark), text],
+                         style={"display": "inline-flex", "alignItems": "center",
+                                "gap": "5px"})
+
+    return html.Div([
+        html.Div([
+            html.Span("Все инструменты", style={
+                "fontSize": "11px", "fontWeight": 800, "letterSpacing": ".08em",
+                "textTransform": "uppercase", "color": EX5_K}),
+            html.Span("план → факт", style={
+                "marginLeft": "auto", "fontSize": "11px", "color": MUTED,
+                "whiteSpace": "nowrap"}),
+        ], style={"display": "flex", "alignItems": "baseline", "gap": "10px",
+                  "paddingBottom": "8px", "marginBottom": "12px",
+                  "borderBottom": f"2px solid {EX5_K}"}),
+
+        _ex5_total_line("Бюджет", item["fact"], item["plan"], "млрд ₸",
+                        item["percent"]),
+        _ex5_total_line("Проекты", item["projects_fact"], item["projects_plan"],
+                        "шт", item["projects_percent"]),
+
+        html.Div([
+            html.Div(html.Div([
+                html.Div(style={"width": f"{unique_share:.1f}%",
+                                "background": EX5_K}),
+                # Штриховка, а не второй цвет: повторные — не отдельная
+                # категория, а «остальное» от факта
+                html.Div(style={
+                    "flex": 1,
+                    "background": f"repeating-linear-gradient(135deg,{EX5_K} 0,"
+                                  f"{EX5_K} 2px,transparent 2px,transparent 4px)"}),
+            ], style={"display": "flex", "height": "100%",
+                      "width": f"{fill:.1f}%"}),
+                style={"height": "10px", "background": "var(--damu-track)"}),
+            html.Div([key(False, f"уникальных {num(item['unique'])}"),
+                      key(True, f"повторных {num(item['repeat'])}")],
+                     style={"display": "flex", "gap": "14px", "marginTop": "6px",
+                            "fontSize": "11px", "color": MUTED}),
+        ]),
+    ], style={**EX5_CARD, "padding": "12px 16px 14px",
+              "fontVariantNumeric": "tabular-nums"})
 
 
 def _ex5_programs(per_row: int = 2, with_all: bool = True,
-                  grid: str = EX5_PROG_GRID, gap: str = "8px",
-                  spacer: bool = False) -> html.Div:
-    """Разбивка по программам — тот же состав и та же сетка 2×2.
+                  with_totals: bool = False) -> html.Div:
+    """Разбивка по программам — строка и шапка через общие `_program_row`/
+    `_program_head` (вариант 2, см. их докстринги).
 
-    Собрана здесь, а не через общий `_programs_card`: тот вписывает цвета
-    светлой темы значениями (`rgba(32,30,29,.8)` и подобные), и в тёмной
-    теме текст остался бы тёмным на тёмном.
+    Цвет — `EX5_K` (переменная `--ex5-k`, своя на пример 5/6), а не
+    литеральный GREEN/GOLD/TEAL, как в примерах 1 и 3: остальной пример 5
+    целиком уже красится через `--ex5-k`, заводить для одной этой панели
+    другой цвет значило бы разъехаться с остальными строками того же
+    примера при переключении темы. `_program_row`/`_program_head` берут
+    цвет параметром именно ради этого — им всё равно, хекс это или
+    CSS-переменная.
 
     Разложить иначе просит пример 6: в развёрнутом виде карточка едет вниз
     во всю ширину, и колонки встают в один ряд по три — без «Всех
     инструментов», их числа там уже стоят в полосе-итоге.
+
+    `with_totals` (18.08.2026) добавляет четвёртой карточку итогов
+    (`_ex5_totals_card`). Просят её ТОЛЬКО в примере 5, и вот почему это
+    не каприз: там сетка два в ряд, программных колонок три, и четвёртая
+    клетка пустует. В примере 6 колонки стоят по три в ряд — четвёртая
+    карточка там начала бы вторую строку в одиночестве, то есть на месте
+    одной дыры появилась бы другая, шире прежней.
     """
     columns = list(zip(_programs([EX5_K] * 4), EX5_PROG_CLASS))
     if not with_all:
         columns = columns[1:]
+    # Кредитование (8 программ) длиннее остальных — ставим его последним,
+    # чтобы Гарантирование и Субсидирование стояли в одном ряду, а
+    # Кредитование уходило вниз (просьба пользователя 14.08.2026)
+    if len(columns) == 3:
+        columns[1], columns[2] = columns[2], columns[1]
 
-    def cells(row):
-        out = [
-            html.Span(row["name"], style={
-                "overflow": "hidden", "textOverflow": "ellipsis",
-                "whiteSpace": "nowrap"}),
-            _bar(row["amount_width"], EX5_K, height=6,
-                 track="var(--damu-track)"),
-            html.Span(row["amount"], style={
-                "fontWeight": 700, "textAlign": "right",
-                "fontVariantNumeric": "tabular-nums"}),
-        ]
-        # Пустая колонка между парами — она и делает группировку: зазор
-        # внутри пары втрое меньше, чем между парами, и число перестаёт
-        # висеть равноудалённо от двух полос
-        if spacer:
-            out.append(html.Span())
-        out += [
-            _bar(row["count_width"], EX5_K, height=6, opacity=".45",
-                 track="var(--damu-track)"),
-            html.Span(row["count"], style={
-                "textAlign": "right", "color": "var(--damu-muted)",
-                "fontVariantNumeric": "tabular-nums"}),
-        ]
-        return out
-
-    body = []
+    cards = []
     for column, klass in columns:
-        rows = [
-            html.Div(cells(row),
-                     style={"display": "grid", "gridTemplateColumns": grid,
-                            "alignItems": "center", "columnGap": gap,
-                            "height": "24px", "fontSize": "12.5px"})
-            for row in column["rows"]
-        ]
-        body.append(html.Div([
-            html.Div([
-                html.Span(column["short"], style={
-                    "fontSize": "11px", "fontWeight": 800,
-                    "letterSpacing": ".08em", "textTransform": "uppercase",
-                    "color": EX5_K}),
-                html.Span(column["total"], style={
-                    "marginLeft": "auto", "fontSize": "14px", "fontWeight": 800,
-                    "color": EX5_K, "fontVariantNumeric": "tabular-nums"}),
-            ], style={"display": "flex", "alignItems": "baseline", "gap": "8px",
-                      "paddingBottom": "8px", "marginBottom": "10px",
-                      "borderBottom": f"2px solid {EX5_K}"}),
-            *rows,
-        ], className=klass, style={"padding": "14px 18px 4px",
-                                   "borderRight": "1px solid var(--damu-hairline)"}))
+        cards.append(html.Div([
+            _program_head(column),
+            *[_program_row(row, EX5_K, compact=True) for row in column["rows"]],
+        ], className=klass, style={
+            **EX5_CARD,
+            "padding": "12px 16px 6px",
+        }))
 
-    return html.Div([
-        html.Div([
-            html.H2("Разбивка по программам", style={
-                "margin": 0, "fontSize": "15px", "fontWeight": 800,
-                "letterSpacing": "-0.015em"}),
-            _ex5_legend(),
-        ], style={"display": "flex", "alignItems": "center", "gap": "12px",
-                  "padding": "14px 20px 10px",
-                  "borderBottom": "1px solid var(--damu-divider)"}),
-        html.Div(body, style={"display": "grid",
-                              "gridTemplateColumns": f"repeat({per_row}, 1fr)",
-                              "padding": "0 4px 14px"}),
-    ], style={**EX5_CARD, "height": "100%"})
+    if with_totals:
+        # Год тот же, что у видимого по умолчанию набора строк слева
+        # (`_ex5_rows(None, ...)`), а не сегодняшний календарный: карточка
+        # обязана говорить о том же годе, что и числа рядом с ней
+        cards.append(_ex5_totals_card(mockup.for_year(None, expanded=True)[0]))
+
+    header = html.Div([
+        html.H2("Разбивка по программам", style={
+            "margin": 0, "fontSize": "16px", "fontWeight": 800,
+            "letterSpacing": "-0.015em"}),
+        _legend(),
+    ], style={"display": "flex", "alignItems": "center", "gap": "12px",
+              "marginBottom": "0px", "gridColumn": "1 / -1"})
+
+    return html.Div([header, *cards], style={
+        "display": "grid", "gridTemplateColumns": f"repeat({per_row}, 1fr)",
+        "gap": "8px", "height": "100%"})
 
 
-def _ex5_body():
+def _ex5_body(embed_title=False):
     """Тело примера 5 без заголовка страницы.
 
     Вынесено отдельно ради примера 6: там ровно этот же сжатый вид лежит
     первым состоянием, а собственный заголовок у него один на оба
     состояния. Копировать раскладку было нельзя — сравнивают именно её,
     и две копии разъехались бы после первой же правки.
+
+    ``embed_title`` (14.08.2026): когда True, шапка карточки содержит
+    заголовок страницы «ОСВОЕНИЕ ПЛАНА», переключатель годов и плашку
+    «Макетные числа» — тот же набор, что раньше стоял отдельной строкой
+    через ``_title_row``. Пример 6 оставляет False (у него свой заголовок).
     """
+    if embed_title:
+        left = html.Div([
+            html.Span("Освоение плана", style={
+                "fontSize": "16px", "fontWeight": 900, "letterSpacing": ".05em",
+                "textTransform": "uppercase", "color": INK}),
+            _year_switch(),
+            _mock_badge(),
+        ], style={"display": "flex", "alignItems": "center", "gap": "10px",
+                  "flex": 1})
+    else:
+        left = html.Div("Инструмент · план → факт", style={"flex": 1})
+
     head = html.Div(
         [
-            html.Div("Инструмент · план → факт", style={"flex": 1}),
+            left,
             html.Div([
                 html.Span("Проекты", style={"marginRight": "10px"}),
-                # Кнопка общая на все примеры (`_dyn_toggle`): id и подписи
-                # те же, что были в примере 3, — значит работает уже
-                # написанный обработчик в assets/dashboard.js. Столкновения
-                # нет: страница показывает один пример за раз
                 _dyn_toggle({"verticalAlign": "middle"}),
             ], style={"textAlign": "right"}),
         ],
-        style={"display": "flex", "gap": "16px", "padding": "12px 20px 8px",
+        style={"display": "flex", "gap": "16px", "padding": "8px 20px 6px",
                "fontSize": "11px", "fontWeight": 700, "letterSpacing": ".09em",
                "textTransform": "uppercase", "color": "var(--damu-muted)",
                "borderBottom": "1px solid var(--damu-divider)"},
@@ -1498,11 +1647,19 @@ def _ex5_body():
     instruments = html.Div(
         [
             head,
+            # !! `flex-start`, а не `space-evenly` (13.08.2026, замечание
+            # пользователя «выглядит сплющено... много свободного места»).
+            # Колонка тянется в высоту соседней (`height: 100%` ниже),
+            # а соседняя — разбивка по программам — после варианта 2 стала
+            # заметно выше. `space-evenly` раздавал эту разницу пустыми
+            # промежутками МЕЖДУ строками инструментов: строки разъезжались,
+            # а сверху оставалась дыра в пол-экрана. Прижимаем к верху,
+            # разница уходит в низ колонки одним куском.
             html.Div(
                 [_ex5_rows(None, "damu-rows-2026", hidden=False),
                  _ex5_rows(this_year - 1, "damu-rows-2025", hidden=True)],
                 style={"display": "flex", "flexDirection": "column",
-                       "justifyContent": "space-evenly", "flex": 1,
+                       "justifyContent": "flex-start", "flex": 1,
                        "minWidth": 0},
             ),
         ],
@@ -1511,7 +1668,14 @@ def _ex5_body():
         # содержимого. Без этой строки узкая колонка «1fr» распирается
         # раскрытой динамикой, и вся страница уезжает вбок — тот же приём,
         # что у `.damu-sec-main` на странице раздела
-        style={**EX5_CARD, "height": "100%", "display": "flex",
+        #
+        # !! `alignSelf: start` вместо прежнего `height: 100%` (13.08.2026,
+        # замечание пользователя про «много свободного места»). Соседняя
+        # колонка — разбивка по программам — после варианта 2 стала выше,
+        # а карточка инструментов тянулась в её высоту и получала внутри
+        # 137 px пустоты (замерено). Теперь она ровно по своему
+        # содержимому, и разница просто остаётся снаружи карточки.
+        style={**EX5_CARD, "alignSelf": "start", "display": "flex",
                "flexDirection": "column", "minWidth": 0},
     )
 
@@ -1521,23 +1685,80 @@ def _ex5_body():
     # на одном экране. Пример 6 избавился от неё раньше и по тому же
     # доводу, теперь оба сжатых вида согласованы.
     #
-    # !! `per_row` остаётся ДВА, хотя колонок стало три. Три в тот же
-    # ряд не помещаются: у строки 196 px занято числами и полосами
-    # (`EX5_PROG_GRID` плюс зазоры) при ширине панели 640 px — на имя
-    # программы осталось бы отрицательное место. Пустая четвёртая
-    # клетка внизу справа — плата за читаемые названия.
-    return html.Div([instruments, _ex5_programs(with_all=False)],
-                    style={"display": "grid", "gridTemplateColumns": "1fr 640px",
-                           "gap": "14px", "marginTop": "14px"})
+    # `per_row=2` — две колонки в ряд, третья уходит вниз (просьба
+    # пользователя 13.08.2026: «программы всё ещё 3 в ряд, закинь одну
+    # вниз»). Пробовали три: формально влезали, но 173 px на колонку
+    # ломали шапку переносом внутри «540 млрд ₸». При двух колонка
+    # получает 284 px, и число с единицей стоят одной строкой.
+    return html.Div([instruments,
+                     _ex5_programs(per_row=2, with_all=False, with_totals=True)],
+                     style={"display": "grid", "gridTemplateColumns": "1fr 640px",
+                            "gap": "10px", "marginTop": "8px"})
+
+
+def _expandable(wrap_id: str, button_id: str, full_children: list) -> list:
+    """Оболочка «пример 5 + разворот»: кнопка справа сверху и два слота.
+
+    Общая у примеров 5 и 6 (18.08.2026, просьба пользователя «пример 6
+    сделай таким же как пример 5»). Свёрнутое состояние у обоих собирает
+    ОДНА функция `_ex5_body(embed_title=True)` — то же, что было
+    самостоятельным примером 5. Копией это делать нельзя: сравнивают как
+    раз развёрнутое, и разойдись свёрнутые хоть на строку, сравнение
+    поехало бы вместе с ними.
+
+    Отличаются примеры ровно тем, что раскрывает кнопка, — `full_children`:
+    у пятого настоящая главная, у шестого её копия в цветах примера 5.
+
+    `!!` Заголовка над кнопкой НЕТ намеренно. Он есть у обоих состояний
+    свой — у примера 5 в шапке карточки (`embed_title=True`), у главной
+    свой `title_row` с кнопками года, — и третий на том же экране был бы
+    просто третьим «Освоением плана». Кнопка уезжает вправо сама:
+    у `.damu-ex6-toggle` в CSS стоит `margin-left: auto`.
+    """
+    return [
+        html.Div(_ex6_toggle(button_id),
+                 style={"display": "flex", "alignItems": "center"}),
+        html.Div(
+            [
+                html.Div(html.Div(_ex5_body(embed_title=True),
+                                  className="damu-ex6-inner"),
+                         className="damu-ex6-slot damu-ex6-compact"),
+                html.Div(html.Div(full_children, className="damu-ex6-inner"),
+                         className="damu-ex6-slot damu-ex6-full"),
+            ],
+            id=wrap_id,
+            className="damu-ex6",
+            **{"data-mode": "compact"},
+        ),
+    ]
 
 
 def _example_5():
-    return [
-        # Заголовок общий с примерами 1, 3 и 4 (`_title_row`) — мелкий,
-        # чтобы не спорить с раскладкой, которую и сравнивают
-        _title_row(),
-        _ex5_body(),
-    ]
+    """Пример 5 сверху, НАСТОЯЩАЯ главная — по кнопке.
+
+    Главная переезжает сюда насовсем (решение пользователя 18.08.2026):
+    это будущий боевой экран, а не ещё один вариант на сравнение. Поэтому
+    в развёрнутом состоянии стоит сама главная — та же функция, что рисует
+    «/» (`core/showcase.body()`), — а не копия её раскладки. Копия обязана
+    повторять оригинал и молча отстаёт от него после первой же правки.
+
+    `!!` Отсюда видно глазами: развёрнутое идёт в СВОИХ цветах темы, и все
+    органы главной живые — кнопки года, тумблер «Графики за весь год»,
+    карта по настоящим данным. Срезать их было бы нечестно: смотрят
+    как раз на то, что достанется бою.
+
+    `!!` `showcase.body()` кладёт в разметку `dcc.Store(id="main-view")`
+    и `dcc.Graph(id="main-map")` — те же имена, что на «/». Это не
+    столкновение: Dash показывает одну страницу за раз, и коллбэки
+    из `core/showcase.py` находят те поля, что сейчас на экране.
+    """
+    # Каждый кусок витрины — своим блоком с `damu-ex6-rise`, чтобы они
+    # проявлялись друг за другом. Обёртки добавляются ЗДЕСЬ, а не
+    # в `showcase.body()`: то общий код главной, и классу примера там не место
+    return _expandable(
+        "damu-ex5", "damu-ex5-toggle",
+        [html.Div(part, className="damu-ex6-rise") for part in showcase.body()],
+    )
 
 
 # ────────── Пример 6 · пример 5, разворачивающийся в главную ──────────
@@ -1564,9 +1785,15 @@ def _example_5():
 # от количества строк.
 
 
-def _ex6_toggle():
-    """Кнопка разворота. Текст переписывает JS — как у `_dyn_toggle`."""
-    return html.Button("Развернуть как на главной ▾", id="damu-ex6-toggle",
+def _ex6_toggle(button_id: str = "damu-ex6-toggle"):
+    """Кнопка разворота. Текст переписывает JS — как у `_dyn_toggle`.
+
+    `button_id` появился под пример 7 (18.08.2026): кнопок теперь две,
+    по одной на пример. Обработчик в `assets/dashboard.js` смотрит НЕ на id,
+    а на класс `damu-ex6-toggle` — id остаётся только чтобы два разных
+    примера не делили одно имя в разметке.
+    """
+    return html.Button("Развернуть как на главной ▾", id=button_id,
                        className="damu-ex6-toggle", n_clicks=0)
 
 
@@ -1794,8 +2021,7 @@ def _ex6_full(items: list[dict]) -> list:
         # Три колонки в ряд и без «Всех инструментов»: их числа стоят
         # в полосе-итоге выше, и повторять их значило бы показать одно
         # и то же дважды — то же решение, что на главной
-        html.Div(_ex5_programs(per_row=3, with_all=False,
-                               grid=EX6_PROG_GRID, gap="5px", spacer=True),
+        html.Div(_ex5_programs(per_row=3, with_all=False),
                  className="damu-ex6-rise", style={"marginTop": "14px"}),
         # Карта — четвёртый и последний блок главной. Числа в примере
         # макетные, а карта настоящая: это единственное живое место,
@@ -1821,21 +2047,21 @@ def _ex6_full(items: list[dict]) -> list:
 
 
 def _example_6():
+    """То же, что пример 5, но разворачивается в КОПИЮ главной.
+
+    Свёрнутое состояние с 18.08.2026 полностью совпадает с примером 5
+    (общая `_expandable`): раньше здесь стояла своя строка заголовка
+    и `_ex5_body()` без встроенного заголовка, из-за чего два примера
+    отличались ещё до нажатия кнопки — а сравнивают в них ровно то,
+    что после нажатия.
+
+    Отличие от пятого одно: там разворачивается сама главная, здесь —
+    её копия в цветах примера 5 (`_ex6_full`). Копия и оставлена ради
+    этого сравнения: видно, как читается переход, когда цвет не меняется
+    на полпути.
+    """
     items = mockup.for_year(None, expanded=True)
-    return [
-        _title_row(right=_ex6_toggle()),
-        html.Div(
-            [
-                html.Div(html.Div(_ex5_body(), className="damu-ex6-inner"),
-                         className="damu-ex6-slot damu-ex6-compact"),
-                html.Div(html.Div(_ex6_full(items), className="damu-ex6-inner"),
-                         className="damu-ex6-slot damu-ex6-full"),
-            ],
-            id="damu-ex6",
-            className="damu-ex6",
-            **{"data-mode": "compact"},
-        ),
-    ]
+    return _expandable("damu-ex6", "damu-ex6-toggle", _ex6_full(items))
 
 
 # ──────────────────────────── реестр примеров ────────────────────────────
@@ -1847,9 +2073,11 @@ BUILDERS = {
     "1": _example_1,
     "3": _example_3,
     "4": _example_4,
+    # !! Пятый — тот, в который переехала главная. При уборке примеров
+    # остаётся он, остальные удаляются
     "5": _example_5,
-    # !! Шестой построен НА пятом (`_ex5_body`, `_ex5_programs`): удалять
-    # пятый, оставив шестой, нельзя — сначала перенести эти две функции
+    # !! Шестой построен НА пятом (`_expandable`, `_ex5_body`): свёрнутое
+    # состояние у них общее, отличается только развёрнутое
     "6": _example_6,
 }
 
@@ -1869,7 +2097,7 @@ def layout(key: str | None = None, **kwargs):
     children.append(
         html.Div(BUILDERS[example["key"]](),
                  style={"display": "flex", "flexDirection": "column",
-                        "gap": "14px"})
+                        "gap": "8px"})
     )
 
     return dbc.Container(children, fluid=True, className="pb-5")

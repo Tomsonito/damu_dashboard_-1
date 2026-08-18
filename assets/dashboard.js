@@ -11,16 +11,20 @@
 
    Разметку рисует pages/section.py, договор между ними — data-атрибуты:
 
-     data-scroll-to     на вкладке  — id секции, к которой прокрутить
-     data-members       на вкладке  — ключи секций, которые она закрывает
-                                      (у группы их несколько)
-     data-tab-key       на вкладке  — её собственный ключ
-     data-key           на секции   — ключ этой секции
-     data-group-row     на ряду     — ключ группы, которой принадлежит ряд
-                                      «пилюль»; ряд виден только когда
-                                      выбрана сама группа
+     data-scroll-to     на пилюле   — id секции, к которой прокрутить
+     data-target-key    на пилюле   — ключ секции-цели: подсвечиваем её
+                                      сразу, не дожидаясь конца прокрутки
      data-sub-key       на пилюле   — ключ секции этой пилюли
+     data-key           на секции   — ключ этой секции
+     data-chart         на обёртке  — вид диаграммы: по нему решаем, можно
+                        графика       ли подсвечивать по клику категорию
+                                      (у «Годов» клик занят раскрытием года)
      data-toggle-sidebar на кнопке ☰
+
+   !! Вкладок ВЕРХНЕГО уровня в этом списке больше нет (17.08.2026):
+   с тех пор как вкладка переключает содержимое, ими целиком распоряжается
+   сервер, и атрибуты `data-tab-key`, `data-members`, `data-group-row`
+   не выставляются вовсе. Разбор — в шапке pages/section.py.
 
    Никакой логики в самих атрибутах нет: это просто способ передать
    браузеру то, что и так знает config.yaml. */
@@ -236,30 +240,25 @@
         return key;
     }
 
+    /* Подсвечивает «пилюлю» той подсекции, которую сейчас читают.
+
+       !! Вкладки ВЕРХНЕГО уровня здесь больше не трогаются (17.08.2026).
+       Раньше трогались: пока вкладка только прокручивала ленту, «активная»
+       означала «докуда домотали», и знал это один браузер. Теперь вкладка
+       переключает содержимое, то есть активная — это выбор человека,
+       и хранит его страница (`section-tab`, pages/section.py). Возьмись
+       за класс `active` оба — сервер по выбору и браузер по прокрутке, —
+       они бы перетирали друг друга: щёлкнул по «Отрасли», сервер подсветил
+       «Отрасли», а первый же поворот колеса вернул бы подсветку на ту
+       вкладку, чья секция оказалась под линией чтения.
+
+       Ряд пилюль тоже больше не прячется отсюда: его состав приходит
+       с сервера и в нём всегда только одна группа — открытая. */
     function highlight() {
         var key = targetKey || currentSectionKey();
         if (key === null) {
             return;                 // мы не на странице раздела
         }
-
-        var activeTab = null;
-        document.querySelectorAll('.damu-sec-tab').forEach(function (tab) {
-            var members = (tab.getAttribute('data-members') || '').split(',');
-            var isActive = members.indexOf(key) !== -1;
-            tab.classList.toggle('active', isActive);
-            if (isActive) {
-                activeTab = tab.getAttribute('data-tab-key');
-            }
-        });
-
-        /* Ряд «пилюль» показываем только у выбранной группы. Пустая строка
-           в style.display возвращает элемент к тому, что сказано в CSS
-           (display: flex), а не делает его block — это важно, иначе
-           пилюли встали бы в столбик. */
-        document.querySelectorAll('[data-group-row]').forEach(function (row) {
-            var mine = row.getAttribute('data-group-row') === activeTab;
-            row.style.display = mine ? '' : 'none';
-        });
 
         document.querySelectorAll('.damu-sec-subtab').forEach(function (pill) {
             pill.classList.toggle(
@@ -400,26 +399,111 @@
     new MutationObserver(function () {
         schedule();
         restoreSidebar();
+        bindPinning();
+        /* Строки разреза перерисовывает сервер (сменили год, области,
+           версию), и классы подсветки уходят вместе со старой разметкой.
+           Возвращаем — иначе выбранная отрасль тихо гасла бы в одном
+           разрезе из четырёх, и сравнение врало бы.
+
+           Кольца, как у Plotly, тут не будет: мы меняем классы, а не
+           перестраиваем разметку, и наблюдатель следит только за
+           `childList`, но не за атрибутами. */
+        applyRowPin();
     }).observe(document.body, {
         childList: true,
         subtree: true
     });
 
-    /* ── Example 6: разворот примера 5 в раскладку главной ──
-       Договор с Python: обёртка #damu-ex6 с атрибутом data-mode
+    /* ── Подсветка категории: почему здесь пусто ──
+
+       Здесь жила подсветка через Plotly: клик по полосе или по надписи
+       гасил остальные столбцы во всех диаграммах разреза. Снята 17.08.2026
+       вместе с самими диаграммами — разрезы теперь рисуются строками-`div`
+       (`cut_panel` в pages/section.py), и подсветка переехала ниже,
+       в «Подсветка строки разреза», где занимает пятнадцать строк вместо
+       ста восьмидесяти.
+
+       `!!` Оставлять код было нельзя, и не из-за объёма. Именно он вешал
+       вкладку: `plotly_afterplot` возвращал в `Plotly.restyle`, а `restyle`
+       снова поднимал `plotly_afterplot` — кольцо. Против него пришлось
+       завести два тормоза, обход двоичных массивов Plotly и приватное
+       `_fullData`. Всё это стало недостижимым (виды-разрезы больше
+       не строятся Plotly), но недостижимый код с такой историей — это
+       заряженное ружьё на стене: рано или поздно кто-нибудь снимет
+       с него условие и вернёт зависание. Разбор — CODE_GUIDE,
+       «Третий заход».
+    */
+
+
+    /* ── Подсветка строки разреза (полосы-дивы) ──
+
+       С 17.08.2026 разрезы на странице раздела рисует не Plotly, а обычные
+       строки-`div` (`cut_panel` в pages/section.py). Здесь от этого остаётся
+       ровно три дела: запомнить имя, повесить классы, снять.
+
+       Сравните с тем, что для того же самого требовалось на Plotly: обход
+       двоичных массивов, приватное `_fullData`, `Plotly.restyle` на каждую
+       диаграмму, два тормоза против кольца «restyle → перерисовка → restyle»
+       (оно вешало вкладку) и `captureevents` на надписях, работавший только
+       у СЭЭ. Ничего из этого больше не нужно.
+
+       Подсветка общая на всю секцию: имя ищется во ВСЕХ разрезах вкладки,
+       чтобы «Обрабатывающая пром.» зажглась разом и в выпуске продукции,
+       и в рабочих местах, и в налогах. Ради этого вопроса разрезы и стоят
+       рядом. */
+    var pinnedRow = null;
+
+    function applyRowPin() {
+        document.querySelectorAll('.damu-sec-block').forEach(function (block) {
+            var rows = block.querySelectorAll('.damu-cut-row');
+            if (!rows.length) return;
+            var found = false;
+            rows.forEach(function (row) {
+                var mine = pinnedRow !== null
+                    && row.getAttribute('data-cat') === pinnedRow;
+                row.classList.toggle('damu-pinned', mine);
+                if (mine) found = true;
+            });
+            /* !! Пометка на секции гасит непомеченные строки — но ставится,
+               только если выбранное имя в этой секции ВООБЩЕ есть. Иначе
+               разрез, где такой категории нет (у регионов нет «Обрабатывающей
+               пром.»), погас бы целиком, и это читалось бы поломкой,
+               а не «здесь этого нет». */
+            block.classList.toggle('damu-has-pin', found);
+        });
+    }
+
+    document.addEventListener('click', function (event) {
+        var row = event.target.closest('.damu-cut-row');
+        if (!row) return;
+        var name = row.getAttribute('data-cat');
+        pinnedRow = (pinnedRow === name) ? null : name;
+        applyRowPin();
+    });
+
+    /* ── Примеры 5 и 6: разворот в раскладку главной ──
+       Договор с Python: обёртка с классом .damu-ex6 и атрибутом data-mode
        ("compact" | "full"), внутри два слота .damu-ex6-compact
        и .damu-ex6-full. Здесь только переключение атрибута — всё
        движение делает CSS (блок «Пример 6» в custom.css).
        Сервер не трогаем намеренно: перерисованное дерево анимировать
-       нечем, браузеру не с чем сравнивать прежнее состояние. */
+       нечем, браузеру не с чем сравнивать прежнее состояние.
+
+       !! И кнопка, и обёртка ищутся по КЛАССУ, а не по id (18.08.2026):
+       разворот теперь у двух примеров — у пятого он раскрывает настоящую
+       главную, у шестого её копию. Их id разные (damu-ex5 / damu-ex6),
+       и обработчик, завязанный на одно имя, работал бы ровно на одном
+       из них. По классу он находит тот, что сейчас на экране: Dash
+       показывает одну страницу за раз, поэтому обёртка в документе
+       всегда ровно одна. */
     document.addEventListener('click', function (e) {
-        var ex6Btn = e.target.closest('#damu-ex6-toggle');
-        if (!ex6Btn) return;
-        var ex6 = document.getElementById('damu-ex6');
-        if (!ex6) return;
-        var isFull = ex6.getAttribute('data-mode') === 'full';
-        ex6.setAttribute('data-mode', isFull ? 'compact' : 'full');
-        ex6Btn.textContent = isFull ? 'Развернуть как на главной ▾' : 'Свернуть ▴';
+        var btn = e.target.closest('.damu-ex6-toggle');
+        if (!btn) return;
+        var wrap = document.querySelector('.damu-ex6');
+        if (!wrap) return;
+        var isFull = wrap.getAttribute('data-mode') === 'full';
+        wrap.setAttribute('data-mode', isFull ? 'compact' : 'full');
+        btn.textContent = isFull ? 'Развернуть как на главной ▾' : 'Свернуть ▴';
 
         /* !! Карта строится сразу, но лежит в схлопнутом блоке нулевой
            высоты, а Plotly меряет место при первой отрисовке — без этого
@@ -427,7 +511,7 @@
            перехода (0,55 с в custom.css) плюс запас. */
         if (!isFull && window.Plotly) {
             setTimeout(function () {
-                ex6.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
+                wrap.querySelectorAll('.js-plotly-plot').forEach(function (plot) {
                     window.Plotly.Plots.resize(plot);
                 });
             }, 620);
@@ -606,7 +690,8 @@
 
             var ahead = window.innerHeight * 2;
             var added = false;
-            document.querySelectorAll('.damu-sec-block').forEach(function (block) {
+            var blocks = document.querySelectorAll('.damu-sec-block');
+            blocks.forEach(function (block) {
                 var key = block.getAttribute('data-key');
                 if (!key || seen[key]) return;
                 /* Секции ВЫШЕ окна тоже берём: их уже проматывали.
@@ -619,9 +704,24 @@
                 }
             });
 
+            /* !! Сам таймер не гас никогда — тикал каждые 250 мс и после
+               того, как лента полностью показана, и на пустой странице
+               (например, если .damu-sec-block ещё не в DOM). Каждый тик —
+               это коллбэк, а Dash на время любого коллбэка (даже
+               клиентского и даже вернувшего no_update) красит заголовок
+               вкладки в «Updating…»: отсюда бесконечное мигание заголовка,
+               замеченное 18.08.2026. Как только все секции ленты показаны —
+               выключаем интервал сами; `switch_tab` в pages/section.py
+               включает его обратно при смене вкладки верхнего уровня,
+               когда в ленте появляются свежие, ещё не показанные секции. */
+            var allShown = blocks.length > 0 && shown.length >= blocks.length;
+
             /* Ничего нового — молчим. Вернуть тот же список значило бы
                разбудить серверный коллбэк впустую, четыре раза в секунду. */
-            return added ? shown : window.dash_clientside.no_update;
+            return [
+                added ? shown : window.dash_clientside.no_update,
+                allShown ? true : window.dash_clientside.no_update
+            ];
         }
     };
 

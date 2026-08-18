@@ -1,27 +1,34 @@
-"""Страница одного раздела — по макету 5b (и по образцу боевого портала).
+"""Страница одного раздела — по макету «Разделы — редизайн» (17.08.2026).
 
 Что на ней сверху вниз:
 
     ┌──────────┬──────────────────────────────────────────────┐
-    │ разделы  │  Гар. выдача на 28.07.2026                   │
+    │ разделы  │  Гар. выдача на 28.07.2026  [Реальные данные]│
     │ списком  │ ┌ липкие вкладки ─────────────────────────┐  │
     │ слева    │ │ Годы │ Программы │ Регионы │ БВУ │ ГФ1 │  │  │
     │ (☰ —     │ └ ── под-вкладки группы: Лимиты · Пайп ──┘  │
-    │  свернуть│  карточки-показатели                         │
-    │  список) │  ── секция «Динамика по годам» ──            │
-    │          │  ── секция «Программы» ──                    │
-    │          │  ...                                         │
+    │  свернуть│  ┌ герой ┬ диаграмма ─────────────────────┐  │
+    │  список) │  │ 24 598│ ▁▂▃▅▆█                         │  │
+    │          │  └───────┴────────────────────────────────┘  │
     └──────────┴──────────────────────────────────────────────┘
 
-**Главное отличие от прежней версии страницы: вкладка больше не переключает
-содержимое.** Раздел — одна длинная лента, все разрезы лежат на ней сразу,
-а вкладка прокручивает ленту к своей секции. Прокрутили мышью — вкладка
-подсветилась сама. Так устроен макет и так же ведёт себя боевой портал:
-человек видит, что ниже есть ещё, и не гадает, что спрятано под вкладками.
+**Вкладка ПЕРЕКЛЮЧАЕТ содержимое** (17.08.2026, решение пользователя
+по макету редизайна). До этого раздел был одной длинной лентой, а вкладка
+только прокручивал к своей секции; так было сделано осознанно и записано
+в CLAUDE.md, поэтому смена — не «поправили как было удобнее», а сознательный
+откат прежнего решения. Что от него осталось и почему:
 
-Подсветка и прокрутка сделаны на стороне браузера (`assets/dashboard.js`),
-без коллбэков: коллбэк на каждое движение колеса мыши гонял бы запросы
-к серверу десятками в секунду.
+* **внутри группы лента жива.** Вкладка «Динамика по годам» у СЭЭ держит
+  четыре подсекции, и они по-прежнему лежат стопкой, а ряд «пилюль» под
+  вкладками к ним прокручивает. Прокрутка и подсветка пилюль остались
+  в браузере (`assets/dashboard.js`), без коллбэков: коллбэк на каждое
+  движение колеса гонял бы к серверу десятки запросов в секунду;
+* **подсветку вкладки верхнего уровня теперь ставит сервер,** а не браузер:
+  активная вкладка — это уже не «докуда домотали», а состояние страницы
+  (`dcc.Store` `section-tab`). Браузеру о ней знать нечего;
+* **отложенная постройка диаграмм осталась** (`section-shown`,
+  `visibleSections`): у группы из четырёх подсекций четыре графика,
+  и строить нижние до того, как до них домотали, по-прежнему незачем.
 
 Вкладки **переносятся на второй ряд**, а не уезжают в горизонтальную
 прокрутку: прокрутку вбок на широком экране не видно, и часть вкладок
@@ -48,7 +55,7 @@ import pandas as pd
 from dash import (ALL, ClientsideFunction, Input, Output, State, callback,
                   clientside_callback, dcc, html, no_update)
 
-from core import charts, data, mockup, widgets
+from core import charts, data, examples, mockup, widgets
 
 log = logging.getLogger(__name__)
 
@@ -106,60 +113,81 @@ def top_entries(tabs: list[dict]) -> list[dict]:
     return entries
 
 
-def tab_bar(tabs: list[dict]):
-    """Липкий ряд вкладок и, под ним, ряды «пилюль» для каждой группы.
+def tab_class(entry: dict, active: bool) -> str:
+    """Классы вкладки верхнего уровня. Одна функция на разметку и коллбэк.
 
-    Разметку читает `assets/dashboard.js`, поэтому у элементов есть
-    data-атрибуты: `data-scroll-to` — куда прокрутить, `data-members` —
-    какие секции закрывает вкладка, `data-group-row` — к какой группе
-    относится ряд пилюль. Никакой логики в самих атрибутах нет, это
-    просто способ передать браузеру то, что и так знает конфиг.
+    !! Именно одна: класс ставится и при первой отрисовке (`tab_bar`),
+    и на каждое переключение (`switch_tab`). Разойдись эти два места —
+    вкладка после клика выглядела бы иначе, чем при открытии страницы,
+    а никакой ошибки бы не случилось.
+    """
+    return ("damu-sec-tab"
+            + (" active" if active else "")
+            + ("" if entry["data"] else " damu-empty"))
+
+
+def tab_bar(tabs: list[dict], active_key: str | None = None):
+    """Липкий ряд вкладок и место под ряд «пилюль» активной группы.
+
+    Вкладка верхнего уровня — обычная кнопка с составным id: по клику
+    коллбэк кладёт её ключ в `section-tab`, а оттуда уже перестраивается
+    и лента, и подсветка. Никаких data-атрибутов для браузера у неё
+    больше нет — браузеру про верхние вкладки знать нечего.
+
+    «Пилюли» — наоборот, целиком браузерные: `data-scroll-to` (куда
+    прокрутить) и `data-sub-key` (какую подсветить, когда домотали).
+    Их ряд заполняет коллбэк, потому что состав зависит от того, какая
+    группа сейчас открыта.
     """
     entries = top_entries(tabs)
-    buttons = []
-    for i, entry in enumerate(entries):
-        buttons.append(html.Button(
+    active_key = active_key or (entries[0]["key"] if entries else None)
+    buttons = [
+        html.Button(
             entry["title"],
-            className="damu-sec-tab" + (" active" if i == 0 else "")
-                      + ("" if entry["data"] else " damu-empty"),
-            **{
-                "data-tab-key": entry["key"],
-                "data-members": ",".join(entry["members"]),
-                "data-scroll-to": block_id(entry["members"][0]),
-                # Ключ секции-цели: по нему браузер подсвечивает цель ещё
-                # до прокрутки, чтобы ряд «пилюль» появился заранее
-                # и полоса вкладок не подросла на ходу
-                "data-target-key": entry["members"][0],
-                "title": ("" if entry["data"]
-                          else "Данных под этот разрез пока нет"),
-            },
-        ))
+            id={"type": "section-tab-btn", "index": entry["key"]},
+            n_clicks=0,
+            className=tab_class(entry, entry["key"] == active_key),
+            title=("" if entry["data"] else "Данных под этот разрез пока нет"),
+        )
+        for entry in entries
+    ]
+    return html.Div(
+        [
+            html.Div(buttons, className="damu-sec-tabs"),
+            html.Div(id="section-subtabs", className="damu-sec-subtabs-slot"),
+        ],
+        className="damu-sec-tabbar",
+    )
 
-    rows = [html.Div(buttons, className="damu-sec-tabs")]
-    for entry in entries:
-        if not entry["group"]:
-            continue
-        pills = [
-            html.Button(
-                tab["title"],
-                className="damu-sec-subtab" + (" damu-empty" if not tab.get("data") else ""),
-                **{"data-scroll-to": block_id(tab["key"]),
-                   "data-sub-key": tab["key"],
-                   "data-target-key": tab["key"],
-                   "title": ("" if tab.get("data")
-                             else "Данных под этот разрез пока нет")},
-            )
-            for tab in tabs if tab.get("group") == entry["group"]
-        ]
-        rows.append(html.Div(
-            pills,
-            className="damu-sec-subtabs",
-            # Ряд появляется только когда выбрана его группа — прячет
-            # и показывает его тот же dashboard.js
-            style={"display": "none"},
-            **{"data-group-row": entry["key"]},
-        ))
-    return html.Div(rows, className="damu-sec-tabbar")
+
+def subtab_row(tabs: list[dict], entry: dict | None):
+    """Ряд «пилюль» открытой группы. Не группа — пусто, ряда нет вовсе."""
+    if not entry or not entry.get("group"):
+        return None
+    pills = [
+        html.Button(
+            tab["title"],
+            className="damu-sec-subtab"
+                      + (" damu-empty" if not tab.get("data") else "")
+                      + (" active" if tab["key"] == entry["members"][0] else ""),
+            **{"data-scroll-to": block_id(tab["key"]),
+               "data-sub-key": tab["key"],
+               "data-target-key": tab["key"],
+               "title": ("" if tab.get("data")
+                         else "Данных под этот разрез пока нет")},
+        )
+        for tab in tabs if tab.get("group") == entry["group"]
+    ]
+    return html.Div(
+        [
+            # Подпись группы из макета: ряд пилюль без неё читался как
+            # второй, более мелкий ряд вкладок — непонятно, чему они
+            # подчинены. Со стрелкой видно, что это раскрытая вкладка
+            html.Span(f"{entry['title']} ▸", className="damu-sec-group-label"),
+            html.Div(pills, className="damu-sec-subtabs"),
+        ],
+        className="damu-sec-subtabs-row",
+    )
 
 
 def sections_menu(active_key: str):
@@ -177,7 +205,11 @@ def sections_menu(active_key: str):
 
     links = []
     for section in data.load_config().get("sections") or []:
-        empty = section["title"] not in with_data
+        # Приглушён раздел или нет, решают ДАННЫЕ, а значит — программа,
+        # которую он показывает, а не его собственное имя. У «СЭЭ 2» это
+        # разные строки: без `.get("program")` он висел бы приглушённым
+        # при полных данных
+        empty = (section.get("program") or section["title"]) not in with_data
         links.append(dbc.NavLink(
             [
                 html.Span(section.get("abbr", "?"), className="damu-side-abbr"),
@@ -266,6 +298,309 @@ def kpi_card(row: pd.Series, pace: float | None = None,
 
     return html.Div(body, className="damu-kpi2 h-100"
                     + (" damu-kpi2--solo" if solo else ""))
+
+
+#: Сколько лет показывает спарклайн герой-карточки. Шесть — столько же,
+#: сколько влезает в её ширину (290 px) так, чтобы излом между соседними
+#: годами был ещё различим; больше точек сливаются в линию.
+#:
+#: Значение по умолчанию — ключ `hero_spark_years` в config.yaml переопределяет
+#: его для одной вкладки, когда полное окно портит форму (см. «Созданные
+#: раб. места» в СЭЭ 2 — там ранний обвал утягивает недавние годы к полу).
+HERO_SPARK_YEARS = 6
+
+
+def hero_card(tab: dict, year: int, regions: list[str] | None,
+              program: str | None, compact: bool = False):
+    """Карточка слева от диаграммы: число года, движение и дельта.
+
+    Заменяет собой ряд `kpi` у своей вкладки (см. `hero` в config.yaml).
+    Смысл замены: у подсекции «Динамики по годам» показатель ОДИН, и
+    карточка была одиноким числом во всю ширину — `kpi_card(solo=True)`
+    даже поставили по центру, чтобы это не читалось пустой полосой.
+    Герой-карточка занимает то же место содержательно: то же число плюс
+    то, за чем на вкладку «по годам» и приходят, — куда оно движется.
+
+    !! Цвет берётся у `charts.indicator_color()`, а не считается здесь: карточка
+    стоит вплотную к своей диаграмме, и разойдись они в цвете — это была бы
+    не ошибка, а просто некрасиво, то есть никто бы не починил.
+
+    !! И цветом красится ТОЛЬКО черта сверху и спарклайн, но НЕ число
+    и НЕ дельта, хотя в макете покрашены и они. Причина замерена
+    17.08.2026 прямо в браузере: тон показателя на поверхности карточки
+    даёт 2,66 : 1 (золото, светлая тема) — крупное число не добирает
+    даже 3 : 1, положенных крупному тексту, а дельта в 11,5 px проваливает
+    свои 4,5 : 1 во всех восьми случаях (четыре карточки × две темы).
+    Черта и спарклайн — не текст, к ним этот порог не применяется,
+    и цвет остаётся там, где он и работает опознавательным знаком.
+    Существующая `kpi_card` не красит своё число ровно по той же причине.
+
+    !! Год берётся ТОТ ЖЕ, что у диаграммы рядом: выбранный в шапке, а если
+    у показателя за него данных нет — ближайший с числами (`resolve_year`,
+    то же правило, что у `kpi_card`). Показать в карточке последний год
+    ряда, как в макете, было бы проще, но тогда фильтр года в шапке
+    молча не действовал бы на половину экрана.
+    """
+    indicator = (tab.get("kpi") or [None])[0]
+    if not indicator:
+        return None
+
+    frame = data.get_country_years(indicator, regions, program)
+    if frame.empty:
+        return html.Div("За выбранный разрез данных нет.",
+                        className="damu-hero damu-hero--empty")
+
+    frame = frame.sort_values("report_year").reset_index(drop=True)
+    years = [int(y) for y in frame["report_year"]]
+    values = [float(v) for v in frame["value"]]
+
+    # Ближайший год с числами, не позже выбранного. Тот же приём, что
+    # в `data.resolve_year`, но по УЖЕ отобранному ряду: `resolve_year`
+    # не знает про выбранные области, а карточка обязана совпасть
+    # с диаграммой, которая области учитывает
+    earlier = [i for i, y in enumerate(years) if y <= int(year)]
+    at = earlier[-1] if earlier else len(years) - 1
+
+    tone = charts.indicator_color(indicator)
+    unit = (data.get_indicator_meta(indicator) or {}).get("display_unit") or ""
+    text = data.format_value(values[at], indicator)
+    number = text[:-len(unit)].strip() if unit and text.endswith(unit) else text
+    label = (data.get_indicator_meta(indicator) or {}).get("short") or tab["title"]
+
+    body = [html.Div(f"{label} · {years[at]}", className="damu-hero-label")]
+
+    if tab.get("hero") == "compare" and at > 0:
+        # Два года столбиком. Прошлый — тише и мельче, выбранный — крупно:
+        # сравнение читается сверху вниз, как в макете
+        body.append(html.Div([
+            html.Span(str(years[at - 1]), className="damu-hero-cmp-year"),
+            html.Span(data.format_value(values[at - 1], indicator),
+                      className="damu-hero-cmp-value"),
+        ], className="damu-hero-cmp"))
+        body.append(html.Div([
+            html.Span(str(years[at]), className="damu-hero-cmp-year now"),
+            html.Span(number, className="damu-hero-cmp-value now"),
+        ], className="damu-hero-cmp last"))
+    else:
+        body.append(html.Div([
+            html.Span(number, className="damu-hero-value"),
+            html.Span(unit, className="damu-hero-unit"),
+        ], className="damu-hero-figure"))
+        spark_years = tab.get("hero_spark_years") or HERO_SPARK_YEARS
+        start = max(0, at - spark_years + 1)
+        window = values[start:at + 1]
+        if len(window) > 1:
+            # !! Спарклайн берётся у `core/examples.py`, а не пишется здесь
+            # заново. Модуль помечен как временный (умрёт вместе с выбором
+            # раскладки «Разбора»), и теперь на нём висит боевая страница —
+            # об этом сказано в его же шапке. Свой такой же рядом был бы
+            # второй ломаной, которая обязана выглядеть как первая,
+            # но ничем с ней не связана.
+            body.append(html.Img(
+                src=examples.spark(window, tone, height=30),
+                className="damu-hero-spark", alt="",
+            ))
+            # Подписи относятся именно к этому годовому спарклайну. Месяцы
+            # появятся только после раскрытия выбранного года в основной
+            # диаграмме, иначе они создавали бы ложное впечатление.
+            if compact:
+                body.append(html.Div(
+                    [html.Span(str(value)[-2:]) for value in years[start:at + 1]],
+                    className="damu-hero-spark-years",
+                ))
+
+    if at > 0:
+        delta = values[at] - values[at - 1]
+        sign = "+" if delta >= 0 else "−"
+        body.append(html.Div(
+            f"{sign}{data.format_value(abs(delta), indicator)} к {years[at - 1]}",
+            className="damu-hero-delta",
+        ))
+
+    if not compact:
+        body.extend(_hero_regions(indicator, years[at], regions, program, tone))
+    return html.Div(body, className="damu-hero"
+                    + (" damu-see2-year-hero" if compact else ""),
+                    style={"borderTopColor": tone, "--damu-hero-tone": tone})
+
+
+#: Сколько регионов показывает карточка. Было пять — список кончался
+#: заметно выше низа карточки, и `margin-top: auto` на заголовке блока
+#: (custom.css, `.damu-sec-wrap--see .damu-hero-reg-head`) выбирал разницу
+#: пустым воздухом НАД списком, а не под ним (замечание пользователя
+#: 18.08.2026: «слишком много места»). Десять — половина из двадцати
+#: регионов страны, подобрано прикидкой по высотам строк в CSS под
+#: пресет `wide` (420 px); `??` точное число не перемерено в браузере.
+HERO_REGIONS = 10
+
+
+def _hero_regions(indicator: str, year: int, regions: list[str] | None,
+                  program: str | None, tone: str) -> list:
+    """Топ-5 регионов за тот же год — под числом и дельтой.
+
+    Зачем это здесь. Под карточкой оставалось около 270 px пустоты: колонка
+    тянется на всю высоту графика, а содержимого в ней было на 145. Заполнено
+    не «чем-нибудь ради симметрии», а следующим вопросом, который человек
+    и так задаёт, увидев общее число: «а за счёт кого?». Ответ на него
+    в разделе есть, но лежит на другой вкладке — «Регионы».
+
+    !! Год берётся ТОТ ЖЕ, что у числа над списком (`years[at]`), а не
+    выбранный в шапке: у показателей данные кончаются в разные годы,
+    и разойдись эти два года — карточка показывала бы итог за 2024-й
+    и разбивку за 2026-й, ничем не пометив разницу.
+
+    !! Выбранные в шапке области учитываются (`regions` уходит в запрос):
+    иначе, отфильтровав экран одной областью, человек видел бы в карточке
+    список из двадцати.
+    """
+    try:
+        top = data.get_regions(indicator, int(year), HERO_REGIONS,
+                               regions or None, program)
+    except Exception:
+        return []
+    if top.empty:
+        return []
+
+    # Доли считаются от ПЕРВОГО места, а не от суммы: список короткий,
+    # и сумма пяти строк — не целое, от которого имеет смысл брать процент.
+    # Полоска здесь отвечает на «насколько меньше лидера», а не «какая доля»
+    largest = float(top["value"].iloc[0]) or 1
+    rows = [
+        html.Div([
+            html.Span(row.region, className="damu-hero-reg-name",
+                      title=row.region),
+            html.Span(data.format_value(row.value, indicator, with_unit=False),
+                      className="damu-hero-reg-value"),
+            html.Div(html.Div(className="damu-hero-reg-fill",
+                              style={"width": f"{float(row.value) / largest * 100:.1f}%",
+                                     "backgroundColor": tone}),
+                     className="damu-hero-reg-track"),
+        ], className="damu-hero-reg")
+        for row in top.itertuples()
+    ]
+    return [
+        html.Div(f"Больше всего · {year}", className="damu-hero-reg-head"),
+        html.Div(rows, className="damu-hero-regs"),
+    ]
+
+
+def cut_panel(item: dict, year: int, regions: list[str] | None,
+              program: str | None, columns: int | None,
+              section_key: str | None = None):
+    """Разрез полосами-дивами: строка «название — полоса — число».
+
+    Заменил Plotly у видов-разрезов 17.08.2026, решение пользователя.
+    Причина не в красоте: клик. В макете разрез — это строки-`div`,
+    и кликается вся строка целиком; у Plotly подпись категории в его
+    событиях не участвует вовсе, так что дотянуться до названия удалось
+    только у СЭЭ и только через надписи с `captureevents`. На дивах клик
+    достаётся даром и работает одинаково во всех разделах.
+
+    Второе, что уходит вместе с Plotly: подсветка перестаёт быть
+    перекраской фигуры (`Plotly.restyle`) и становится классом CSS.
+    Кольцо «restyle → перерисовка → restyle», из-за которого 17.08.2026
+    вешалась вкладка, при таком устройстве невозможно в принципе.
+
+    !! Данные берутся `charts.cut_frame()` — той же функцией, что и у
+    диаграммы Plotly на «Разборе», и заголовок — тем же `charts.cut_title()`.
+    Один разрез не должен называться и считаться по-разному в двух местах.
+    """
+    column = charts.CUT_COLUMNS[item["chart"]]
+    indicator = item["indicator"]
+    # Тот же подставленный год, что у диаграмм: у показателей данные
+    # кончаются в разные годы, и заголовок обязан говорить, за какой
+    # год строки на самом деле
+    shown = data.resolve_year(indicator, int(year), program)
+    shown = int(year) if shown is None else shown
+
+    frame = charts.cut_frame(indicator, shown, column, regions, program)
+    # !! `<br>` из заголовка убираем. Это разметка Plotly: там заголовок —
+    # одна строка, и перенос приходится расставлять руками, по замеренному
+    # бюджету знаков на колонку. В HTML переносить умеет сам браузер,
+    # а вставленный `<br>` отрисовался бы буквально, четырьмя символами
+    # посреди названия (поймано сразу, `'Выпуск продукции по отраслям<br>(ОКЭД)'`).
+    title = charts.cut_title(item["chart"], indicator, year, program,
+                             columns).replace("<br>", " ")
+    meta = data.get_indicator_meta(indicator) or {}
+    tone = charts.indicator_color(indicator)
+    title_view = html.Div(title, className="damu-cut-title")
+    if section_key == "see2":
+        reference_titles = {
+            "see_jobs_created": "Созданные раб. места",
+            "see_jobs_created_industry": "Созданные раб. места",
+            "see_jobs_saved": "Сохранённые раб. места",
+            "see_jobs_saved_industry": "Сохранённые раб. места",
+        }
+        metric = reference_titles.get(indicator, meta.get("short", title))
+        unit = meta.get("display_unit", "")
+        # В референсе первый и третий показатели отмечены одним зелёным.
+        if indicator in {"see_tax_revenue", "see_tax_revenue_industry"}:
+            tone = charts.indicator_color("see_output")
+        title_view = html.Div([
+            html.Span(f"{metric} · {shown}", className="damu-see2-cut-label"),
+            html.Span(unit, className="damu-see2-cut-unit"),
+        ], className="damu-cut-title damu-see2-cut-title",
+           style={"borderBottomColor": tone})
+
+    if frame.empty:
+        return html.Div([
+            title_view,
+            html.Div("Данных по этому разрезу нет.", className="damu-cut-empty"),
+        ], className="damu-cut")
+
+    if charts.CUT_SORT.get(item["chart"]) == "alpha":
+        frame = frame.sort_values("label")
+    else:
+        frame = frame.sort_values("value", ascending=False)
+
+    # Цвет — тот же, что у диаграмм этого показателя (`tone: 1|2|3`
+    # в config.yaml). Считается ОДНОЙ функцией с ними, разбор — у неё
+    values = [float(v) for v in frame["value"]]
+    # !! Границы считаются от min/max, а НЕ от нуля. У «Создано раб. мест»
+    # по отраслям СЭЭ часть значений отрицательная (сокращение мест больше
+    # найма — это данные источника, не сбой разбора). Жёсткий отсчёт от нуля
+    # уже один раз молча съедал такие строки на диаграмме, и повторять
+    # ошибку на дивах не будем: отрицательные растут ВЛЕВО от нулевой
+    # засечки, и её видно.
+    low, high = min(values), max(values)
+    base = min(low, 0.0)
+    span = (max(high, 0.0) - base) or 1
+    zero = (0.0 - base) / span * 100
+
+    rows = []
+    for label, value in zip(frame["label"], values):
+        width = abs(value) / span * 100
+        left = zero if value >= 0 else zero - width
+        rows.append(html.Div(
+            [
+                html.Span(label, className="damu-cut-name", title=label),
+                html.Span(data.format_value(value, indicator, with_unit=False),
+                          className="damu-cut-value"),
+                html.Div(
+                    [
+                        html.Div(className="damu-cut-fill",
+                                 style={"left": f"{left:.2f}%",
+                                        "width": f"{max(width, 0.4):.2f}%",
+                                        "backgroundColor": tone}),
+                        # Нулевая засечка нужна только когда есть минус:
+                        # без него ноль и так совпадает с левым краем
+                        *([html.Div(className="damu-cut-zero",
+                                    style={"left": f"{zero:.2f}%"})]
+                          if low < 0 else []),
+                    ],
+                    className="damu-cut-track",
+                ),
+            ],
+            className="damu-cut-row",
+            # Договор с браузером: по этому имени строка находит свою
+            # пару в соседних разрезах (assets/dashboard.js)
+            **{"data-cat": str(label)},
+        ))
+
+    return html.Div([
+        title_view,
+        html.Div(rows, className="damu-cut-rows"),
+    ], className="damu-cut")
 
 
 def chart_stubs():
@@ -366,10 +701,17 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
         return dbc.Alert("Виджетов нет. Добавьте их на странице «Виджеты».",
                          color="light", className="border")
     program = widgets.program_of(section_key)
+    see2_cut_grid = (
+        section_key == "see2"
+        and all(charts.is_cut(item["chart"]) and item.get("render") != "plotly"
+                for item in items)
+    )
     columns = []
     for item in items:
         preset = widgets.size_meta(item["size"])
-        toggle = _years_toggle(item, program)
+        # Компактная карточка СЭЭ 2 показывает ровно шесть лет из макета,
+        # поэтому раскрывать скрытые годы в ней нечего.
+        toggle = None if item.get("compact_years") else _years_toggle(item, program)
         # !! Число ВНУТРИ столбца (только «Годы» у СЭЭ, core/charts.py
         # `_years_total`) красится не общей переменной `--damu-ink` — три
         # замера контраста из шести проваливали 4,5:1 (зелёный/зол.
@@ -378,18 +720,70 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
         # переключает CSS-правило на белый текст с тёмной обводкой,
         # держит контраст независимо от того, какая из трёх заливок под
         # ним — см. custom.css, блок «Число внутри столбца (СЭЭ)».
-        inside_text = item["chart"] == "years_total" and program == "СЭЭ"
+        inside_text = (
+            item["chart"] == "years_total" and program == "СЭЭ"
+            and not item.get("compact_years")
+        )
+        index = f"{tab_key}|{item['id']}"
+
+        # Виды-разрезы рисуются полосами-дивами, а не Plotly (17.08.2026,
+        # решение пользователя). Место под них — обычный контейнер, строки
+        # подставит `render_cuts`; ни высоты, ни пресета им резервировать
+        # не нужно: дивы занимают ровно столько, сколько строк в разрезе,
+        # а не столько, сколько попросил пресет.
+        #
+        # `render: plotly` в config.yaml возвращает разрезу СТАРЫЙ вид —
+        # диаграммой. Заведено под временный раздел «СЭЭ 2», где оба
+        # дизайна стоят рядом для сравнения глазами. Выберут — ключ
+        # и раздел удаляются вместе.
+        if charts.is_cut(item["chart"]) and item.get("render") != "plotly":
+            cut_slot = html.Div(
+                id={"type": "section-cut", "index": index},
+                className="damu-see2-cut-panel" if see2_cut_grid else None,
+            )
+            content = cut_slot if see2_cut_grid else dbc.Card(
+                cut_slot, className="shadow-sm p-3 h-100")
+            columns.append(dbc.Col(
+                content,
+                xs=12, lg=preset["columns"],
+                className="" if see2_cut_grid else "mb-3",
+            ))
+            continue
+
         columns.append(
             dbc.Col(
                 dbc.Card(
                     [
-                        *([toggle] if toggle is not None else []),
-                        dcc.Graph(
-                            id={"type": "section-widget",
-                                "index": f"{tab_key}|{item['id']}"},
-                            style={"height": f"{preset['height']}px"},
-                            config={"displayModeBar": False},
-                            className="damu-inside-text" if inside_text else None,
+                        # Полка над графиком: кнопка «Показать динамику»
+                        # и, когда год раскрыт, возврат к годам. Место под
+                        # возврат стоит всегда — иначе появление кнопки
+                        # сдвигало бы график на свою высоту
+                        html.Div(
+                            [
+                                html.Div(id={"type": "section-drill-note",
+                                             "index": index},
+                                         className="damu-drill-note"),
+                                *([toggle] if toggle is not None else []),
+                            ],
+                            className="damu-widget-bar",
+                            # Кнопка «Показать динамику» прячется, когда год
+                            # раскрыт: она двигает окно оси ЛЕТ, а на оси
+                            # месяцев её границы (`data-range-lo/hi`)
+                            # означали бы совсем другое
+                            id={"type": "section-widget-bar", "index": index},
+                        ),
+                        html.Div(
+                            dcc.Graph(
+                                id={"type": "section-widget", "index": index},
+                                style={"height": f"{preset['height']}px"},
+                                config={"displayModeBar": False},
+                                className="damu-inside-text" if inside_text else None,
+                            ),
+                            # Договор с браузером: по виду диаграммы
+                            # `assets/dashboard.js` понимает, можно ли
+                            # подсвечивать по клику. У «Годов» клик занят
+                            # раскрытием месяцев, там подсветки нет
+                            **{"data-chart": item["chart"]},
                         ),
                     ],
                     className="shadow-sm p-2 h-100",
@@ -405,7 +799,10 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
                 xs=12, lg=preset["columns"], className="mb-3",
             )
         )
-    return dbc.Row(columns, className="g-3")
+    grid = dbc.Row(columns, className="g-4" if see2_cut_grid else "g-3")
+    if see2_cut_grid:
+        return dbc.Card(grid, className="damu-see2-cut-grid shadow-sm")
+    return grid
 
 
 def section_block(section_key: str, tab: dict):
@@ -437,11 +834,24 @@ def section_block(section_key: str, tab: dict):
     else:
         body = [chart_stubs()]
 
-    # Карточки-показатели этой вкладки — свои у каждой, а не один общий
-    # ряд над всей лентой (так было до 04.08.2026). Место под них ставим
-    # только если во вкладке есть чему показываться: пустой Row без кпи
-    # в конфиге — лишний элемент, который никогда не заполнится
-    if tab.get("kpi"):
+    # Герой-карточка встаёт СЛЕВА от диаграмм, а не над ними, и поэтому
+    # заворачивает всё содержимое вкладки в двухколоночную сетку. Ряд
+    # карточек `kpi` при этом не рисуется вовсе: карточка одна и та же,
+    # показывать её дважды незачем (см. `hero_card`)
+    if tab.get("hero") and tab.get("data"):
+        body = [html.Div(
+            [
+                html.Div(id={"type": "section-hero", "index": tab["key"]},
+                         className="damu-hero-slot"),
+                html.Div(body, className="damu-hero-side"),
+            ],
+            className="damu-hero-row",
+        )]
+    elif tab.get("kpi"):
+        # Карточки-показатели этой вкладки — свои у каждой, а не один общий
+        # ряд над всей лентой (так было до 04.08.2026). Место под них ставим
+        # только если во вкладке есть чему показываться: пустой Row без кпи
+        # в конфиге — лишний элемент, который никогда не заполнится
         body.insert(0, dbc.Row(
             id={"type": "section-kpi", "index": tab["key"]},
             className="g-3 mb-3",
@@ -462,44 +872,49 @@ def section_block(section_key: str, tab: dict):
     )
 
 
-def section_feed(section_key: str, tabs: list[dict]) -> list:
-    """Лента раздела: вкладки одной группы собираются под общий заголовок.
+def section_feed(section_key: str, tabs: list[dict],
+                 entry: dict | None) -> list:
+    """Содержимое ОДНОЙ выбранной вкладки верхнего уровня.
 
-    Полоса вкладок наверху уже показывает группу ОДНОЙ кнопкой, которая
-    раскрывает ряд «пилюль». Лента повторяет то же устройство: заголовок
-    группы один раз, под ним её подсекции с отступом и полосой слева.
+    Обычная вкладка — один блок. Группа («Динамика по годам» у СЭЭ,
+    «ГФ1» у гарантий) — стопка своих подсекций: они и правда читаются
+    подряд, а ряд «пилюль» над ними к нужной прокручивает.
 
-    !! Без этого на Казначействе лента читалась так: ВСДС · ГФ1 · ГФ2 ·
-    ВСДС · ГФ1 · ГФ2 · … · ВСДС · ГФ1 · ГФ2 — по тройке на каждую из трёх
-    групп («Информация», «Доходность», «Trades»), и, долистав до «ГФ1»,
-    понять, чей он, было нечем: девять подписей из пятнадцати неуникальны
-    (замерено 06.08.2026). Заголовок группы возвращает потерянный контекст.
+    !! Заголовка группы в ленте больше НЕТ, и это прямое следствие
+    переключения вкладок. Он появился 06.08.2026 против такой картины
+    на Казначействе: ВСДС · ГФ1 · ГФ2 · ВСДС · ГФ1 · ГФ2 · … — по тройке
+    на каждую из трёх групп, и, долистав до «ГФ1», понять, чей он, было
+    нечем (девять подписей из пятнадцати неуникальны). Теперь на экране
+    группа всегда одна, её имя — в подсвеченной вкладке и в подписи над
+    пилюлями, и повторять его третий раз незачем. Вернутся все группы
+    на один экран — вернётся и заголовок.
 
-    Группы идут в конфиге подряд, поэтому собираем их одним проходом,
-    а не сортировкой: порядок вкладок в `config.yaml` — это и порядок
-    секций на экране, менять его нельзя.
+    Порядок подсекций — порядок в `config.yaml`: он же порядок на экране.
     """
-    feed: list = []
-    index = 0
-    while index < len(tabs):
-        group = tabs[index].get("group")
-        if not group:
-            feed.append(section_block(section_key, tabs[index]))
-            index += 1
-            continue
+    if not entry:
+        return []
+    members = set(entry["members"])
+    return [section_block(section_key, tab)
+            for tab in tabs if tab["key"] in members]
 
-        members = []
-        while index < len(tabs) and tabs[index].get("group") == group:
-            members.append(section_block(section_key, tabs[index]))
-            index += 1
-        feed.append(html.Div(
-            [
-                html.Div(group, className="damu-sec-group-title"),
-                html.Div(members, className="damu-sec-group-body"),
-            ],
-            className="damu-sec-group",
-        ))
-    return feed
+
+def source_badge(program: str | None):
+    """Плашка у заголовка: раздел на настоящих числах или на макетных.
+
+    Спрашиваем не список разделов в конфиге, а сами данные
+    (`data.get_programs()` — какие разделы реально есть в таблице фактов).
+    Плашка о происхождении чисел обязана считаться ПО ЧИСЛАМ: конфиг —
+    это намерение, а соврать здесь хуже, чем не показать вовсе.
+    """
+    try:
+        real = program in set(data.get_programs())
+    except Exception:                       # хранилища нет — судить не о чем
+        return None
+    if real:
+        return html.Span("Реальные данные", className="damu-real-badge",
+                         title="Числа приехали из хранилища, не из макета")
+    return html.Span("Макетные числа", className="damu-mock-badge",
+                     title="Источника у раздела ещё нет — числа из эскиза")
 
 
 def layout(key: str | None = None, **kwargs):
@@ -510,6 +925,8 @@ def layout(key: str | None = None, **kwargs):
                          color="warning", className="m-4")
 
     tabs = widgets.tabs_of(key)
+    entries = top_entries(tabs)
+    first = entries[0] if entries else None
 
     try:
         updated = data.get_last_update()
@@ -521,10 +938,21 @@ def layout(key: str | None = None, **kwargs):
             sections_menu(key),
             html.Div(
                 [
-                    html.H2(f"{program} на {updated}", className="damu-sec-title"),
+                    html.Div([
+                        # В заголовке — ИМЯ раздела, а не программа, чьи
+                        # данные он показывает: у «СЭЭ 2» это разные строки
+                        html.H2(f"{widgets.title_of(key) or program} на {updated}",
+                                className="damu-sec-title"),
+                        source_badge(program),
+                    ], className="damu-sec-head"),
                     # Ключ раздела держим на странице: коллбэки читают его
                     # отсюда, а не разбирают адрес заново
                     dcc.Store(id="section-key", data=key),
+                    # Выбранная вкладка верхнего уровня. Её ключ — состояние
+                    # страницы, а не браузера: от него зависит, какие
+                    # диаграммы сервер вообще станет строить
+                    dcc.Store(id="section-tab",
+                              data=first["key"] if first else None),
                     # Секции, диаграммы которых сервер уже строит. ПЕРВАЯ
                     # лежит здесь сразу, а не ждёт первого тика опроса:
                     # она видна всегда, и гонять ради неё лишний круг
@@ -533,7 +961,12 @@ def layout(key: str | None = None, **kwargs):
                     # Дальше список пополняет браузер по мере прокрутки,
                     # см. `visibleSections` в assets/dashboard.js.
                     dcc.Store(id="section-shown",
-                              data=[tabs[0]["key"]] if tabs else []),
+                              data=[first["members"][0]] if first else []),
+                    # Раскрытые в месяцы годы: {id виджета: год}. Словарь,
+                    # а не одно значение, потому что на вкладке диаграмм
+                    # бывает несколько, и раскрытие одной не должно
+                    # схлопывать соседнюю
+                    dcc.Store(id="section-drill", data={}),
                     # !! Опрос, а не обработчик прокрутки: он живёт
                     # в браузере и почти всегда возвращает `no_update`
                     # (см. там же). Четверть секунды — компромисс между
@@ -541,14 +974,110 @@ def layout(key: str | None = None, **kwargs):
                     # работой; всё равно прекращается, когда лента
                     # показана целиком.
                     dcc.Interval(id="section-shown-poll", interval=250),
-                    tab_bar(tabs),
-                    *section_feed(key, tabs),
+                    tab_bar(tabs, first["key"] if first else None),
+                    html.Div(section_feed(key, tabs, first), id="section-feed"),
                 ],
                 className="damu-sec-main",
             ),
         ],
-        className="damu-sec-wrap",
+        # Ключ раздела — класс, а не ветка разметки: общая страница остаётся
+        # одной, но у СЭЭ можно аккуратно выровнять связку «инсайт + график»
+        # без побочного эффекта на остальные программы.
+        className=f"damu-sec-wrap damu-sec-wrap--{key}",
     )
+
+
+@callback(
+    Output("section-tab", "data"),
+    Input({"type": "section-tab-btn", "index": ALL}, "n_clicks"),
+    Input("section-key", "data"),
+    State({"type": "section-tab-btn", "index": ALL}, "id"),
+)
+def pick_tab(clicks, key, ids):
+    """Какую вкладку выбрали. Сюда сходятся клик и смена раздела.
+
+    !! Проверка `click` обязательна и неочевидна. Коллбэк с `ALL` будит
+    не только нажатие: он срабатывает и когда кнопки просто ПОЯВИЛИСЬ
+    на странице — перешли в другой раздел, кнопки создались заново.
+    В этот момент `ctx.triggered_id` тоже указывает на кнопку, хотя никто
+    ничего не нажимал. Без проверки счётчика раздел открывался бы
+    на случайной вкладке — на той, чью кнопку Dash создал последней.
+    """
+    trigger = dash.ctx.triggered_id
+    if isinstance(trigger, dict) and trigger.get("type") == "section-tab-btn":
+        for click, comp_id in zip(clicks, ids):
+            if comp_id == trigger and click:
+                return trigger["index"]
+    entries = top_entries(widgets.tabs_of(key))
+    return entries[0]["key"] if entries else None
+
+
+@callback(
+    Output("section-feed", "children"),
+    Output("section-subtabs", "children"),
+    Output({"type": "section-tab-btn", "index": ALL}, "className"),
+    Output("section-shown-poll", "disabled", allow_duplicate=True),
+    Input("section-tab", "data"),
+    State("section-key", "data"),
+    State({"type": "section-tab-btn", "index": ALL}, "id"),
+    prevent_initial_call="initial_duplicate",
+)
+def switch_tab(active_key, key, ids):
+    """Перерисовывает ленту, ряд «пилюль» и подсветку под выбранную вкладку.
+
+    Три выхода одним коллбэком, а не тремя: они обязаны меняться ВМЕСТЕ.
+    Разнеси их по разным коллбэкам — и Dash не пообещает порядка, а между
+    ними страница успеет побыть в состоянии «лента новая, подсвечена
+    старая вкладка».
+
+    Вкладок в разделе не больше пятнадцати, и вся работа здесь — собрать
+    разметку: диаграммы строит уже `render_widgets`, по своему списку
+    показанных секций.
+
+    Четвёртый выход включает опрос `section-shown-poll` обратно: он мог
+    выключить сам себя (см. `visibleSections` в assets/dashboard.js), когда
+    прошлая вкладка была показана целиком, а у новой вкладки свои секции,
+    ещё не показанные никому.
+    """
+    tabs = widgets.tabs_of(key)
+    entries = top_entries(tabs)
+    entry = next((e for e in entries if e["key"] == active_key), None)
+    if entry is None:
+        entry = entries[0] if entries else None
+
+    by_key = {e["key"]: e for e in entries}
+    classes = [
+        tab_class(by_key[comp_id["index"]],
+                  entry is not None and comp_id["index"] == entry["key"])
+        for comp_id in ids
+    ]
+    return section_feed(key, tabs, entry), subtab_row(tabs, entry), classes, False
+
+
+@callback(
+    Output({"type": "section-hero", "index": ALL}, "children"),
+    Input("filter-year", "value"),
+    Input("filter-regions", "value"),
+    Input("data-version", "data"),
+    Input("section-key", "data"),
+    State({"type": "section-hero", "index": ALL}, "id"),
+)
+def render_hero(year, regions, _version, key, ids):
+    """Герой-карточки показанных вкладок.
+
+    Отдельный коллбэк от `render_kpi`, потому что карточка смотрит на
+    ДРУГИЕ данные: там ряд показателей за один год (`get_kpi`), здесь один
+    показатель за все годы (`get_country_years`) — нужна ещё и прошлогодняя
+    цифра для дельты.
+    """
+    program = widgets.program_of(key)
+    tabs_by_key = {tab["key"]: tab for tab in widgets.tabs_of(key)}
+    out = []
+    for comp_id in ids:
+        tab = tabs_by_key.get(comp_id["index"])
+        out.append(hero_card(tab, int(year), regions, program,
+                             compact=(key == "see2")) if tab else None)
+    return out
 
 
 @callback(
@@ -635,24 +1164,129 @@ def _execution_value(row: pd.Series) -> float:
 # Сама функция — в assets/dashboard.js (`dash_clientside.damu`), потому
 # что это работа с DOM: она смотрит, докуда домотали. Здесь только
 # связь «опрос → список», сервера она не касается.
+#
+# !! Второй выход — свой же флаг `disabled`. Без него интервал тикал
+# каждые 250 мс вечно, даже когда лента полностью показана, и каждый тик —
+# это коллбэк, на время которого Dash красит заголовок вкладки
+# в «Updating…»: заголовок мигал без остановки (замечено 18.08.2026).
+# Функция в JS выключает интервал сама, как только показывать больше
+# нечего; обратно включает `switch_tab` при смене вкладки верхнего уровня.
 clientside_callback(
     ClientsideFunction(namespace="damu", function_name="visibleSections"),
     Output("section-shown", "data"),
+    Output("section-shown-poll", "disabled"),
     Input("section-shown-poll", "n_intervals"),
     State("section-shown", "data"),
 )
 
 
+#: Минимум месяцев, при котором раскрытие года вообще имеет смысл.
+#: Один столбец — это не «динамика внутри года», а то же годовое число,
+#: переставленное под другую подпись. Такое встречается: у СЭЭ в источнике
+#: все строки за декабрь, и раскрытие 2024-го дало бы один столбец «дек».
+DRILL_MIN_MONTHS = 2
+
+
+def _drill_year(click: dict | None) -> int | None:
+    """Год из клика по столбцу — или None, если кликнули не в год.
+
+    Ось «Годов» объявлена категориальной (`type="category"` в `_years_total`),
+    поэтому `x` приезжает строкой «2024», а не числом. Проверяем, что это
+    и правда год: у раскрытой диаграммы на той же оси стоят «янв»…«дек»,
+    и клик по месяцу не должен читаться как выбор года.
+    """
+    points = (click or {}).get("points") or []
+    if not points:
+        return None
+    value = str(points[0].get("x", "")).strip()
+    return int(value) if value.isdigit() and len(value) == 4 else None
+
+
+@callback(
+    Output("section-drill", "data"),
+    Input({"type": "section-widget", "index": ALL}, "clickData"),
+    Input({"type": "section-drill-back", "index": ALL}, "n_clicks"),
+    State({"type": "section-widget", "index": ALL}, "id"),
+    State({"type": "section-drill-back", "index": ALL}, "id"),
+    State("section-drill", "data"),
+    State("section-key", "data"),
+)
+def pick_drill_year(clicks, back, ids, back_ids, drill, key):
+    """Клик по столбцу года раскрывает его в месяцы, повторный — сворачивает.
+
+    Здесь же обрабатывается кнопка «✕ к годам»: оба действия правят один
+    и тот же `section-drill`, а два коллбэка на один выход Dash не пустит.
+
+    !! Раскрывается только вид «Годы» (`years_total`). Клик по любой другой
+    диаграмме приходит сюда же — Dash шлёт `clickData` со всех, — и молча
+    игнорируется: там клик занят подсветкой категории, и она живёт целиком
+    в браузере (`assets/dashboard.js`).
+
+    !! Клик по УЖЕ раскрытой диаграмме возвращает к годам, каким бы столбцом
+    ни попали. Иначе человек, кликнувший в месяц, оказывался бы в тупике:
+    ничего не происходит, а почему — непонятно.
+    """
+    trigger = dash.ctx.triggered_id
+    drill = dict(drill or {})
+    if not isinstance(trigger, dict):
+        return no_update
+
+    if trigger.get("type") == "section-drill-back":
+        # !! Проверка счётчика обязательна. Кнопка «✕ к годам» РОЖДАЕТСЯ
+        # раскрытием года — её кладёт в надпись тот самый коллбэк, который
+        # раскрытие и отрисовал. Появление кнопки будит этот коллбэк точно
+        # так же, как нажатие, и без проверки год сворачивался бы обратно
+        # в тот же миг, в который раскрылся. Та же ловушка, что у `pick_tab`.
+        if not any(n and i == trigger for n, i in zip(back, back_ids)):
+            return no_update
+        drill.pop(trigger["index"], None)
+        return drill
+
+    if trigger.get("type") != "section-widget":
+        return no_update
+
+    index = trigger["index"]
+    click = next((c for c, i in zip(clicks, ids) if i == trigger), None)
+    if not click:
+        return no_update
+
+    # Диаграмма уже раскрыта — любой клик по ней сворачивает обратно
+    if index in drill:
+        drill.pop(index, None)
+        return drill
+
+    tab_key, _, widget_id = str(index).partition("|")
+    item = next(
+        (w for w in widgets.get_widgets(widgets.page_key(key, tab_key))
+         if str(w["id"]) == widget_id),
+        None,
+    )
+    if item is None or item["chart"] != "years_total":
+        return no_update
+
+    year = _drill_year(click)
+    if year is None:
+        return no_update
+    drill[index] = year
+    return drill
+
+
 @callback(
     Output({"type": "section-widget", "index": ALL}, "figure"),
+    Output({"type": "section-drill-note", "index": ALL}, "children"),
+    Output({"type": "section-widget-bar", "index": ALL}, "className"),
     Input("filter-year", "value"),
     Input("filter-regions", "value"),
     Input("data-version", "data"),
     Input("section-key", "data"),
     Input("section-shown", "data"),
+    Input("section-drill", "data"),
     State({"type": "section-widget", "index": ALL}, "id"),
+    State({"type": "section-drill-note", "index": ALL}, "id"),
+    State({"type": "section-widget-bar", "index": ALL}, "id"),
 )
-def render_widgets(year, regions, _version, key, shown, ids):
+def render_widgets(year, regions, _version, key, shown, drill,
+                   ids, note_ids, bar_ids):
     """Рисует виджеты ПОКАЗАННЫХ разрезов, считая всё только по своему разделу.
 
     Наборы перечитываются по одному разу на разрез и запоминаются в словаре:
@@ -673,15 +1307,28 @@ def render_widgets(year, regions, _version, key, shown, ids):
     версии данных перестраивает ВСЕ показанные разрезы (они входят
     в `shown`), а непоказанные пусты — им нечему устареть. Разрез,
     до которого домотают позже, построится уже с новым фильтром.
+
+    !! Фигура, надпись над ней и вид полки считаются ЗДЕСЬ ЖЕ, одним
+    проходом, а не тремя коллбэками. Они обязаны сходиться: показать
+    «✕ к годам» над диаграммой, которая осталась годовой, — прямая ложь
+    о том, что сейчас на экране. Одно решение принимается один раз.
     """
     program = widgets.program_of(key)
     ready = set(shown or [])
+    drill = drill or {}
     by_tab: dict[str, dict] = {}
-    figures = []
+    # Считаем по ключу виджета, а раскладываем по спискам ниже: у трёх
+    # выходов свой порядок компонентов, и совпадать он не обязан
+    figures: dict[str, object] = {}
+    notes: dict[str, object] = {}
+    drilled: dict[str, bool] = {}
+
     for graph_id in ids:
-        tab_key, _, widget_id = str(graph_id["index"]).partition("|")
+        index = str(graph_id["index"])
+        tab_key, _, widget_id = index.partition("|")
         if tab_key not in ready:
-            figures.append(no_update)
+            figures[index] = no_update
+            notes[index] = no_update
             continue
         if tab_key not in by_tab:
             by_tab[tab_key] = {
@@ -690,17 +1337,126 @@ def render_widgets(year, regions, _version, key, shown, ids):
             }
         item = by_tab[tab_key].get(widget_id)
         if item is None:
-            figures.append(charts.message("Этот виджет удалили.<br>Обновите страницу (F5)."))
+            figures[index] = charts.message(
+                "Этот виджет удалили.<br>Обновите страницу (F5).")
+            notes[index] = None
+            continue
+
+        preset = widgets.size_meta(item["size"])
+        chart_type, chart_year = item["chart"], year
+        monthly = None
+        monthly_is_test = False
+        open_year = drill.get(index)
+        if open_year is not None:
+            monthly_is_test = bool(item.get("test_months"))
+            months = (
+                data.get_test_monthly(item["indicator"], int(open_year),
+                                      regions or None, program)
+                if monthly_is_test else
+                data.get_monthly(item["indicator"], int(open_year),
+                                 regions or None, program)
+            )
+            if len(months) >= DRILL_MIN_MONTHS:
+                chart_type, chart_year = "months", int(open_year)
+                monthly = months
+                suffix = "тестовые месяцы" if monthly_is_test else "по месяцам"
+                notes[index] = _drill_back(index, f"{open_year} — {suffix}")
+                drilled[index] = True
+            else:
+                # !! Раскрывать нечего — и тогда НЕТ ни кнопки «✕ к годам»,
+                # ни пометки `damu-drilled` (17.08.2026, замечание
+                # пользователя: «пишет, что открылся, хотя по факту нет»).
+                # Первая версия показывала кнопку возврата в обоих случаях,
+                # чтобы из состояния всегда был выход, — и этим сама себе
+                # противоречила: кнопка «вернуться к годам» над диаграммой,
+                # которая от годов никуда не уходила, говорит человеку,
+                # что он куда-то попал. Выход из этого состояния всё равно
+                # есть: повторный клик по тому же году убирает надпись
+                # (`pick_drill_year` сворачивает то, что уже в `drill`).
+                notes[index] = html.Span(
+                    f"Помесячных данных за {open_year} нет — "
+                    f"в источнике только один месяц",
+                    className="damu-drill-text damu-drill-warn",
+                )
+        else:
+            notes[index] = None
+
+        figures[index] = charts.build(
+            chart_type, item["indicator"], chart_year, regions,
+            log=False, height=preset["height"], program=program,
+            recent_years=item.get("recent_years"),
+            # Ширина нужна заголовку: по ней он решает, переносить ли
+            # год на вторую строку (см. `Ctx.title` в core/charts.py)
+            columns=preset["columns"],
+            monthly=monthly,
+            monthly_is_test=monthly_is_test and monthly is not None,
+            compact_years=item.get("compact_years", False),
+        )
+
+    return (
+        [figures.get(str(i["index"]), no_update) for i in ids],
+        [notes.get(str(i["index"]), no_update) for i in note_ids],
+        ["damu-widget-bar" + (" damu-drilled" if drilled.get(str(i["index"])) else "")
+         for i in bar_ids],
+    )
+
+
+@callback(
+    Output({"type": "section-cut", "index": ALL}, "children"),
+    Input("filter-year", "value"),
+    Input("filter-regions", "value"),
+    Input("data-version", "data"),
+    Input("section-key", "data"),
+    Input("section-shown", "data"),
+    State({"type": "section-cut", "index": ALL}, "id"),
+)
+def render_cuts(year, regions, _version, key, shown, ids):
+    """Разрезы полосами-дивами. Тот же приём, что у `render_widgets`.
+
+    Отдельный коллбэк, а не ещё один выход у соседнего: у разрезов нет
+    ни фигуры, ни полки над ней, ни раскрытия года — общего с виджетами
+    Plotly у них только «строить лишь то, до чего домотали».
+
+    !! Отложенная постройка сохранена и здесь. Дивы дешевле фигур, но
+    ЧТЕНИЕ данных стоит столько же: разрез — это заход в таблицу фактов
+    с группировкой, и четыре таких на невидимой вкладке — четыре лишних
+    захода.
+    """
+    program = widgets.program_of(key)
+    ready = set(shown or [])
+    by_tab: dict[str, dict] = {}
+    out = []
+    for comp_id in ids:
+        index = str(comp_id["index"])
+        tab_key, _, widget_id = index.partition("|")
+        if tab_key not in ready:
+            out.append(no_update)
+            continue
+        if tab_key not in by_tab:
+            by_tab[tab_key] = {
+                str(w["id"]): w
+                for w in widgets.get_widgets(widgets.page_key(key, tab_key))
+            }
+        item = by_tab[tab_key].get(widget_id)
+        if item is None or not charts.is_cut(item["chart"]):
+            out.append(html.Div("Этот виджет удалили. Обновите страницу (F5).",
+                                className="damu-cut-empty"))
             continue
         preset = widgets.size_meta(item["size"])
-        figures.append(
-            charts.build(
-                item["chart"], item["indicator"], year, regions,
-                log=False, height=preset["height"], program=program,
-                recent_years=item.get("recent_years"),
-                # Ширина нужна заголовку: по ней он решает, переносить ли
-                # год на вторую строку (см. `Ctx.title` в core/charts.py)
-                columns=preset["columns"],
-            )
-        )
-    return figures
+        out.append(cut_panel(item, int(year), regions, program,
+                             preset["columns"], key))
+    return out
+
+
+def _drill_back(index: str, text: str, warn: bool = False):
+    """Надпись «что сейчас показано» и кнопка возврата к годам."""
+    return html.Div(
+        [
+            html.Span(text, className="damu-drill-text"
+                              + (" damu-drill-warn" if warn else "")),
+            html.Button("✕ к годам", n_clicks=0,
+                        id={"type": "section-drill-back", "index": index},
+                        className="damu-drill-back"),
+        ],
+        className="d-flex align-items-center gap-2",
+    )
