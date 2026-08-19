@@ -24,8 +24,10 @@
 """
 
 import argparse
+import contextlib
 import logging
 import math
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -38,6 +40,14 @@ from etl import load_budget
 
 DB_PATH = Path("data/analytics.duckdb")
 LOG_PATH = Path("data/etl.log")
+LOCK_PATH = Path("data/etl.lock")
+
+#: Через сколько замок считается брошенным. Прогон, переживший это время,
+#: почти наверняка не идёт, а был убит вместе с процессом (перезагрузка,
+#: kill -9, падение контейнера) — иначе замок сняла бы сама программа.
+#: Полчаса взяты с запасом: полный прогон сейчас укладывается в секунды,
+#: и даже вырасти он в сто раз, до получаса ему далеко.
+LOCK_STALE_AFTER = 30 * 60
 
 log = logging.getLogger("etl")
 
@@ -114,6 +124,64 @@ def verify(con: duckdb.DuckDBPyConnection, tables: list[str], version: int) -> l
         if not ok:
             problems.append(f"{row.indicator}: в БД {row.value_source}, в DuckDB {row.value_duck}")
     return problems
+
+
+@contextlib.contextmanager
+def single_run():
+    """Пускает внутрь один прогон за раз; второй молча уходит.
+
+    Зачем. Cron запускает `etl.run` каждые пять минут и НЕ спрашивает,
+    закончился ли прошлый (найдено внешним аудитом 18.08.2026). Пока
+    прогон укладывается в секунды, это безобидно; стоит источнику
+    вырасти — и два прогона пойдут внахлёст, оба потянут факты из боевой
+    БД и подерутся за файл хранилища.
+
+    `!!` Замок сделан ЗДЕСЬ, а не флагом `flock` в crontab, и это
+    осознанно. `flock` пришлось бы не забыть дописать в задание — то есть
+    защита держалась бы на памяти администратора и работала бы только
+    у запуска из cron, но не у запуска руками. Здесь она есть при любом
+    способе запуска. Заодно код остаётся переносимым: `flock` — команда
+    Linux, а разработка идёт под Windows.
+
+    `!!` Второй прогон уходит БЕЗ ошибки, но со строкой в журнале.
+    Наложение — это не поломка (первый прогон делает ровно ту же работу),
+    и падать из-за него значит слать cron письма об ошибке пять раз
+    в час. Но и молчать нельзя: если наложения пошли подряд, это первый
+    признак, что прогон перестал укладываться в свои пять минут.
+
+    Брошенный замок (процесс убили, замок остался) снимается по возрасту,
+    см. `LOCK_STALE_AFTER`. Иначе одно падение остановило бы ETL навсегда,
+    а заметили бы это по остывшим данным через сутки.
+    """
+    LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    if LOCK_PATH.exists():
+        age = time.time() - LOCK_PATH.stat().st_mtime
+        if age < LOCK_STALE_AFTER:
+            log.info("прогон уже идёт (замок %s, возраст %.0f сек) — пропускаем",
+                     LOCK_PATH, age)
+            yield False
+            return
+        log.warning("замок %s брошен (возраст %.0f сек > %d) — снимаем и работаем",
+                    LOCK_PATH, age, LOCK_STALE_AFTER)
+        LOCK_PATH.unlink(missing_ok=True)
+
+    # !! Создаём с O_EXCL: проверка выше и создание — не одно действие,
+    # и между ними может вклиниться сосед. O_EXCL делает создание
+    # неделимым, поэтому гонку выигрывает ровно один.
+    try:
+        fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        log.info("прогон уже идёт (замок занят соседом) — пропускаем")
+        yield False
+        return
+
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(f"pid={os.getpid()} started={datetime.now():%Y-%m-%d %H:%M:%S}\n")
+        yield True
+    finally:
+        LOCK_PATH.unlink(missing_ok=True)
 
 
 def publish_pending() -> None:
@@ -244,7 +312,12 @@ def main() -> None:
     if monitoring.init_etl():
         log.info("Sentry подключён — ошибки прогона дублируются в кабинет")
     try:
-        run(force=args.force)
+        # Замок снаружи run(): наложившийся прогон не должен делать вообще
+        # ничего — ни ходить в боевую БД за отпечатком, ни дёргать шлюз
+        with single_run() as got_lock:
+            if not got_lock:
+                return
+            run(force=args.force)
     except Exception:
         # В лог — с полным следом: cron ошибок не показывает, файл — единственный свидетель.
         #

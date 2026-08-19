@@ -188,6 +188,7 @@ def layout(**kwargs):
     State("w-new-size", "value"),
     prevent_initial_call=True,
 )
+@auth.admin_only
 def change_structure(_add, _reset, _up, _down, _del, page, indicator, chart, size):
     """Добавить, убрать, переставить, сбросить — всё, что меняет состав списка.
 
@@ -246,6 +247,7 @@ def change_structure(_add, _reset, _up, _down, _del, page, indicator, chart, siz
     State("w-page", "value"),
     prevent_initial_call=True,
 )
+@auth.admin_only
 def change_field(_indicators, _charts, _sizes, page):
     """Смена показателя, вида или размера у существующего виджета.
 

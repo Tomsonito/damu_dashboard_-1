@@ -60,7 +60,7 @@ def _config_cached(mtime: float) -> dict:
         return yaml.safe_load(f)
 
 
-def _query_storage(query: str) -> pd.DataFrame:
+def _query_storage(query: str, params: list | tuple | None = None) -> pd.DataFrame:
     """Чтение из DuckDB — единственное место, открывающее хранилище на чтение.
 
     Пока etl.run переписывает файл, тот заперт на запись — доли секунды
@@ -71,6 +71,15 @@ def _query_storage(query: str) -> pd.DataFrame:
     другой поток сайта прямо сейчас держит соединение на запись (публикует
     в 9:00 или сохраняет черновик плана — core/publish.py), а DuckDB не
     смешивает чтение и запись в одном процессе. Запись мгновенная — ждём.
+
+    `params` — значения для мест `?` в запросе (добавлено 19.08.2026 после
+    внешнего аудита). **Всё, что пришло из браузера, обязано ехать сюда
+    параметром, а не склейкой в текст запроса.** До этого номер страницы
+    подставлялся через f-строку прямо в `WHERE page = '...'`
+    (`core/widgets.py`), а приходит он из адреса — то есть текст запроса
+    отчасти писал посетитель. Чтение открыто `read_only=True`, поэтому
+    испортить базу было нельзя, но подменить условие и вычитать то, что
+    видит процесс, — можно.
     """
     if not DUCKDB_PATH.exists():
         raise FileNotFoundError(
@@ -82,7 +91,7 @@ def _query_storage(query: str) -> pd.DataFrame:
         try:
             con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
             try:
-                return con.execute(query).df()
+                return con.execute(query, params or []).df()
             finally:
                 con.close()
         except _LOCK_ERRORS as e:
@@ -271,7 +280,8 @@ CATEGORICAL = (
 def _facts_cached(version: int, demo: str, shape: int = 1) -> pd.DataFrame:
     # `shape` в теле не нужен — он часть ключа кэша, см. FACTS_SHAPE
     # version — и ключ кэша, и фильтр: в таблице лежат снимки разных версий
-    df = _query_storage(f"SELECT * EXCLUDE (version) FROM facts WHERE version = {version}")
+    df = _query_storage("SELECT * EXCLUDE (version) FROM facts WHERE version = ?",
+                        [version])
     df["is_total"] = df["is_total"].astype(bool)
 
     if demo:

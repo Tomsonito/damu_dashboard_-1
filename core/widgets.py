@@ -344,10 +344,10 @@ def is_customized(page: str = MAIN_PAGE) -> bool:
         # Хранилище ещё не доведено до новой схемы (migrate не отработал) —
         # ведём себя как раньше, чтобы страница открылась, а не упала
         return _table_ready() and bool(_query_storage(
-            f"SELECT count(*) AS n FROM widgets WHERE page = '{page}'"
+            "SELECT count(*) AS n FROM widgets WHERE page = ?", [page]
         ).iloc[0]["n"])
     df = _query_storage(
-        f"SELECT count(*) AS n FROM widget_pages WHERE page = '{page}'"
+        "SELECT count(*) AS n FROM widget_pages WHERE page = ?", [page]
     )
     return bool(df.iloc[0]["n"])
 
@@ -363,7 +363,7 @@ def get_widgets(page: str = MAIN_PAGE) -> list[dict]:
         return default_widgets(page)
     df = _query_storage(
         "SELECT id, position, chart, indicator, size FROM widgets "
-        f"WHERE page = '{page}' ORDER BY position, id"
+        "WHERE page = ? ORDER BY position, id", [page]
     )
     return df.to_dict("records")
 
@@ -678,12 +678,12 @@ def last_change(page: str = MAIN_PAGE) -> tuple[str, datetime] | None:
         return None
     df = _query_storage(
         "SELECT author, updated_at FROM widgets "
-        f"WHERE page = '{page}' ORDER BY updated_at DESC LIMIT 1"
+        "WHERE page = ? ORDER BY updated_at DESC LIMIT 1", [page]
     )
     if df.empty and _has_table("widget_pages"):
         df = _query_storage(
             "SELECT author, updated_at FROM widget_pages "
-            f"WHERE page = '{page}' ORDER BY updated_at DESC LIMIT 1"
+            "WHERE page = ? ORDER BY updated_at DESC LIMIT 1", [page]
         )
     if df.empty:
         return None
