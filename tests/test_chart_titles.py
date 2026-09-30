@@ -47,6 +47,20 @@ def test_совпавший_год_не_помечается():
     assert "данных нет" not in ctx(year=2026, asked_year=2026).title
 
 
+def test_сээ_показывает_подставленный_год_при_явном_фильтре():
+    """Короткий заголовок СЭЭ не должен спорить с видимым фильтром года."""
+    title = ctx(indicator="see_output", year=2024, asked_year=2026,
+                program="СЭЭ", columns=12).title
+    assert "2024" in title
+    assert "последние доступные данные" in title
+
+
+def test_сээ_не_повторяет_год_если_он_совпал_с_фильтром():
+    title = ctx(indicator="see_output", year=2024, asked_year=2024,
+                program="СЭЭ", columns=12).title
+    assert "2024" not in title
+
+
 def test_широкий_виджет_держит_заголовок_одной_строкой():
     """12 колонок — вся ширина сетки, переносить нечего."""
     title = ctx(cut="по регионам", columns=12).title

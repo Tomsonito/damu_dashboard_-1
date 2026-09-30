@@ -88,7 +88,10 @@
     --damu-ink: #201e1d;         /* текст: тёплый чёрный, не #000 */
     --damu-divider: rgba(32, 30, 29, 0.4);
     --damu-hairline: rgba(32, 30, 29, 0.12);
-    --damu-muted: rgba(32, 30, 29, 0.55);
+    /* 0.65 даёт 4.78 : 1 на поверхности #eae9e9. Прежние 0.55 давали
+       3.56 : 1, поэтому мелкие подписи герой- и KPI-карточек не проходили
+       порог 4.5 : 1 для обычного текста. */
+    --damu-muted: rgba(32, 30, 29, 0.65);
     /* Незаполненная часть полосок и шкал.
        !! Задана прозрачностью, а не готовым цветом, и это принципиально.
        Был `#eae7e7` — а поверхность карточки `#eae9e9`: контраст 1.02 : 1,
@@ -551,22 +554,43 @@ a:hover {
 /* --- Ряд фильтров --- */
 .damu-filters {
     display: flex;
-    align-items: flex-end;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-    padding: 1rem 1.75rem 0.9rem;
-    border-bottom: 2px solid var(--damu-divider);
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: nowrap;
+    padding: 0.42rem 1.75rem;
+    border-bottom: 1px solid var(--damu-divider);
     background-color: var(--damu-bg);
 }
-.damu-filters .form-label,
-.damu-filters label {
-    display: block;
-    font-size: 0.75rem;
-    margin-bottom: 0.3rem;
-    color: rgba(32, 30, 29, 0.7);
+.damu-filter-summary {
+    color: var(--damu-muted);
+    font-size: 0.72rem;
 }
-.damu-filter-year { width: 8rem; }
-.damu-filter-regions { min-width: 20rem; flex: 0 1 26rem; }
+.damu-filter-field {
+    min-width: 0;
+}
+.damu-filter-year {
+    width: 6.5rem;
+    min-height: 2.25rem;
+    padding-top: 0.25rem;
+    padding-bottom: 0.25rem;
+    font-size: 0.88rem;
+}
+.damu-filter-regions { min-width: 0; width: 100%; }
+.damu-filter-region-field { flex: 1 1 22rem; max-width: 32rem; }
+.damu-filter-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-left: auto;
+}
+.damu-filter-summary { white-space: nowrap; }
+
+/* Главная обходится без ряда фильтров: год там переключают кнопки витрины,
+   а разрез по регионам применять не к чему — числа макетные. Поля при этом
+   ОСТАЮТСЯ в разметке (иначе молча отвалятся кнопки года, карта и память
+   выбора между разделами) — прячется только их показ. Класс ставит
+   `toggle_filters` в app.py по адресу страницы. */
+.damu-filters-hidden { display: none; }
 
 /* «Сбросить фильтры» — прозрачная и приглушённая.
    Была кнопкой-ссылкой Bootstrap: синяя и подчёркнутая, единственное
@@ -575,9 +599,8 @@ a:hover {
 .damu-reset-filters {
     background: none;
     border: none;
-    padding: 0.3rem 0.4rem;
-    margin-bottom: 0.15rem;
-    font-size: 0.8rem;
+    padding: 0.25rem 0.35rem;
+    font-size: 0.75rem;
     font-family: inherit;
     color: var(--damu-muted);
     cursor: pointer;
@@ -587,10 +610,30 @@ a:hover {
     color: var(--damu-accent, #1f7a4d);
     background-color: rgba(32, 30, 29, 0.06);
 }
+.damu-reset-filters:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
 
-/* Свежесть данных: прижата к правому краю, с пульсирующей точкой —
-   она и есть весь «живой» акцент страницы */
-/* Блок «Данные обновлены» — две строки вместо трёх (11.08.2026).
+@media (max-width: 900px) {
+    .damu-filters { flex-wrap: wrap; }
+    .damu-filter-region-field { max-width: none; }
+    .damu-filter-actions { margin-left: auto; }
+}
+
+@media (max-width: 560px) {
+    .damu-filter-field,
+    .damu-filter-region-field,
+    .damu-filter-regions { width: 100%; min-width: 0; flex-basis: 100%; }
+    .damu-filter-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+}
+
+/* Дата публикации данных прижата к правому краю. Это отметка версии,
+   а не индикатор живого соединения, поэтому точка статична. */
+/* Блок «Данные опубликованы» — две строки вместо трёх (11.08.2026).
    Ширину шапки забирают диаграммы разделов, поэтому блоку задан потолок:
    без него длинная дата растягивала его сильнее, чем нужно. */
 .damu-updated {
@@ -621,7 +664,7 @@ a:hover {
     font-size: 0.72rem;
     color: var(--damu-muted);
 }
-.damu-live-dot {
+.damu-published-dot {
     /* Строка выровнена по базовой линии текста (дата и время разного
        размера), а кружок к базовой линии не относится — центрируем его
        отдельно, иначе он висел бы на уровне низа букв */
@@ -631,17 +674,6 @@ a:hover {
     border-radius: 50%;
     background-color: var(--damu-accent, #1f7a4d);
     display: inline-block;
-    animation: damu-live-pulse 2s ease-in-out infinite;
-}
-@keyframes damu-live-pulse {
-    0%   { opacity: 1; }
-    50%  { opacity: 0.35; }
-    100% { opacity: 1; }
-}
-/* Уважаем настройку «поменьше движения» в системе: мигание — украшение,
-   а не смысл, и тем, кому оно мешает, оно не нужно */
-@media (prefers-reduced-motion: reduce) {
-    .damu-live-dot { animation: none; }
 }
 
 .damu-content {
@@ -1543,7 +1575,7 @@ a:hover {
     font-variant-numeric: tabular-nums;
 }
 .damu-kpi2-label {
-    font-size: 0.6rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.09em;
     text-transform: uppercase;
@@ -1727,6 +1759,10 @@ a:hover {
 
 .damu-drill-text {
     font-size: 0.7rem;
+    color: var(--damu-muted);
+}
+.damu-drill-hint {
+    font-size: 0.75rem;
     color: var(--damu-muted);
 }
 /* Предупреждение «разворачивать нечего» — тем же золотом, что и прочие
@@ -2141,6 +2177,10 @@ a:hover {
     transition: opacity 0.12s, background-color 0.12s;
 }
 .damu-cut-row:hover { background-color: var(--damu-track); }
+.damu-cut-row:focus-visible {
+    outline: 2px solid var(--damu-accent, #1f7a4d);
+    outline-offset: 2px;
+}
 .damu-cut-name {
     font-size: 0.8rem;
     overflow: hidden;
@@ -2189,6 +2229,30 @@ a:hover {
 .damu-cut-row.damu-pinned .damu-cut-value { font-weight: 800; }
 .damu-cut-row.damu-pinned .damu-cut-track {
     box-shadow: 0 0 0 1px var(--damu-accent, #1f7a4d);
+}
+.damu-cut-selection {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    min-height: 28px;
+    margin-bottom: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--damu-muted);
+}
+.damu-cut-selection-reset {
+    border: 0;
+    padding: 0.2rem 0.45rem;
+    background: transparent;
+    color: var(--damu-ink);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.damu-cut-selection-reset:hover,
+.damu-cut-selection-reset:focus-visible {
+    color: var(--damu-accent, #1f7a4d);
 }
 
 
@@ -2355,7 +2419,7 @@ a:hover {
     border-top: 3px solid var(--damu-accent, #1f7a4d);
 }
 .damu-hero-label {
-    font-size: 0.62rem;
+    font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -2579,6 +2643,386 @@ a:hover {
     background-color: var(--damu-accent-soft, #e9f2ed);
 }
 
+/* ================== ВЫБОР РЕГИОНОВ ==================
+
+   Dash 4.4+ рисует dcc.Dropdown новыми классами `.dash-dropdown-*`, а не
+   прежними `.Select-*` (правила для старых оставлены выше — на случай
+   отката версии). Имена классов взяты не на глаз, а разбором пакета:
+   `dash/dcc/async-dropdown.js`.
+
+   !! Компонент подкладывает СВОИ стили из этого же js — то есть после
+   нашего файла. Поэтому селекторы здесь длиннее, чем кажется нужным
+   (`.dash-dropdown-wrapper:has(...)`): вес правила должен перевешивать
+   чужое правило с тем же именем класса. Короткий селектор проиграет
+   МОЛЧА — правило просто не применится.
+
+   Что чинится против вида «из коробки» (02.09.2026): галочки красились
+   системным синим (`accent-color` в проекте не задавался нигде), список
+   шёл сплошной лентой без отбивки поиска и кнопок, выбранные регионы
+   стояли строкой через запятую, полоса прокрутки была системной. */
+
+/* --- Поле: то, что видно, пока список закрыт --- */
+.damu-filters .dash-dropdown.damu-filter-regions,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search-container {
+    background: var(--damu-surface);
+    border-color: var(--damu-divider);
+    color: var(--damu-ink);
+    border-radius: 0;
+}
+/* Ростом вровень с полем года: рядом стоят два поля, и разная высота
+   читается как случайность вёрстки. */
+.damu-filters .dash-dropdown.damu-filter-regions {
+    min-height: 2.25rem;
+    font-size: 0.88rem;
+}
+.damu-filters .dash-dropdown.damu-filter-regions:focus,
+.damu-filters .dash-dropdown.damu-filter-regions:focus-within,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search-container:focus-within {
+    border-color: var(--damu-accent, #1f7a4d);
+    outline-color: var(--damu-accent, #1f7a4d);
+    box-shadow: 0 0 0 2px var(--damu-accent-soft, #e9f2ed);
+}
+.damu-filter-regions .dash-dropdown-value,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search,
+.damu-filter-regions .dash-dropdown-trigger-icon,
+.damu-filter-regions .dash-dropdown-clear,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option {
+    color: var(--damu-ink);
+    fill: var(--damu-ink);
+}
+.damu-filter-regions .dash-dropdown-placeholder {
+    color: var(--damu-muted);
+}
+
+/* Выбранные регионы — плитками, а не строкой через запятую.
+   Запятую ставит сам Dash правилом `:not(:first-child)::before`, здесь
+   она снимается: между плитками разделитель не нужен, его роль играет
+   промежуток. */
+.damu-filters .damu-filter-regions .dash-dropdown-value {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+}
+.damu-filters .damu-filter-regions .dash-dropdown-value-item {
+    padding: 0.08rem 0.4rem;
+    border-radius: 2px;
+    background: var(--damu-accent-soft, #e9f2ed);
+    color: var(--damu-accent-dark, #14603a);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+.damu-filters .damu-filter-regions .dash-dropdown-value-item:not(:first-child)::before {
+    content: none;
+}
+/* «Выбрано: 2» — счётчик, а не заголовок: тон приглушённый, цифра рядом
+   с плитками не должна с ними спорить. */
+.damu-filters .damu-filter-regions .dash-dropdown-value-count {
+    color: var(--damu-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
+
+/* --- Открытый список --- */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content {
+    box-shadow: var(--damu-shadow-md);
+    padding: 0.3rem 0;
+    /* !! Прокручивается ИМЕННО панель, а не список внутри неё: у списка
+       своя высота во весь перечень (замерено 02.09.2026 — 664 px на
+       двадцать регионов), высоту ограничивает панель (`maxHeight`).
+       Стояло `overflow: hidden` — и всё ниже девятой строки оказывалось
+       обрезано наглухо: колесо не работало, добраться до «Туркестанской»
+       было нечем. Ошибки при этом никакой, список просто кончался. */
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+/* Поиск отбит от списка: без отбивки строка поиска читалась как первая
+   строка списка регионов. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search-container {
+    margin: 0.1rem 0.45rem 0.35rem;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid var(--damu-divider);
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search {
+    font-size: 0.85rem;
+    padding: 0.2rem 0;
+    background: transparent;
+}
+/* Подпись «Найти регион» — своим приглушённым тоном, а не браузерным.
+   Замерено 02.09.2026: браузер ставил rgb(117, 117, 117), это 3,63 : 1
+   на тёмной панели — ниже порога 4,5 : 1. Наш `--damu-muted` даёт 4,56 : 1.
+   Собственного цвета у placeholder нет, он не наследуется от поля —
+   поэтому правило отдельное, иначе тон молча остаётся браузерным. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search::placeholder {
+    color: var(--damu-muted);
+    opacity: 1;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search-icon {
+    color: var(--damu-muted);
+    fill: var(--damu-muted);
+}
+/* Тот же фиолетовый (#7f4bc4) Dash ставит ещё в пяти местах: кольцо
+   фокуса поиска, иконка лупы под фокусом, крестик очистки и его
+   обводка, наведение на кнопки действий. Перечислены поимённо —
+   найдены разбором их же файла, а не подбором. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search-container {
+    border-radius: 0;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-search-container:focus-within .dash-dropdown-search-icon {
+    color: var(--damu-accent, #1f7a4d);
+    fill: var(--damu-accent, #1f7a4d);
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-clear {
+    color: var(--damu-muted);
+    fill: var(--damu-muted);
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-clear:hover,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-clear:focus {
+    color: var(--damu-accent, #1f7a4d);
+    fill: var(--damu-accent, #1f7a4d);
+    outline-color: var(--damu-accent, #1f7a4d);
+}
+/* Черта над рядом действий — их, снизу — наша. Оставь обе, и получится
+   двойная линия с пустой полосой между. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-actions {
+    border-top: none;
+}
+/* «Выбрано: 2» — подложка их синеватого тона, на тёмной панели она
+   выглядит грязным пятном. */
+.damu-filters .damu-filter-regions .dash-dropdown-value-count {
+    background: var(--damu-track, rgba(0, 0, 0, 0.06));
+    border-radius: 2px;
+    padding: 0.05rem 0.3rem;
+}
+
+/* «Выбрать все» / «Снять выбор» — действия, а не пункты списка.
+   Отделены снизу волосяной чертой и подсвечиваются под мышкой, иначе
+   их принимали за первые две строки перечня регионов. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-actions {
+    display: flex;
+    gap: 0.35rem;
+    padding: 0 0.6rem 0.45rem;
+    margin-bottom: 0.3rem;
+    border-bottom: 1px solid var(--damu-divider);
+}
+/* Пилюли с рамкой, а не текстовые ссылки: рамка сразу говорит, что это
+   кнопки, — раньше их принимали за первые две строки списка регионов.
+   Разрядка мелкая, но она отличает служебную подпись от названия
+   области, набранного тем же кеглем. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-action-button {
+    padding: 0.16rem 0.55rem;
+    border: 1px solid var(--damu-divider);
+    border-radius: 999px;
+    color: var(--damu-muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    background: transparent;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-action-button:hover,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-action-button:focus-visible {
+    color: var(--damu-accent, #1f7a4d);
+    border-color: var(--damu-accent, #1f7a4d);
+    background: var(--damu-accent-soft, #e9f2ed);
+}
+
+/* --- Строки списка ---
+
+   !! Строка состоит из ДВУХ вложенных элементов, и красить надо оба:
+   внешний `.dash-dropdown-option` (отбивка, фон, отступы) и внутренний
+   `.dash-options-list-option` (текст, галочка). Свои цвета Dash вешает
+   на внутренний — поэтому фон строки под мышкой становился нашим,
+   а текст оставался ИХ фиолетовым (#7f4bc4, токен
+   `--Dash-Fill-Interactive-Strong`). Ровно тот случай из правил проекта:
+   цвет пришёл не через наши переменные и обошёл тему МОЛЧА.
+   Разобрано по `dash/dcc/async-dropdown.js`, не подобрано на глаз. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.85rem;
+    /* Разделительных линеек между строками НЕТ — намеренно.
+       Своя у них была синеватая (`--Dash-Fill-Disabled`) и на тёмной
+       панели не видна; поставить нашу — список читается таблицей.
+       Строки разделяет воздух, а наведённую показывает заливка:
+       двадцать регионов так листаются спокойнее. */
+    box-shadow: none;
+    transition: background-color 120ms ease;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-options-list-option {
+    color: var(--damu-ink);
+    /* У них `align-items: baseline` — галочка вставала по базовой линии
+       текста и казалась съехавшей вниз. */
+    align-items: center;
+}
+/* Под мышкой и с клавиатуры меняется ФОН, а текст остаётся своим.
+   Их правило красит здесь текст в фиолетовый; свой цвет специально
+   не выдумываем — на подсветке он должен держать контраст в обеих темах,
+   а этого не даёт ни один акцент (то же, что с подписями диаграмм). */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-options-list-option:hover,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-options-list-option:focus-within {
+    color: var(--damu-ink);
+}
+/* Тёмная тема: браузер рисует галочки и полосу прокрутки СВОИМИ
+   системными средствами, и по умолчанию они светлые — белый квадрат
+   на тёмной панели. `color-scheme` — единственный способ сказать
+   браузеру, что подложка тёмная; цветом это не лечится. */
+:root[data-theme="dark"] .dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content {
+    color-scheme: dark;
+}
+/* Галочка рисуется НАМИ, а не браузером.
+
+   `accent-color` перекрашивает системную галочку, но не меняет её форму:
+   остаётся крупный светлый квадрат, который и делал список похожим
+   на сырую HTML-форму. `appearance: none` снимает системный вид совсем,
+   дальше квадрат и птичка — наши.
+
+   !! Сняв системный вид, обязаны нарисовать своё: без явных размеров,
+   рамки и фона поле станет невидимым, и нажимать будет не на что.
+   Поэтому рамка задана здесь же, а не «доедет отдельным правилом». */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: none;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    border: 1.5px solid var(--damu-divider);
+    border-radius: 2px;
+    background: transparent;
+    display: inline-grid;
+    place-content: center;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option:hover input[type="checkbox"] {
+    border-color: var(--damu-accent, #1f7a4d);
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option input[type="checkbox"]:checked {
+    background: var(--damu-accent, #1f7a4d);
+    border-color: var(--damu-accent, #1f7a4d);
+}
+/* Птичка — две стороны квадратика, повёрнутые на 45°. Рисуется рамками,
+   а не картинкой и не шрифтом: картинка не подстроится под тему,
+   а шрифтового значка у нас в проекте нет. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option input[type="checkbox"]:checked::before {
+    content: "";
+    width: 0.55rem;
+    height: 0.28rem;
+    border-left: 2px solid var(--damu-on-accent, #fff);
+    border-bottom: 2px solid var(--damu-on-accent, #fff);
+    transform: rotate(-45deg) translate(1px, -1px);
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--damu-accent, #1f7a4d);
+    outline-offset: 1px;
+}
+/* Одиночный выбор Dash рисует радиокнопкой и сам её прячет
+   (`width: 0` в их стилях) — трогать не нужно, но цвет пусть будет наш,
+   если её когда-нибудь покажут. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option input[type="radio"] {
+    accent-color: var(--damu-accent, #1f7a4d);
+}
+/* Список в ДВА столбца — и тогда все двадцать регионов видно разом,
+   без прокрутки. Это не только про красоту: пока список листался,
+   отмеченное уезжало из виду, и приходилось помнить, что уже выбрано.
+   Всё на экране — помнить нечего.
+
+   `columns` (многоколоночная раскладка), а не grid: она сама раскладывает
+   строки СВЕРХУ ВНИЗ и лишь потом переносит во второй столбец, то есть
+   алфавит читается естественно. Grid потребовал бы заранее знать число
+   строк, а регионов может стать больше или меньше.
+
+   `break-inside: avoid` обязателен: без него строку разрывает границей
+   столбца — галочка остаётся слева, название уезжает вправо.
+
+   Два столбца только на широком экране: в 176 px (узкая панель на
+   маленьком мониторе) «Восточно-Казахстанская» не помещается и ломается
+   переносом. Ниже порога остаётся один столбец и прокрутка. */
+@media (min-width: 1024px) {
+    .dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content {
+        min-width: 34rem;
+    }
+    .dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-options {
+        columns: 2;
+        column-gap: 0;
+    }
+    .dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option {
+        break-inside: avoid;
+    }
+}
+
+/* Города республиканского значения идут первыми (порядок задаёт
+   `_ordered_regions` в app.py) и отбиты от областей чертой: это другая
+   единица отчётности, а не «ещё одна область». Черта ставится не по
+   номеру строки, а по СМЕНЕ типа — первой области, идущей сразу за
+   городом. Номер сломался бы от любого изменения состава. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option:has(input[value^="г. "]) {
+    font-weight: 500;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option:has(input[value^="г. "])
+    + .dash-dropdown-option:not(:has(input[value^="г. "])) {
+    border-top: 1px solid var(--damu-divider);
+    margin-top: 0.25rem;
+    padding-top: 0.5rem;
+}
+
+/* Наведение и выбор — РАЗНЫЕ по смыслу, поэтому и по цвету разные:
+   наведение нейтральное («указываю сюда»), выбор акцентный («взято»).
+   Оба одним тоном — и на длинном списке не понять, где палец,
+   а где отмеченное. Наведение взято прозрачностью (`--damu-track`),
+   а не готовым цветом: прозрачный сам подстраивается под светлую
+   и тёмную подложку — то же правило, что у дорожек полосок. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option:hover,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option:focus-within {
+    background: var(--damu-track, rgba(32, 30, 29, 0.1));
+}
+/* Уже выбранный регион виден и без галочки — чертой у левого края.
+   Одной галочки мало: при прокрутке длинного списка глаз ищет строку
+   по краю, а не по значку в её середине. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-option:has(input:checked) {
+    box-shadow: inset 2px 0 0 var(--damu-accent, #1f7a4d);
+    background: var(--damu-accent-soft, #e9f2ed);
+    font-weight: 600;
+}
+
+/* Полоса прокрутки — тонкая и в тон. Системная в тёмной теме выходит
+   светлой плашкой во всю высоту списка и тянет взгляд на себя. */
+/* Оба класса намеренно: список виртуализирован, и прокручивается у него
+   не сам перечень, а внутренняя обёртка `-grid-container`. Какой из двух
+   окажется прокручиваемым, зависит от числа строк, поэтому красятся оба —
+   лишнее правило ничего не портит, пропущенное оставило бы системную
+   полосу на длинных списках (регионов 20). */
+/* Красится ПАНЕЛЬ — она и прокручивается (см. выше). Список и внутренняя
+   обёртка виртуализации добавлены на случай, когда прокрутка окажется
+   у них: Dash переносит её внутрь, когда строк становится много. Лишнее
+   правило ничего не портит, пропущенное оставило бы системную полосу. */
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-options,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-grid-container {
+    scrollbar-width: thin;
+    scrollbar-color: var(--damu-divider) transparent;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content::-webkit-scrollbar,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-options::-webkit-scrollbar,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-grid-container::-webkit-scrollbar {
+    width: 8px;
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content::-webkit-scrollbar-thumb,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-options::-webkit-scrollbar-thumb,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-grid-container::-webkit-scrollbar-thumb {
+    background: var(--damu-divider);
+}
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-content::-webkit-scrollbar-track,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-options::-webkit-scrollbar-track,
+.dash-dropdown-wrapper:has(.damu-filter-regions) .dash-dropdown-grid-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
 
 /* ================== РАЗБОР: СВОДНАЯ ТАБЛИЦА ==================
 
@@ -2710,7 +3154,9 @@ a:hover {
 .damu-ex5-c3 { --ex5-k: #b08a2e; }   /* кредитование */
 .damu-ex5-c4 { --ex5-k: #008b8a; }   /* субсидирование */
 
-:root[data-theme="dark"] .damu-ex5-c1 { --ex5-k: #2e7d55; }
+/* #3b9567 на поверхности #1c1a19 даёт 4.69 : 1. Прежний #2e7d55
+   давал 3.45 : 1 и не проходил для заголовка и процента карточки итогов. */
+:root[data-theme="dark"] .damu-ex5-c1 { --ex5-k: #3b9567; }
 :root[data-theme="dark"] .damu-ex5-c2 { --ex5-k: #4fb37f; }
 :root[data-theme="dark"] .damu-ex5-c3 { --ex5-k: #d9ae4a; }
 :root[data-theme="dark"] .damu-ex5-c4 { --ex5-k: #21a3a2; }
@@ -2777,6 +3223,13 @@ a:hover {
     cursor: pointer;
 }
 .damu-ex6-toggle:hover { filter: brightness(1.08); }
+
+/* Длины программ нормированы отдельно внутри каждого инструмента.
+   Подпись не даёт принять соседние колонки за одну общую шкалу. */
+.damu-prog-scale-note {
+    font-size: 0.75rem;
+    color: var(--damu-muted);
+}
 
 /* Движение — украшение, а не смысл: кому оно мешает, тот получает
    мгновенное переключение с тем же результатом */

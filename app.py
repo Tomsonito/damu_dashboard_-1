@@ -1,9 +1,11 @@
 import logging
 import os
+from urllib.parse import urlparse
 
 import dash
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback, ctx, dcc, html, no_update
+from flask import has_request_context, request
 
 from core import auth, data, publish, theme, widgets
 from core.cache import cache, sweep as sweep_cache
@@ -82,6 +84,22 @@ app = ThemedDash(
     # «проверяй в момент вызова, а не заранее» — обычное дело для сайта
     # из нескольких страниц с собственными коллбэками.
     suppress_callback_exceptions=True,
+    # Заголовок вкладки браузера НЕ дёргается на «Updating…».
+    #
+    # Dash по умолчанию подменяет `document.title` на «Updating...» на всё
+    # время ЛЮБОГО коллбэка — включая клиентский и включая вернувший
+    # no_update. На странице раздела опрос прокрутки тикает четыре раза
+    # в секунду, и заголовок мигал непрерывно (02.09.2026, повторно: то же
+    # самое ловили 18.08.2026 и лечили со стороны таймера — помогло не до
+    # конца, потому что мигание даёт и смена фильтра, и проверка свежести
+    # раз в 30 сек).
+    #
+    # !! Обратная сторона: теперь у медленного коллбэка НЕТ никакого
+    # признака работы — ни в заголовке, ни на странице (`dcc.Loading`
+    # нигде не стоит). Пока коллбэки быстрые, это незаметно; станут
+    # медленными — заводить показ работы на самой странице, а не
+    # возвращать мигание вкладки.
+    update_title=None,
     # Стили Bootstrap лежат локально — assets/bootstrap.min.css, Dash
     # раздаёт эту папку сам. Здесь раньше стояло
     # external_stylesheets=[dbc.themes.BOOTSTRAP], а это ссылка на
@@ -213,19 +231,20 @@ def navbar():
 
     items.append(
         html.Div([
-            html.Div("Данные обновлены", className="damu-updated-label"),
+            html.Div("Данные опубликованы", className="damu-updated-label"),
             # Дата и время — ОДНОЙ строкой (11.08.2026, просьба пользователя):
             # блок занимал три строки и заметную ширину шапки, а ширина нужна
             # диаграммам разделов. Время осталось мельче и приглушённее даты:
             # точный час нужен редко, и в один размер с датой он оттягивал бы
             # внимание на себя.
             html.Div([
-                html.Span(className="damu-live-dot"),
+                html.Span(className="damu-published-dot", **{"aria-hidden": "true"}),
                 html.Span(updated_date, id="data-updated"),
                 html.Span(updated_time, id="data-updated-time",
                           className="damu-updated-time"),
             ], className="damu-updated-value"),
-        ], className="damu-updated")
+        ], className="damu-updated",
+           title="Дата и время публикации версии данных, которую вы видите")
     )
 
     # data-navbar читает CSS: на тёмной шапке подсветка ссылки идёт светлым,
@@ -235,23 +254,15 @@ def navbar():
 
 
 def filters_bar():
-    """Скрытый ряд фильтров: года и регионов.
+    """Глобальные фильтры года и регионов.
 
-    !! **На экране его НЕТ** — от видимых фильтров отказались, у блока стоит
-    `display: none`. Но сами компоненты остаются в разметке, и убрать их
-    нельзя: на `filter-year` и `filter-regions` завязаны входы почти всех
-    коллбэков (карточки, виджеты разделов, карта). Пропадут элементы —
-    Dash не найдёт вход и уронит коллбэк целиком.
+    Фильтры живут в каркасе, а не на страницах: `dash.page_container`
+    меняет только содержимое страницы, поэтому выбор переживает переход
+    между разделами и одинаково применяется ко всем их виджетам.
 
-    Из этого следует то, о чём легко забыть: **год не «по умолчанию»,
-    а единственный.** Переключить его на сайте нечем, поэтому показатели
-    со своим последним годом видны только благодаря подстановке
-    (`data.resolve_year`), а какой год на экране — говорит подпись
-    в заголовке диаграммы и строка на карточке.
-
-    Фильтры живут в каркасе, а не на страницах: компоненты каркаса Dash
-    не пересобирает при переходе между страницами, поэтому значение
-    переживает переход.
+    Показатели заканчиваются в разные годы. Существующая подстановка
+    `data.resolve_year()` остаётся: пустую диаграмму она заменяет последним
+    доступным годом, но такой год обязан быть явно подписан в заголовке.
     """
     try:
         years = data.get_years()
@@ -260,28 +271,119 @@ def filters_bar():
         years = [2026]
         regions = []
 
+    latest_year = years[0] if years else None
     return html.Div(
         [
-            dbc.Select(
-                id="filter-year",
-                options=[{"label": str(y), "value": y} for y in years],
-                # Свежий год из данных, а не вписанный числом. Здесь стояло
-                # `2025 if 2025 in years else ...` — затычка на время, пока
-                # у части разрезов не было данных за 2026 и вкладки выходили
-                # пустыми. Пустоту теперь лечит подстановка года в самих
-                # диаграммах (`data.resolve_year`), каждая по своему
-                # показателю, а фильтр снова показывает самое свежее
-                value=years[0] if years else None,
-            ),
-            dcc.Dropdown(
-                id="filter-regions",
-                options=regions,
-                multi=True,
-            ),
-            html.Button("Сбросить", id="reset-filters"),
+            html.Div([
+                # Подписи скрыты только визуально: фильтры занимают одну
+                # строку, но экранный диктор по-прежнему называет каждое поле.
+                html.Label("Год", htmlFor="filter-year",
+                           className="visually-hidden"),
+                dbc.Select(
+                    id="filter-year",
+                    options=[{"label": str(y), "value": y} for y in years],
+                    # Свежий год берётся из данных, а не вписан числом.
+                    value=latest_year,
+                    class_name="damu-filter-year",
+                ),
+            ], className="damu-filter-field"),
+            html.Div([
+                html.Label("Регионы", htmlFor="filter-regions",
+                           className="visually-hidden"),
+                dcc.Dropdown(
+                    id="filter-regions",
+                    options=_ordered_regions(regions),
+                    multi=True,
+                    placeholder="Все регионы",
+                    # Умолчание Dash — 200 px, а регионов двадцать: в окно
+                    # попадали ТРИ строки из двадцати (замерено в браузере
+                    # 02.09.2026). Потолок поднят так, чтобы на широком
+                    # экране список умещался ЦЕЛИКОМ — он идёт в два
+                    # столбца по десять (см. `columns: 2` в custom.css).
+                    # Прокрутка при этом не отключена: на узком экране
+                    # столбец остаётся один, и она снова нужна.
+                    maxHeight=480,
+                    labels={
+                        "select_all": "Выбрать все",
+                        "deselect_all": "Снять выбор",
+                        "selected_count": "Выбрано: {num_selected}",
+                        "search": "Найти регион",
+                        "clear_search": "Очистить поиск",
+                        "clear_selection": "Очистить выбор",
+                        "no_options_found": "Регионы не найдены",
+                    },
+                    className="damu-filter-regions",
+                ),
+            ], className="damu-filter-field damu-filter-region-field"),
+            html.Div([
+                html.Div(
+                    _filter_summary(latest_year, None),
+                    id="filter-summary",
+                    className="damu-filter-summary",
+                    **{"aria-live": "polite"},
+                ),
+                html.Button(
+                    "Сбросить фильтры", id="reset-filters",
+                    className="damu-reset-filters", disabled=True,
+                ),
+            ], className="damu-filter-actions"),
         ],
-        style={"display": "none"},
+        className="damu-filters",
+        role="region",
+        **{"aria-label": "Глобальные фильтры"},
     )
+
+
+#: Города республиканского значения отличаются от областей приставкой «г. ».
+#: По ней их узнаёт и Python (порядок в списке), и CSS (селектор по value).
+CITY_PREFIX = "г. "
+
+
+def _region_value(option) -> str:
+    """Значение варианта — хоть строкой, хоть словарём `{label, value}`.
+
+    !! Обе формы законны для `dcc.Dropdown`, и сейчас `get_region_choices()`
+    отдаёт строки. Но приняв только строки, порядок молча падал бы
+    на словарях — а перейти на них могут ради подписи, отличной
+    от значения (например, «г. Алматы» показывать как «Алматы»).
+    """
+    if isinstance(option, dict):
+        return str(option.get("value", option.get("label", "")))
+    return str(option)
+
+
+def _ordered_regions(regions: list) -> list:
+    """Сначала три города, потом области — и то и другое по алфавиту.
+
+    Города республиканского значения — не то же самое, что область:
+    у них своя строка в отчётности, и в данных они всегда наверху
+    (Алматы и Астана — первые два места по выпуску). В общем алфавитном
+    списке они терялись в самом низу, потому что «г.» с маленькой буквы
+    сортируется после всех названий.
+
+    Порядок — единственное, что здесь меняется. Состав и написание берутся
+    из данных как есть: подмена названия расходится с тем, что показано
+    в диаграммах.
+    """
+    def is_city(option) -> bool:
+        return _region_value(option).startswith(CITY_PREFIX)
+
+    cities = sorted((r for r in regions if is_city(r)), key=_region_value)
+    oblasts = sorted((r for r in regions if not is_city(r)), key=_region_value)
+    return cities + oblasts
+
+
+def _filter_summary(year, regions) -> str:
+    """Короткое подтверждение фактически выбранного контекста."""
+    year_text = str(year) if year not in (None, "") else "год не выбран"
+    selected = list(regions or [])
+    if not selected:
+        region_text = "все регионы"
+    elif len(selected) == 1:
+        region_text = selected[0]
+    else:
+        region_text = f"регионов: {len(selected)}"
+    return f"Показано: {year_text} · {region_text}"
 
 
 
@@ -302,6 +404,73 @@ def reset_filters(_clicks):
     except Exception:
         return no_update, None
     return (years[0] if years else no_update), None
+
+
+@callback(
+    Output("filter-summary", "children"),
+    Output("reset-filters", "disabled"),
+    Input("filter-year", "value"),
+    Input("filter-regions", "value"),
+)
+def describe_filters(year, regions):
+    """Выбор подтверждается рядом; сброс активен только когда есть что сбрасывать."""
+    try:
+        years = data.get_years()
+        latest_year = years[0] if years else None
+    except Exception:
+        latest_year = year
+    is_default = str(year) == str(latest_year) and not regions
+    return _filter_summary(year, regions), is_default
+
+
+#: Адреса, где ряд фильтров не показывается.
+#:
+#: Главная — обзорный экран: год на ней переключают собственные кнопки
+#: витрины (см. `update_year_from_buttons`), а разрез по регионам ей нечем
+#: применить — числа там макетные (`core/mockup.py`). Ряд фильтров на ней
+#: был лишней панелью, которая ничего не меняет (02.09.2026).
+FILTERLESS_PATHS = {"/"}
+
+
+def filters_class(pathname: str | None) -> str:
+    """Класс ряда фильтров для этого адреса: пусто — показывать, класс — прятать.
+
+    !! Зовётся из ДВУХ мест — из `serve_layout` (первая отрисовка, адрес
+    берётся из запроса) и из `toggle_filters` (переходы по ссылкам, адрес
+    приходит из браузера). Оба обязаны решать одинаково, поэтому решение
+    здесь одно на двоих, а не две похожие проверки: разойдись они — ряд
+    фильтров мигнёт на главной при загрузке или останется на ней висеть.
+    """
+    return "damu-filters-hidden" if pathname in FILTERLESS_PATHS else ""
+
+
+@callback(
+    Output("filters-wrap", "className"),
+    Input("url", "pathname"),
+)
+def toggle_filters(pathname):
+    """Прячет ряд фильтров там, где на него нечему реагировать.
+
+    !! Именно ПРЯЧЕТ классом, а не убирает поля из разметки. Убрать их
+    насовсем нельзя, и не по одной причине:
+
+    * кнопки года на витрине пишут в тот же `filter-year` — без поля
+      коллбэк не сработает, и кнопки перестанут переключать год;
+    * карта на главной читает `filter-year` и `filter-regions` — без полей
+      её коллбэк не позовётся вообще, и карта останется пустой;
+    * выбор обязан переживать переход между разделами (это ради него
+      фильтры вынесены в каркас) — а поле, которого нет в разметке,
+      возвращается со значением по умолчанию.
+
+    Все три поломки — молчаливые: ошибки нет, просто перестаёт работать.
+
+    Адрес ещё не пришёл — не трогаем: начальный класс уже проставлен
+    сервером в `serve_layout`, и перебивать его догадкой значит мигнуть
+    рядом фильтров на ровном месте.
+    """
+    if pathname is None:
+        return no_update
+    return filters_class(pathname)
 
 
 @callback(
@@ -411,10 +580,19 @@ def serve_layout():
     с неё автообновление переставало работать.
     """
     return html.Div([
-        dcc.Interval(id="data-poll", interval=30 * 1000),
+        dcc.Interval(id="data-poll", interval=10 * 1000),
         dcc.Store(id="data-version", data=_safe_version()),
+        # Адрес страницы нужен ряду фильтров: на главной его прячут
+        # (см. `toggle_filters`). Свой `dcc.Location`, а не внутренний
+        # `_pages_location` системы страниц: чужой служебный id может
+        # смениться в любой версии Dash, и сломается это МОЛЧА.
+        dcc.Location(id="url", refresh=False),
         navbar(),
-        html.Div(filters_bar(), id="filters-wrap"),
+        # Класс ставится уже здесь, на сервере: дождись мы коллбэка —
+        # на главной ряд фильтров успел бы показаться и спрятаться,
+        # то есть мигнуть при каждой загрузке.
+        html.Div(filters_bar(), id="filters-wrap",
+                 className=filters_class(_current_path())),
         sections_modal(),
         html.Div(
             [
@@ -424,6 +602,28 @@ def serve_layout():
             className="damu-content",
         ),
     ])
+
+
+def _current_path() -> str | None:
+    """Адрес страницы, которую сейчас открывают, — или None, если он неизвестен.
+
+    !! Каркас собирается не только на переходе по адресу страницы: Dash
+    просит разметку отдельным запросом на служебный `/_dash-layout`, и там
+    `request.path` — это он сам, а не страница. Настоящий адрес в таком
+    запросе приходит заголовком `Referer`. Проверено запуском (02.09.2026),
+    а не предположением: на догадке ряд фильтров мигал бы при каждой
+    загрузке главной.
+
+    None значит «адрес неизвестен» — ряд фильтров тогда показывается,
+    и его прячет уже коллбэк. Показать лишнее и убрать — не страшно;
+    спрятать нужное и оставить спрятанным — потеря управления.
+    """
+    if not has_request_context():
+        return None
+    if request.path != "/_dash-layout":
+        return request.path
+    referrer = request.referrer or ""
+    return urlparse(referrer).path or None
 
 
 def _safe_version() -> str:
@@ -439,11 +639,18 @@ def _safe_version() -> str:
     Output("data-updated", "children"),
     Output("data-updated-time", "children"),
     Output("publish-banner", "children"),
+    Output("data-poll", "interval"),
     Input("data-poll", "n_intervals"),
     State("data-version", "data"),
+    State("data-poll", "interval"),
 )
-def poll_version(_, known_version):
-    """Раз в 30 сек: публикует дозревшее и сверяет версию данных.
+def poll_version(_, known_version, current_interval):
+    """Первый тик через 10 сек — опрос. Далее каждые 30.
+
+    dcc.Interval стартует с interval=10000. На первом тике коллбэк
+    возвращает interval=30000, и следующие опросы идут раз в 30 сек.
+    Так пользователь успевает посмотреть экран, прежде чем первый
+    запрос свежести уйдёт в базу.
 
     Переехало сюда из pages/main.py вместе с таймером: теперь свежесть
     сторожится на любой странице, а не только на витрине.
@@ -452,7 +659,14 @@ def poll_version(_, known_version):
     ровно в первый опрос после 9:00 (или после подъёма сервера) публикация
     и происходит, отдельного планировщика нет. В холостую это два дешёвых
     чтения. Совпала версия — `no_update`, ничего не перерисовывается.
+
+    После шлюза — poll_health(): ОДНО открытие DuckDB на всё (версия,
+    план, время публикации). Раньше это было три отдельных открытия
+    (get_display_version + get_last_update_parts), каждое 24–34 мс,
+    потому что при закрытии DuckDB выгружает базу.
     """
+    next_interval = 30_000 if current_interval == 10_000 else current_interval
+
     try:
         published = publish.publish_due()
         if published:
@@ -461,14 +675,15 @@ def poll_version(_, known_version):
         log.exception("публикация дозревшего не прошла — попробуем через 30 сек")
 
     try:
-        fresh = data.get_display_version()
+        health = data.poll_health()
+        fresh = data._display_version(health)
         banner = publish_banner()
         if known_version is not None and str(known_version) == fresh:
-            return no_update, no_update, no_update, banner
-        updated_date, updated_time = data.get_last_update_parts()
-        return fresh, updated_date, updated_time, banner
+            return no_update, no_update, no_update, banner, next_interval
+        updated_date, updated_time = data._last_update_from_health(health)
+        return fresh, updated_date, updated_time, banner, next_interval
     except Exception:
-        return no_update, no_update, no_update, None
+        return no_update, no_update, no_update, None, next_interval
 
 
 def publish_banner():

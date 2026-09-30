@@ -67,13 +67,13 @@ dash.register_page(
 )
 
 #: МАКЕТНЫЕ отрасли ОКЭД — разреза по ним в боевой базе нет вовсе.
-#: Числа из макета; когда придёт источник, список удаляется целиком,
-#: а `oked_card()` начинает звать `core/data.py`.
+#: Числа пока нули — ждёт источника по ОКЭД; когда придёт, список
+#: удаляется целиком, а `oked_card()` начинает звать `core/data.py`.
 OKED = [
-    ("Обрабатывающая пром.", 148), ("Торговля", 121),
-    ("Сельское хозяйство", 96), ("Транспорт и склад", 64),
-    ("Строительство", 52), ("Услуги", 38),
-    ("Здравоохранение", 12), ("Прочее", 9),
+    ("Обрабатывающая пром.", 0), ("Торговля", 0),
+    ("Сельское хозяйство", 0), ("Транспорт и склад", 0),
+    ("Строительство", 0), ("Услуги", 0),
+    ("Здравоохранение", 0), ("Прочее", 0),
 ]
 
 
@@ -594,7 +594,12 @@ def cut_panel(item: dict, year: int, regions: list[str] | None,
             className="damu-cut-row",
             # Договор с браузером: по этому имени строка находит свою
             # пару в соседних разрезах (assets/dashboard.js)
-            **{"data-cat": str(label)},
+            role="button",
+            tabIndex=0,
+            **{"data-cat": str(label),
+               "aria-pressed": "false",
+               "aria-label":
+                   f"Подсветить категорию {label} во всех диаграммах разреза"},
         ))
 
     return html.Div([
@@ -620,12 +625,12 @@ def chart_stubs():
 
 
 def oked_card():
-    """«ОКЭД — отрасли»: карточка из макета на макетных числах.
+    """«ОКЭД — отрасли»: карточка-заглушка, ждёт источника.
 
     Разреза по ОКЭД в боевой базе нет вообще — есть только годы и регионы.
     Карточку всё же показываем: так видно, каким разрез будет, когда данные
-    придут. Чтобы числа не приняли за настоящие, рядом стоит та же плашка
-    «Макетные числа», что и на главной.
+    придут. Чтобы числа не приняли за настоящие, рядом стоит плашка
+    «Данные в обработке».
     """
     top = max(v for _, v in OKED)
     rows = [
@@ -645,8 +650,8 @@ def oked_card():
             html.Span("ОКЭД — отрасли", style={"fontSize": "0.78rem",
                                                "fontWeight": 700}),
             html.Span("млрд ₸", className="small text-muted"),
-            html.Span("Макетные числа", className="damu-mock-badge ms-auto",
-                      title="Разреза по ОКЭД в хранилище нет — числа из эскиза"),
+            html.Span("Данные в обработке", className="damu-mock-badge ms-auto",
+                      title="Разреза по ОКЭД в хранилище нет — ожидаем источник"),
         ], className="d-flex align-items-baseline gap-2 mb-3"),
         *rows,
     ], className="damu-kpi2 h-100")
@@ -687,6 +692,36 @@ def _years_toggle(item: dict, program: str | None) -> html.Div | None:
             className="damu-years-toggle",
         ),
         className="d-flex justify-content-end mb-1",
+    )
+
+
+def _drill_hint(item: dict):
+    """Коротко объясняет скрытое действие у годовой диаграммы."""
+    if item.get("chart") != "years_total":
+        return None
+    return html.Span(
+        "Нажмите на столбец года — покажем месяцы",
+        className="damu-drill-hint",
+    )
+
+
+def _cut_selection_feedback():
+    """Подсказка и результат общей подсветки категории в разрезах."""
+    return html.Div(
+        [
+            html.Span(
+                "Выберите строку — подсветим её во всех диаграммах разреза",
+                className="damu-cut-selection-text",
+                **{"aria-live": "polite"},
+            ),
+            html.Button(
+                "Сбросить",
+                type="button",
+                className="damu-cut-selection-reset",
+                hidden=True,
+            ),
+        ],
+        className="damu-cut-selection",
     )
 
 
@@ -801,7 +836,17 @@ def widget_grid(section_key: str, tab_key: str, items: list[dict]):
         )
     grid = dbc.Row(columns, className="g-4" if see2_cut_grid else "g-3")
     if see2_cut_grid:
-        return dbc.Card(grid, className="damu-see2-cut-grid shadow-sm")
+        grid = dbc.Card(grid, className="damu-see2-cut-grid shadow-sm")
+
+    # Подсказка одна на весь набор: выбор строки действует на все соседние
+    # панели. Plotly-вариант сюда не входит — у него этого механизма нет.
+    has_clickable_cuts = any(
+        charts.is_cut(item["chart"]) and item.get("render") != "plotly"
+        for item in items
+    )
+    if has_clickable_cuts:
+        return html.Div([_cut_selection_feedback(), grid],
+                        className="damu-cut-group")
     return grid
 
 
@@ -825,7 +870,7 @@ def section_block(section_key: str, tab: dict):
         # !! Карточка показывается, только пока настоящего разреза по ОКЭД
         # у раздела НЕТ. С 07.08.2026 у гарантий, кредитов и Өрлеу он есть
         # (приехал из тех же файлов), и держать рядом с настоящими полосами
-        # выдуманные числа было бы прямым обманом — плашка «Макетные числа»
+        # нули было бы прямым обманом — плашка «Данные в обработке»
         # спасает от этого только пока настоящих цифр не существует вовсе
         if "ОКЭД" in tab.get("title", "") and not data.has_breakdown(
                 "industry", widgets.program_of(section_key)):
@@ -913,8 +958,8 @@ def source_badge(program: str | None):
     if real:
         return html.Span("Реальные данные", className="damu-real-badge",
                          title="Числа приехали из хранилища, не из макета")
-    return html.Span("Макетные числа", className="damu-mock-badge",
-                     title="Источника у раздела ещё нет — числа из эскиза")
+    return html.Span("Данные в обработке", className="damu-mock-badge",
+                     title="Источника у раздела ещё нет — ожидаем источник")
 
 
 def layout(key: str | None = None, **kwargs):
@@ -1379,7 +1424,7 @@ def render_widgets(year, regions, _version, key, shown, drill,
                     className="damu-drill-text damu-drill-warn",
                 )
         else:
-            notes[index] = None
+            notes[index] = _drill_hint(item)
 
         figures[index] = charts.build(
             chart_type, item["indicator"], chart_year, regions,

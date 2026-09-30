@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1080" width="1500" height="1080" font-family="'Segoe UI', 'Golos Text', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif">
+<rect width="1500" height="1080" fill="#f6f5f4"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#6b6663"/></marker><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#106b40"/></marker></defs>
+<text x="46" y="44" font-size="25" font-weight="700" fill="#201e1d">Дашборд Даму — кто от кого зависит</text>
+<text x="46" y="66" font-size="13" fill="#6b6663">схема собрана разбором настоящих импортов (ast); число под именем — строк в файле</text>
+<rect x="30" y="156" width="1440" height="100" rx="3" fill="#b08a2e" fill-opacity="0.05" stroke="#b08a2e" stroke-opacity="0.28"/>
+<text x="46" y="176" font-size="12.5" font-weight="700" letter-spacing="0.06em" fill="#b08a2e">ETL/ + CORE/DB.PY — ЗАБИРАЕТ ДАННЫЕ, РАБОТАЕТ ПО CRON</text>
+<rect x="30" y="396" width="1440" height="252" rx="3" fill="#1f7a4d" fill-opacity="0.05" stroke="#1f7a4d" stroke-opacity="0.28"/>
+<text x="46" y="416" font-size="12.5" font-weight="700" letter-spacing="0.06em" fill="#1f7a4d">CORE/ — СЧИТАЕТ, СТРОИТ, ХРАНИТ ПРАВИЛА</text>
+<rect x="30" y="756" width="1440" height="100" rx="3" fill="#008b8a" fill-opacity="0.05" stroke="#008b8a" stroke-opacity="0.28"/>
+<text x="46" y="776" font-size="12.5" font-weight="700" letter-spacing="0.06em" fill="#008b8a">PAGES/ — ПОКАЗЫВАЕТ</text>
+<path d="M750,116 C750,153 514,153 514,190" fill="none" stroke="#b08a2e" stroke-width="2.2" stroke-opacity="0.85" marker-end="url(#ah)"/>
+<path d="M619,217 C632,191 632,191 645,217" fill="none" stroke="#b08a2e" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M855,217 C868,191 868,191 881,217" fill="none" stroke="#b08a2e" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M986,244 C986,287 750,287 750,330" fill="none" stroke="#b08a2e" stroke-width="2.2" stroke-opacity="0.85" marker-end="url(#ah)"/>
+<path d="M750,382 C750,406 278,406 278,430" fill="none" stroke="#106b40" stroke-width="2.2" stroke-opacity="0.85" marker-end="url(#ah)"/>
+<path d="M750,985 C750,772 1222,772 1222,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,985 C750,734 514,734 514,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,985 C750,734 278,734 278,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,985 C750,734 750,734 750,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,985 C750,772 278,772 278,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,985 C750,734 1222,734 1222,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M881,457 C632,431 632,431 383,457" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M986,484 C986,495 278,495 278,506" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M383,457 C396,431 396,431 409,457" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M645,457 C514,431 514,431 383,457" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M514,506 C514,495 986,495 986,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M514,506 C514,495 278,495 278,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M619,533 C632,507 632,507 645,533" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M278,506 C278,495 514,495 514,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M278,506 C278,495 278,495 278,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M1117,457 C1104,431 1104,431 1091,457" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M1117,457 C750,431 750,431 383,457" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.22" marker-end="url(#a)"/>
+<path d="M278,790 C278,637 278,637 278,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M278,790 C278,675 986,675 986,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M278,790 C278,675 750,675 750,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M278,790 C278,675 514,675 514,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,790 C750,713 632,713 632,636" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,790 C750,675 1222,675 1222,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,790 C750,637 278,637 278,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M750,790 C750,637 750,637 750,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M514,790 C514,637 986,637 986,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M514,790 C514,637 278,637 278,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M514,790 C514,675 986,675 986,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M514,790 C514,675 750,675 750,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M514,790 C514,637 1222,637 1222,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M986,790 C986,713 632,713 632,636" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M986,790 C986,675 1222,675 1222,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M986,790 C986,675 278,675 278,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M1222,790 C1222,713 632,713 632,636" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M1222,790 C1222,675 1222,675 1222,560" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<path d="M1222,790 C1222,637 1222,637 1222,484" fill="none" stroke="#6b6663" stroke-width="1.1" stroke-opacity="0.42" marker-end="url(#a)"/>
+<rect x="600" y="70" width="300" height="46" rx="3" fill="#fdf8ec" stroke="#b08a2e" stroke-width="1.2"/>
+<rect x="600" y="70" width="4" height="46" fill="#b08a2e"/>
+<text x="615" y="93" font-size="14.5" font-weight="650" fill="#201e1d">боевая PostgreSQL</text>
+<text x="615" y="111" font-size="11.5" fill="#6b6663">read-only, своя роль</text>
+<rect x="540" y="330" width="420" height="52" rx="3" fill="#eaf3ee" stroke="#106b40" stroke-width="2.4"/>
+<rect x="540" y="330" width="4" height="52" fill="#106b40"/>
+<text x="555" y="353" font-size="14.5" font-weight="800" fill="#201e1d">data/analytics.duckdb</text>
+<text x="555" y="371" font-size="11.5" fill="#6b6663">facts · versions · plan · widgets · settings</text>
+<rect x="409" y="190" width="210" height="54" rx="3" fill="#ffffff" stroke="#b08a2e" stroke-width="1.2"/>
+<rect x="409" y="190" width="4" height="54" fill="#b08a2e"/>
+<text x="424" y="213" font-size="14.5" font-weight="650" fill="#201e1d">db.py</text>
+<text x="424" y="231" font-size="11.5" fill="#6b6663">73 строк  ·  ← 3</text>
+<rect x="645" y="190" width="210" height="54" rx="3" fill="#ffffff" stroke="#b08a2e" stroke-width="1.2"/>
+<rect x="645" y="190" width="4" height="54" fill="#b08a2e"/>
+<text x="660" y="213" font-size="14.5" font-weight="650" fill="#201e1d">load_budget.py</text>
+<text x="660" y="231" font-size="11.5" fill="#6b6663">133 строк  ·  ← 1</text>
+<rect x="881" y="190" width="210" height="54" rx="3" fill="#ffffff" stroke="#b08a2e" stroke-width="1.2"/>
+<rect x="881" y="190" width="4" height="54" fill="#b08a2e"/>
+<text x="896" y="213" font-size="14.5" font-weight="650" fill="#201e1d">run.py</text>
+<text x="896" y="231" font-size="11.5" fill="#6b6663">341 строк</text>
+<text x="1078" y="231" font-size="11" text-anchor="end" font-weight="700" fill="#b08a2e">замок прогона</text>
+<rect x="173" y="430" width="210" height="54" rx="3" fill="#f2f8f4" stroke="#1f7a4d" stroke-width="2.4"/>
+<rect x="173" y="430" width="4" height="54" fill="#1f7a4d"/>
+<text x="188" y="453" font-size="14.5" font-weight="800" fill="#201e1d">data.py</text>
+<text x="188" y="471" font-size="11.5" fill="#6b6663">1093 строк  ·  ← 12</text>
+<text x="370" y="471" font-size="11" text-anchor="end" font-weight="700" fill="#1f7a4d">дверь к данным</text>
+<rect x="409" y="430" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="409" y="430" width="4" height="54" fill="#1f7a4d"/>
+<text x="424" y="453" font-size="14.5" font-weight="650" fill="#201e1d">cache.py</text>
+<text x="424" y="471" font-size="11.5" fill="#6b6663">138 строк  ·  ← 4</text>
+<rect x="645" y="430" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="645" y="430" width="4" height="54" fill="#1f7a4d"/>
+<text x="660" y="453" font-size="14.5" font-weight="650" fill="#201e1d">publish.py</text>
+<text x="660" y="471" font-size="11.5" fill="#6b6663">467 строк  ·  ← 3</text>
+<text x="842" y="471" font-size="11" text-anchor="end" font-weight="700" fill="#1f7a4d">шлюз 9:00</text>
+<rect x="881" y="430" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="881" y="430" width="4" height="54" fill="#1f7a4d"/>
+<text x="896" y="453" font-size="14.5" font-weight="650" fill="#201e1d">charts.py</text>
+<text x="896" y="471" font-size="11.5" fill="#6b6663">1918 строк  ·  ← 3</text>
+<text x="1078" y="471" font-size="11" text-anchor="end" font-weight="700" fill="#1f7a4d">реестр @chart</text>
+<rect x="1117" y="430" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="1117" y="430" width="4" height="54" fill="#1f7a4d"/>
+<text x="1132" y="453" font-size="14.5" font-weight="650" fill="#201e1d">widgets.py</text>
+<text x="1132" y="471" font-size="11.5" fill="#6b6663">690 строк  ·  ← 3</text>
+<rect x="173" y="506" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="173" y="506" width="4" height="54" fill="#1f7a4d"/>
+<text x="188" y="529" font-size="14.5" font-weight="650" fill="#201e1d">theme.py</text>
+<text x="188" y="547" font-size="11.5" fill="#6b6663">448 строк  ·  ← 3</text>
+<rect x="409" y="506" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="409" y="506" width="4" height="54" fill="#1f7a4d"/>
+<text x="424" y="529" font-size="14.5" font-weight="650" fill="#201e1d">showcase.py</text>
+<text x="424" y="547" font-size="11.5" fill="#6b6663">574 строк  ·  ← 1</text>
+<text x="606" y="547" font-size="11" text-anchor="end" font-weight="700" fill="#1f7a4d">витрина</text>
+<rect x="645" y="506" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="645" y="506" width="4" height="54" fill="#1f7a4d"/>
+<text x="660" y="529" font-size="14.5" font-weight="650" fill="#201e1d">mockup.py</text>
+<text x="660" y="547" font-size="11.5" fill="#6b6663">413 строк  ·  ← 3</text>
+<text x="842" y="547" font-size="11" text-anchor="end" font-weight="700" fill="#1f7a4d">макет</text>
+<rect x="881" y="506" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="881" y="506" width="4" height="54" fill="#1f7a4d"/>
+<text x="896" y="529" font-size="14.5" font-weight="650" fill="#201e1d">examples.py</text>
+<text x="896" y="547" font-size="11.5" fill="#6b6663">200 строк  ·  ← 2</text>
+<rect x="1117" y="506" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="1117" y="506" width="4" height="54" fill="#1f7a4d"/>
+<text x="1132" y="529" font-size="14.5" font-weight="650" fill="#201e1d">auth.py</text>
+<text x="1132" y="547" font-size="11.5" fill="#6b6663">93 строк  ·  ← 4</text>
+<text x="1314" y="547" font-size="11" text-anchor="end" font-weight="700" fill="#1f7a4d">роли</text>
+<rect x="527" y="582" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="527" y="582" width="4" height="54" fill="#1f7a4d"/>
+<text x="542" y="605" font-size="14.5" font-weight="650" fill="#201e1d">admin.py</text>
+<text x="542" y="623" font-size="11.5" fill="#6b6663">55 строк  ·  ← 3</text>
+<rect x="763" y="582" width="210" height="54" rx="3" fill="#ffffff" stroke="#1f7a4d" stroke-width="1.2"/>
+<rect x="763" y="582" width="4" height="54" fill="#1f7a4d"/>
+<text x="778" y="605" font-size="14.5" font-weight="650" fill="#201e1d">monitoring.py</text>
+<text x="778" y="623" font-size="11.5" fill="#6b6663">52 строк  ·  ← 1</text>
+<rect x="173" y="790" width="210" height="54" rx="3" fill="#ffffff" stroke="#008b8a" stroke-width="1.2"/>
+<rect x="173" y="790" width="4" height="54" fill="#008b8a"/>
+<text x="188" y="813" font-size="14.5" font-weight="650" fill="#201e1d">main.py</text>
+<text x="188" y="831" font-size="11.5" fill="#6b6663">971 строк</text>
+<text x="370" y="831" font-size="11" text-anchor="end" font-weight="700" fill="#008b8a">главный экран</text>
+<rect x="409" y="790" width="210" height="54" rx="3" fill="#ffffff" stroke="#008b8a" stroke-width="1.2"/>
+<rect x="409" y="790" width="4" height="54" fill="#008b8a"/>
+<text x="424" y="813" font-size="14.5" font-weight="650" fill="#201e1d">section.py</text>
+<text x="424" y="831" font-size="11.5" fill="#6b6663">1462 строк</text>
+<text x="606" y="831" font-size="11" text-anchor="end" font-weight="700" fill="#008b8a">раздел</text>
+<rect x="645" y="790" width="210" height="54" rx="3" fill="#ffffff" stroke="#008b8a" stroke-width="1.2"/>
+<rect x="645" y="790" width="4" height="54" fill="#008b8a"/>
+<text x="660" y="813" font-size="14.5" font-weight="650" fill="#201e1d">plan_input.py</text>
+<text x="660" y="831" font-size="11.5" fill="#6b6663">269 строк</text>
+<rect x="881" y="790" width="210" height="54" rx="3" fill="#ffffff" stroke="#008b8a" stroke-width="1.2"/>
+<rect x="881" y="790" width="4" height="54" fill="#008b8a"/>
+<text x="896" y="813" font-size="14.5" font-weight="650" fill="#201e1d">settings.py</text>
+<text x="896" y="831" font-size="11.5" fill="#6b6663">275 строк</text>
+<rect x="1117" y="790" width="210" height="54" rx="3" fill="#ffffff" stroke="#008b8a" stroke-width="1.2"/>
+<rect x="1117" y="790" width="4" height="54" fill="#008b8a"/>
+<text x="1132" y="813" font-size="14.5" font-weight="650" fill="#201e1d">widgets_edit.py</text>
+<text x="1132" y="831" font-size="11.5" fill="#6b6663">291 строк</text>
+<rect x="645" y="985" width="210" height="54" rx="3" fill="#ffffff" stroke="#201e1d" stroke-width="1.2"/>
+<rect x="645" y="985" width="4" height="54" fill="#201e1d"/>
+<text x="660" y="1008" font-size="14.5" font-weight="650" fill="#201e1d">app.py</text>
+<text x="660" y="1026" font-size="11.5" fill="#6b6663">526 строк  ·  каркас и опрос</text>
+<text x="842" y="1026" font-size="11" text-anchor="end" font-weight="700" fill="#201e1d">шапка</text>
+<text x="46" y="1038" font-size="12" fill="#6b6663">← N — сколько модулей импортируют этот файл. Толстая стрелка — путь данных. Тонкая — импорт.</text>
+<text x="1454" y="1038" font-size="12" text-anchor="end" fill="#6b6663">26 модулей · 47 связей · 11388 строк</text>
+</svg>

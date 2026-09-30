@@ -126,6 +126,62 @@ def _connect_write() -> duckdb.DuckDBPyConnection:
     raise RuntimeError(f"Хранилище {DUCKDB_PATH} занято записью дольше ожидания: {last_error}")
 
 
+def poll_health() -> dict:
+    """ОДНО открытие DuckDB: версия, план, время публикации.
+
+    Замещает три отдельных открытия (get_published_version + _plan_stamp +
+    _last_publish_time), каждое из которых стоит 24–34 мс: при закрытии
+    последнего соединения DuckDB выгружает базу, и следующее открытие
+    грузит её заново. Здесь всё в одном соединении — ~25 мс вместо ~81.
+
+    Возвращает словарь:
+      version       — номер опубликованной версии (int)
+      plan_n        — строк опубликованного плана (int)
+      plan_t        — max(published_at) или None
+      pub_date      — день публикации (int) или None
+      pub_month     — месяц (int) или None
+      pub_time      — строка "HH:MM" или None
+    """
+    con = duckdb.connect(str(DUCKDB_PATH), read_only=True)
+    try:
+        # Номер опубликованной версии
+        row = con.execute(
+            "SELECT coalesce(max(version), 0) AS v FROM versions WHERE status = 'published'"
+        ).fetchone()
+        version = int(row[0])
+
+        # Отпечаток плана
+        plan_row = con.execute(
+            "SELECT count(*) AS n, max(published_at) AS t FROM plan WHERE status = 'published'"
+        ).fetchone()
+        plan_n = int(plan_row[0])
+        plan_t = plan_row[1]
+
+        # Время последней публикации
+        ts_row = con.execute(
+            "SELECT coalesce(published_at, run_at) AS t FROM versions "
+            "WHERE status = 'published' ORDER BY version DESC LIMIT 1"
+        ).fetchone()
+        pub_date = pub_month = None
+        pub_time = None
+        if ts_row and ts_row[0] is not None and not pd.isna(ts_row[0]):
+            ts = pd.to_datetime(ts_row[0])
+            pub_date = ts.day
+            pub_month = ts.month
+            pub_time = ts.strftime("%H:%M")
+
+        return {
+            "version": version,
+            "plan_n": plan_n,
+            "plan_t": plan_t,
+            "pub_date": pub_date,
+            "pub_month": pub_month,
+            "pub_time": pub_time,
+        }
+    finally:
+        con.close()
+
+
 def get_published_version() -> int:
     """Номер ОПУБЛИКОВАННОЙ версии данных — одна строка из `versions`, дёшево.
 
@@ -157,6 +213,12 @@ def _plan_stamp() -> str:
     return f"{int(df.iloc[0]['n'])}@{df.iloc[0]['t']}"
 
 
+def _display_version(health: dict) -> str:
+    """Составляет display-версию из уже готовых данных poll_health()."""
+    plan_stamp = f"{health['plan_n']}@{health['plan_t']}" if health["plan_t"] else "0"
+    return f"{health['version']}|{plan_stamp}"
+
+
 def get_display_version() -> str:
     """Что сейчас показывает витрина: версия фактов + отпечаток плана.
 
@@ -164,8 +226,15 @@ def get_display_version() -> str:
     Изменилась — значит, опубликована новая версия данных ИЛИ новый план,
     и коллбэки перерисуются. Оба события меняют цифры на экране, поэтому
     следить только за версией фактов было бы мало.
+
+    Использует poll_health() — одно открытие DuckDB вместо двух отдельных.
     """
-    return f"{get_published_version()}|{_plan_stamp()}"
+    return _display_version(poll_health())
+
+
+def _display_version_from_health(health: dict) -> str:
+    """Alias — для совместимости с коллбэком, который получает health-словарь."""
+    return _display_version(health)
 
 
 def load_facts() -> pd.DataFrame:
@@ -209,7 +278,7 @@ def load_facts() -> pd.DataFrame:
 #: разбора кэш продолжает отдавать таблицу старой формы. Так и случилось
 #: 07.08.2026: колонки перевели в категории, замер показал прежние 177 МБ,
 #: и минуту было непонятно, почему правка «не работает».
-FACTS_SHAPE = 2
+FACTS_SHAPE = 3
 
 
 def _request_memo() -> dict | None:
@@ -276,6 +345,55 @@ CATEGORICAL = (
 )
 
 
+#: Разные источники называют один регион по-разному: кратко, аббревиатурой
+#: или через название регионального филиала. На витрину должна выходить одна
+#: география, иначе один регион распадается на несколько пунктов фильтра и
+#: несколько полос диаграммы. Оригиналы в data/raw не меняем — каноническое
+#: имя присваивается только снимку, который читает сайт.
+#:
+#: Абай, Жетісу и Ұлытау оставлены в казахском написании по решению
+#: пользователя 02.09.2026.
+REGION_ALIASES = {
+    "РФ по области Абай": "Абай",
+    "РФ по Акмолинской области": "Акмолинская",
+    "РФ по Актюбинской области": "Актюбинская",
+    "РФ по Алматинской области": "Алматинская",
+    "РФ по Атырауской области": "Атырауская",
+    "ВКО": "Восточно-Казахстанская",
+    "РФ по Восточно-Казахстанской области": "Восточно-Казахстанская",
+    "РФ по Жамбылской области": "Жамбылская",
+    "Жетысу": "Жетісу",
+    "РФ по области Жетiсу": "Жетісу",
+    "ЗКО": "Западно-Казахстанская",
+    "РФ по Западно-Казахстанской области": "Западно-Казахстанская",
+    "РФ по Карагандинской области": "Карагандинская",
+    "РФ по Костанайской области": "Костанайская",
+    "РФ по Кызылординской области": "Кызылординская",
+    "РФ по Мангистауской области": "Мангистауская",
+    "РФ по Павлодарской области": "Павлодарская",
+    "СКО": "Северо-Казахстанская",
+    "РФ по Северо-Казахстанской области": "Северо-Казахстанская",
+    "РФ по Туркестанской области": "Туркестанская",
+    "Улытау": "Ұлытау",
+    "РФ по области Ұлытау": "Ұлытау",
+    "г.Алматы": "г. Алматы",
+    "РФ по г. Алматы": "г. Алматы",
+    "г.Астана": "г. Астана",
+    "РФ по г. Астана": "г. Астана",
+    "г.Шымкент": "г. Шымкент",
+    "РФ по г. Шымкент": "г. Шымкент",
+}
+
+# Это не географические значения. Строки остаются в фактах: они нужны для
+# общего итога и других разрезов, но выбирать их как область нельзя.
+NON_GEOGRAPHIC_REGIONS = {"Неизвестно", "Департамент гарантирования"}
+
+
+def _canonical_regions(series: pd.Series) -> pd.Series:
+    """Приводит названия регионов разных источников к одному справочнику."""
+    return series.replace(REGION_ALIASES)
+
+
 @cache.memoize()
 def _facts_cached(version: int, demo: str, shape: int = 1) -> pd.DataFrame:
     # `shape` в теле не нужен — он часть ключа кэша, см. FACTS_SHAPE
@@ -292,6 +410,9 @@ def _facts_cached(version: int, demo: str, shape: int = 1) -> pd.DataFrame:
         extra = _query_storage("SELECT * FROM demo_facts")
         extra["is_total"] = extra["is_total"].astype(bool)
         df = pd.concat([df, extra], ignore_index=True)
+
+    if "region" in df.columns:
+        df["region"] = _canonical_regions(df["region"])
 
     # Разрезы — категориями, а не строками. Повод не в аккуратности,
     # а в весе: когда 07.08.2026 к фактам добавились ОКЭД, БВУ,
@@ -777,9 +898,15 @@ def get_kpi(year: int, program: str | None = None) -> pd.DataFrame:
 
 
 def get_region_choices() -> list[str]:
-    """Регионы по алфавиту — для фильтра. Строка итога исключена."""
+    """Канонические регионы по алфавиту — для географического фильтра."""
     df = load_facts()
-    return sorted(df.loc[~df.is_total, "region"].unique().tolist())
+    regions = df.loc[
+        (~df.is_total)
+        & df["region"].notna()
+        & ~df["region"].isin(NON_GEOGRAPHIC_REGIONS),
+        "region",
+    ]
+    return sorted(regions.unique().tolist())
 
 
 
@@ -1047,6 +1174,13 @@ MONTHS_OF = (
 )
 
 
+def _last_update_from_health(health: dict) -> tuple[str, str]:
+    """Составляет дату и время публикации из готовых данных poll_health()."""
+    if health["pub_date"] is None:
+        return "—", ""
+    return f"{health['pub_date']} {MONTHS_OF[health['pub_month'] - 1]}", health["pub_time"]
+
+
 def get_last_update_parts() -> tuple[str, str]:
     """Момент последней публикации двумя строками: «28 июля» и «09:58».
 
@@ -1056,11 +1190,10 @@ def get_last_update_parts() -> tuple[str, str]:
 
     Дата показывается всегда, даже сегодняшняя: две строки не создают
     той путаницы, из-за которой get_last_update() её прячет.
+
+    Использует poll_health() — одно открытие DuckDB вместо двух отдельных.
     """
-    ts = _last_publish_time()
-    if ts is None:
-        return "—", ""
-    return f"{ts.day} {MONTHS_OF[ts.month - 1]}", ts.strftime("%H:%M")
+    return _last_update_from_health(poll_health())
 
 
 def _last_publish_time():

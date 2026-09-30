@@ -1,4 +1,4 @@
-"""Макетные числа главной: то, что выводится из чисел, обязано сходиться.
+"""Числа главной (пока нули): то, что выводится из чисел, обязано сходиться.
 
 Файл `core/mockup.py` временный — придут настоящие разрезы, он удалится
 целиком. Но пока он питает самый показываемый экран проекта, и расхождение
@@ -68,12 +68,18 @@ def test_уникальных_не_больше_чем_проектов(today):
 
 def test_проценты_сходятся_со_своими_числами(today):
     """Процент — производное, и считаться он должен из тех же чисел,
-    что стоят рядом на экране."""
+    что стоят рядом на экране. Если план = 0, процент тоже 0."""
     for item in mockup.for_year(None, today=today):
-        assert item["percent"] == pytest.approx(
-            item["fact"] / item["plan"] * 100, rel=1e-6)
-        assert item["projects_percent"] == pytest.approx(
-            item["projects_fact"] / item["projects_plan"] * 100, rel=1e-6)
+        if item["plan"] > 0:
+            assert item["percent"] == pytest.approx(
+                item["fact"] / item["plan"] * 100, rel=1e-6)
+        else:
+            assert item["percent"] == 0.0
+        if item["projects_plan"] > 0:
+            assert item["projects_percent"] == pytest.approx(
+                item["projects_fact"] / item["projects_plan"] * 100, rel=1e-6)
+        else:
+            assert item["projects_percent"] == 0.0
 
 
 def test_прошлый_год_закончился_и_показан_целиком(today):
@@ -88,5 +94,14 @@ def test_текущий_год_показывает_только_прошедш�
     """Столбик за декабрь в августе означал бы ноль, а читался бы как провал."""
     items = mockup.for_year(None, expanded=True, today=today)
     assert len(items[0]["months"]) <= today.month
+
+
+def test_главная_рендерится_при_нулевых_данных():
+    """Разбивка по программам на главной не должна падать с ZeroDivisionError,
+    когда данные в mockup.py нулевые."""
+    import app
+    from pages import main
+    layout = main.layout()
+    assert layout is not None
 
 

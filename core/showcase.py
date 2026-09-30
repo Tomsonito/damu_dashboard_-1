@@ -25,7 +25,7 @@
 что были у страницы главной.** Менять их не на что: коллбэки ниже ищут
 поля по этим именам, а разметку под них кладёт `body()`.
 
-Числа макетные (`core/mockup.py`) — разрезов по инструментам, программам
+Числа пока нули (`core/mockup.py`) — разрезов по инструментам, программам
 и уникальным проектам в боевой базе нет, и на экране про это написано
 плашкой рядом с заголовком. Карта настоящая: она рисуется по данным
 и слушает фильтры.
@@ -423,6 +423,8 @@ def programs_block() -> dbc.Card:
             html.Div([
                 html.Div("Разбивка по программам", className="damu-block-title"),
                 html.Span("факт по инструментам", className="small text-muted"),
+                html.Span("Полосы сравниваются внутри каждого инструмента",
+                          className="damu-prog-scale-note"),
                 html.Div([
                     html.Span([html.I(style={"width": "22px"}), "Освоено, млрд ₸"]),
                     html.Span([html.I(style={"width": "12px"}), "Проектов, шт"]),
@@ -462,9 +464,9 @@ def title_row(year: int, expanded: bool) -> html.Div:
         html.H1("Освоение плана", className="h4 mb-0"),
         html.Div([year_button(year_now), year_button(year_prev)],
                  className="damu-year"),
-        html.Span("Макетные числа", className="damu-mock-badge",
+        html.Span("Данные в обработке", className="damu-mock-badge",
                   title="Разрезов по инструментам в хранилище пока нет — "
-                        "числа из эскиза"),
+                        "ожидаем источник"),
     ]
     if mockup.can_expand(year):
         children.append(switch)

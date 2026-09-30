@@ -121,5 +121,27 @@ def test_without_drill_the_chart_stays_yearly():
     )
     x = [str(v) for v in figures[0].data[0].x]
     assert "2025" in x and "янв" not in x
-    assert notes[0] is None
+    assert "Нажмите на столбец года" in notes[0].children
     assert "damu-drilled" not in classes[0]
+
+
+def test_cut_selection_explains_action_and_has_reset():
+    """Скрытая общая подсветка получила инструкцию и явный выход."""
+    feedback = section._cut_selection_feedback()
+    text, reset = feedback.children
+    assert "во всех диаграммах разреза" in text.children
+    assert text.to_plotly_json()["props"]["aria-live"] == "polite"
+    assert reset.children == "Сбросить"
+    assert reset.hidden is True
+
+
+def test_cut_rows_are_keyboard_selectable():
+    """Строка разреза — не только цель для мыши."""
+    item = widgets.get_widgets(widgets.page_key("see", "industries"))[0]
+    panel = section.cut_panel(item, 2024, None, "СЭЭ", 6, "see")
+    row = panel.children[1].children[0]
+    props = row.to_plotly_json()["props"]
+    assert props["role"] == "button"
+    assert props["tabIndex"] == 0
+    assert props["aria-pressed"] == "false"
+    assert "Подсветить категорию" in props["aria-label"]

@@ -399,7 +399,6 @@
     new MutationObserver(function () {
         schedule();
         restoreSidebar();
-        bindPinning();
         /* Строки разреза перерисовывает сервер (сменили год, области,
            версию), и классы подсветки уходят вместе со старой разметкой.
            Возвращаем — иначе выбранная отрасль тихо гасла бы в одном
@@ -420,8 +419,8 @@
        гасил остальные столбцы во всех диаграммах разреза. Снята 17.08.2026
        вместе с самими диаграммами — разрезы теперь рисуются строками-`div`
        (`cut_panel` в pages/section.py), и подсветка переехала ниже,
-       в «Подсветка строки разреза», где занимает пятнадцать строк вместо
-       ста восьмидесяти.
+       в «Подсветка строки разреза», где держится на обычных классах и
+       состоянии браузера вместо перестройки четырёх фигур.
 
        `!!` Оставлять код было нельзя, и не из-за объёма. Именно он вешал
        вкладку: `plotly_afterplot` возвращал в `Plotly.restyle`, а `restyle`
@@ -453,16 +452,39 @@
        рядом. */
     var pinnedRow = null;
 
+    function updateRowPinFeedback() {
+        document.querySelectorAll('.damu-cut-selection').forEach(function (box) {
+            var text = box.querySelector('.damu-cut-selection-text');
+            var reset = box.querySelector('.damu-cut-selection-reset');
+            if (text) {
+                var nextText = pinnedRow === null
+                    ? 'Выберите строку — подсветим её во всех диаграммах разреза'
+                    : 'Выбрано: ' + pinnedRow;
+                /* Наблюдатель выше следит за childList. Не переписываем
+                   тот же текст повторно, иначе сами будили бы наблюдатель. */
+                if (text.textContent !== nextText) text.textContent = nextText;
+            }
+            if (reset) reset.hidden = pinnedRow === null;
+        });
+    }
+
     function applyRowPin() {
+        var hasRows = false;
+        var hasMatch = false;
         document.querySelectorAll('.damu-sec-block').forEach(function (block) {
             var rows = block.querySelectorAll('.damu-cut-row');
             if (!rows.length) return;
+            hasRows = true;
             var found = false;
             rows.forEach(function (row) {
                 var mine = pinnedRow !== null
                     && row.getAttribute('data-cat') === pinnedRow;
                 row.classList.toggle('damu-pinned', mine);
-                if (mine) found = true;
+                row.setAttribute('aria-pressed', mine ? 'true' : 'false');
+                if (mine) {
+                    found = true;
+                    hasMatch = true;
+                }
             });
             /* !! Пометка на секции гасит непомеченные строки — но ставится,
                только если выбранное имя в этой секции ВООБЩЕ есть. Иначе
@@ -471,14 +493,36 @@
                а не «здесь этого нет». */
             block.classList.toggle('damu-has-pin', found);
         });
+        /* При переходе в другой раздел прежней категории может уже не быть.
+           Не оставляем «Выбрано», если на экране ничего не выбрано. Пока
+           строки ещё грузятся, hasRows=false и выбор не сбрасываем. */
+        if (pinnedRow !== null && hasRows && !hasMatch) pinnedRow = null;
+        updateRowPinFeedback();
     }
 
-    document.addEventListener('click', function (event) {
-        var row = event.target.closest('.damu-cut-row');
-        if (!row) return;
+    function toggleRowPin(row) {
         var name = row.getAttribute('data-cat');
         pinnedRow = (pinnedRow === name) ? null : name;
         applyRowPin();
+    }
+
+    document.addEventListener('click', function (event) {
+        var reset = event.target.closest('.damu-cut-selection-reset');
+        if (reset) {
+            pinnedRow = null;
+            applyRowPin();
+            return;
+        }
+        var row = event.target.closest('.damu-cut-row');
+        if (!row) return;
+        toggleRowPin(row);
+    });
+
+    document.addEventListener('keydown', function (event) {
+        var row = event.target.closest('.damu-cut-row');
+        if (!row || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        toggleRowPin(row);
     });
 
     /* ── Примеры 5 и 6: разворот в раскладку главной ──

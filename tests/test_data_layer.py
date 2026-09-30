@@ -82,6 +82,34 @@ def test_число_форматируется_по_русски():
     assert "." not in text and "," in text
 
 
+# ------------------------------------------------------- справочник регионов
+
+def test_варианты_регионов_сводятся_к_каноническим_названиям():
+    raw = pd.Series([
+        "ВКО", "РФ по Восточно-Казахстанской области",
+        "Жетысу", "РФ по области Жетiсу",
+        "Улытау", "РФ по области Ұлытау",
+        "г.Алматы", "РФ по г. Алматы",
+    ])
+
+    assert data._canonical_regions(raw).tolist() == [
+        "Восточно-Казахстанская", "Восточно-Казахстанская",
+        "Жетісу", "Жетісу",
+        "Ұлытау", "Ұлытау",
+        "г. Алматы", "г. Алматы",
+    ]
+
+
+@pytest.mark.needs_storage
+def test_фильтр_содержит_20_регионов_без_служебных_значений():
+    regions = data.get_region_choices()
+
+    assert len(regions) == 20
+    assert "Жетісу" in regions and "Ұлытау" in regions and "Абай" in regions
+    assert not set(regions) & set(data.REGION_ALIASES)
+    assert not set(regions) & data.NON_GEOGRAPHIC_REGIONS
+
+
 # ------------------------------------------------------- подстановка года
 
 @pytest.mark.needs_storage
